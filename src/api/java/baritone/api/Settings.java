@@ -225,6 +225,13 @@ public final class Settings {
     public final Setting<Boolean> allowDownward = new Setting<>(true);
 
     /**
+     * Crawl Mine Mode: Đào hầm 1 block cao bằng cách dùng trapdoor để kích hoạt tư thế bò (crawling).
+     * Khi bật, bot chỉ đào 1 block phía trước thay vì 2, giảm 50% thời gian đào hầm.
+     * Yêu cầu có trapdoor trong balo.
+     */
+    public final Setting<Boolean> crawlMineMode = new Setting<>(false);
+
+    /**
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
      */
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(

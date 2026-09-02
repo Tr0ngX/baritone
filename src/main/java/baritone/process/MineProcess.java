@@ -37,8 +37,10 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -46,6 +48,7 @@ import net.minecraft.world.level.block.AirBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
+import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.*;
@@ -126,6 +129,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int stuckTicks = 0;
     private int stuckRetries = 0;
     private boolean forceReroute = false;
+    private BlockPos currentTunnelTarget = null;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
@@ -179,12 +183,20 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
+        if (Baritone.settings().crawlMineMode.value) {
+            PathingCommand crawlCmd = handleCrawlState(isSafeToCancel);
+            if (crawlCmd != null) {
+                return crawlCmd;
+            }
+        }
+
         if (Baritone.settings().autoTotem.value && tickCount % 20 == 0) {
             handleAutoTotem();
         }
 
         updateLoucaSystem();
-        if (tickCount % 40 == 0) {
+        // Gọi mỗi tick nếu đang có hàng đợi vứt rác, ngược lại quét mỗi 40 tick
+        if (!pendingDropSlots.isEmpty() || tickCount % 40 == 0) {
             cleanInventoryIfFull();
         }
         int mineGoalUpdateInterval = Baritone.settings().mineGoalUpdateInterval.value;
@@ -309,9 +321,23 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             CalculationContext context = new CalculationContext(baritone);
             List<BlockPos> locs2 = prune(context, new ArrayList<>(locs), filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
             if (!locs2.isEmpty()) {
-                Goal goal = new GoalComposite(locs2.stream().map(loc -> coalesce(loc, locs2, context)).toArray(Goal[]::new));
+                currentTunnelTarget = null;
+                // CLUSTER-LOCK: Ưu tiên đào sạch cụm quặng gần trước (bán kính 8 block)
+                // Chỉ khi không còn quặng gần mới đi tới cụm xa!
+                List<BlockPos> nearbyOres = locs2.stream()
+                        .filter(pos -> ctx.playerFeet().distSqr(pos) <= 64) // 8 * 8 = 64
+                        .collect(java.util.stream.Collectors.toList());
+                List<BlockPos> targetOres = nearbyOres.isEmpty() ? locs2 : nearbyOres;
+                Goal goal = new GoalComposite(targetOres.stream().map(loc -> coalesce(loc, locs2, context)).toArray(Goal[]::new));
                 knownOreLocations = locs2;
-                return new PathingCommand(goal, legit ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                boolean isPathing = baritone.getPathingBehavior().isPathing();
+                boolean fr = forceReroute;
+                forceReroute = false;
+                if (fr) {
+                    return new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
+                }
+                // Nếu đang di chuyển trên đường thì giữ REVALIDATE để không bị softCancel khựng lại
+                return new PathingCommand(goal, (legit && !isPathing) ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             }
         }
 
@@ -345,21 +371,43 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         // KHI ĐÃ TỚI ĐÚNG TẦNG TARGET Y (Y <= -58):
+        // Kiểm tra xem AntiStuck có yêu cầu đào ngược lên không (thoát bedrock):
+        if (tunnelOrigin != null && tunnelOrigin.getY() > currentY) {
+            // Đào bậc thang ngược LÊN để thoát tầng bedrock
+            if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                net.minecraft.core.Direction dir = ctx.player().getDirection();
+                tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+            }
+            int rise = Math.min(3, tunnelOrigin.getY() - currentY);
+            BlockPos escapePos = new BlockPos(
+                    ctx.playerFeet().x + tunnelDirection.getStepX() * rise,
+                    currentY + rise,
+                    ctx.playerFeet().z + tunnelDirection.getStepZ() * rise
+            );
+            logDirect("§b[AntiStuck] Đang đào ngược lên Y=" + (currentY + rise) + " để thoát bedrock...");
+            boolean fr = forceReroute;
+            forceReroute = false;
+            return new PathingCommand(new GoalTwoBlocks(escapePos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        }
+
         // Lúc này mới bắt đầu đào ngang thẳng tiến 16 block phía trước!
         if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
             net.minecraft.core.Direction dir = ctx.player().getDirection();
             tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
         }
-        BlockPos forwardPos = new BlockPos(
-                ctx.playerFeet().x + tunnelDirection.getStepX() * 16,
-                currentY,
-                ctx.playerFeet().z + tunnelDirection.getStepZ() * 16
-        );
+        // Điểm waypoint ổn định: chỉ tính mới khi đã tới gần mục tiêu (cách <= 3 block) hoặc đổi hướng
+        if (currentTunnelTarget == null || ctx.playerFeet().distSqr(currentTunnelTarget) <= 9 || forceReroute || currentTunnelTarget.getY() != currentY) {
+            currentTunnelTarget = new BlockPos(
+                    ctx.playerFeet().x + tunnelDirection.getStepX() * 16,
+                    currentY,
+                    ctx.playerFeet().z + tunnelDirection.getStepZ() * 16
+            );
+        }
         if (forceReroute) {
             forceReroute = false;
-            return new PathingCommand(new GoalTwoBlocks(forwardPos), PathingCommandType.CANCEL_AND_SET_GOAL);
+            return new PathingCommand(new GoalTwoBlocks(currentTunnelTarget), PathingCommandType.CANCEL_AND_SET_GOAL);
         }
-        return new PathingCommand(new GoalTwoBlocks(forwardPos), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        return new PathingCommand(new GoalTwoBlocks(currentTunnelTarget), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
     }
 
     private void rescan(List<BlockPos> already, CalculationContext context) {
@@ -500,10 +548,49 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         return ret;
     }
 
+    private final List<Integer> pendingDropSlots = new ArrayList<>();
+    private int dropCooldown = 0;
+
     private void cleanInventoryIfFull() {
         if (ctx.player() == null || ctx.player().containerMenu != ctx.player().inventoryMenu) {
             return;
         }
+
+        // Nếu đang có hàng đợi vứt rác → vứt 1 stack mỗi 5 tick (tránh bị server kick vì spam packet)
+        if (!pendingDropSlots.isEmpty()) {
+            if (dropCooldown > 0) {
+                dropCooldown--;
+                return;
+            }
+            int slotIndex = pendingDropSlots.remove(0);
+            NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+            if (slotIndex >= 0 && slotIndex < inv.size()) {
+                ItemStack stack = inv.get(slotIndex);
+                if (!stack.isEmpty() && JUNK_BLOCKS.contains(stack.getItem())) {
+                    // Chuyển item vào hotbar slot 0 (nếu chưa ở đó) rồi vứt cả stack
+                    if (slotIndex >= 9) {
+                        // Item trong balo chính (slot 9-35): swap vào hotbar slot 0 trước
+                        int windowSlot = slotIndex; // slot 9-35 trong inventory = windowSlot 9-35
+                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 0, ClickType.SWAP, ctx.player());
+                        // Giờ item ở hotbar slot 0, vứt nó
+                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, 36, 1, ClickType.THROW, ctx.player());
+                        // Swap lại item cũ từ hotbar 0 về vị trí ban đầu
+                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 0, ClickType.SWAP, ctx.player());
+                    } else {
+                        // Item đã ở hotbar (slot 0-8): windowSlot = slot + 36
+                        int windowSlot = slotIndex + 36;
+                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 1, ClickType.THROW, ctx.player());
+                    }
+                }
+            }
+            dropCooldown = 4; // Chờ 4 tick trước khi vứt stack tiếp theo (≈ 0.2 giây)
+            if (pendingDropSlots.isEmpty()) {
+                logDirect("§a[AutoDrop] Đã dọn sạch toàn bộ rác trong balo!");
+            }
+            return;
+        }
+
+        // Chỉ quét lại khi không có hàng đợi đang xử lý
         NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
         int emptySlots = 0;
         for (int i = 0; i < 36; i++) {
@@ -511,26 +598,24 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 emptySlots++;
             }
         }
-        // Khi balo còn 5 ô trống trở xuống: Dọn sạch toàn bộ rác thừa trong 1 lần duy nhất!
+
+        // Khi balo còn 5 ô trống trở xuống: Quét và nạp hàng đợi vứt rác
         if (emptySlots <= 5) {
             int keptBuildingBlocks = 0;
-            int dumpedStacks = 0;
             for (int i = 0; i < 36; i++) {
                 ItemStack stack = inv.get(i);
                 if (!stack.isEmpty() && JUNK_BLOCKS.contains(stack.getItem())) {
-                    // Giữ lại đúng 1 stack 64 block Cobbled Deepslate hoặc Cobblestone để bắc cầu / leo trèo
+                    // Giữ lại đúng 1 stack 64 block Cobblestone/Cobbled Deepslate để bắc cầu
                     if (keptBuildingBlocks < 64 && (stack.is(Items.COBBLED_DEEPSLATE) || stack.is(Items.COBBLESTONE))) {
                         keptBuildingBlocks += stack.getCount();
                         continue;
                     }
-                    // Vứt toàn bộ các stack rác thừa khác (slots 0-8 trên hotbar map thành 36-44 trong containerMenu)
-                    int windowSlot = i < 9 ? i + 36 : i;
-                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 1, ClickType.THROW, ctx.player());
-                    dumpedStacks++;
+                    pendingDropSlots.add(i);
                 }
             }
-            if (dumpedStacks > 0) {
-                logDirect("§a[AutoMine] Đã dọn sạch " + dumpedStacks + " stack đá/cuội/đất thừa, giải phóng chỗ trống nhặt kim cương!");
+            if (!pendingDropSlots.isEmpty()) {
+                logDirect("§e[AutoDrop] Balo gần đầy! Đang dọn " + pendingDropSlots.size() + " stack rác...");
+                dropCooldown = 0; // Bắt đầu vứt ngay
             }
         }
     }
@@ -578,9 +663,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 return;
             }
 
-            // Phương án 3: Nếu đang đào hầm tại tầng đáy bị kẹt (gặp Bedrock / vách đá không thể phá)
-            // Tự động rẽ nhánh: Xoay 90 độ sang hướng mới!
+            // Phương án 3: Đào hầm tại tầng đáy bị kẹt bedrock
             if (tunnelDirection != null) {
+                // SAU 4 LẦN THỬ (đã xoay cả 4 hướng) MÀ VẪN KẸT = TOÀN BEDROCK!
+                // -> ĐÀO NGƯỢC LÊN 3 block để thoát khỏi tầng bedrock, rồi đào ngang ở tầng cao hơn
+                if (stuckRetries >= 4) {
+                    int escapeY = Math.min(currentFeet.y + 3, targetY + 5);
+                    logDirect("§c[AntiStuck] Bị kẹt bedrock cả 4 hướng! Đào ngược lên Y=" + escapeY + " để thoát...");
+                    // Cập nhật tunnelOrigin lên tầng mới
+                    tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
+                    stuckRetries = 0;
+                    forceReroute = true;
+                    return;
+                }
                 net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
                 tunnelDirection = newDir;
                 tunnelOrigin = new BlockPos(currentFeet.x, targetY, currentFeet.z);
@@ -589,7 +684,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 return;
             }
 
-            // Phương án 3: Khắc phục kẹt cát/sỏi sập trúng đầu
+            // Phương án 4: Khắc phục kẹt cát/sỏi sập trúng đầu
             BlockPos head = currentFeet.above();
             BlockState headState = ctx.world().getBlockState(head);
             if (headState.isSuffocating(ctx.world(), head) || !headState.isAir()) {
@@ -718,6 +813,83 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 return;
             }
         }
+    }
+
+    private int crawlCooldown = 0;
+
+    private boolean isCrawling() {
+        return ctx.player() != null && ctx.player().getPose() == Pose.SWIMMING;
+    }
+
+    private int findTrapDoorSlot() {
+        if (ctx.player() == null) return -1;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = inv.get(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem bi && bi.getBlock() instanceof TrapDoorBlock) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private PathingCommand handleCrawlState(boolean isSafeToCancel) {
+        if (!Baritone.settings().crawlMineMode.value || ctx.player() == null) {
+            return null;
+        }
+
+        if (isCrawling()) {
+            return null; // Đang ở tư thế crawl 1 block, tiếp tục đào bình thường
+        }
+
+        if (crawlCooldown > 0) {
+            crawlCooldown--;
+            return null;
+        }
+
+        int trapdoorSlot = findTrapDoorSlot();
+        if (trapdoorSlot == -1) {
+            logDirect("§c[CrawlMine] Không tìm thấy Trapdoor (Cửa sập) trong balo! Tự động tắt Crawl Mode.");
+            Baritone.settings().crawlMineMode.value = false;
+            return null;
+        }
+
+        // Đưa trapdoor lên hotbar nếu đang ở balo chính
+        if (trapdoorSlot >= 9) {
+            ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, trapdoorSlot, 0, ClickType.SWAP, ctx.player());
+            trapdoorSlot = 0;
+        }
+        ctx.player().getInventory().setSelectedSlot(trapdoorSlot);
+
+        // Kiểm tra block phía trên đầu
+        BlockPos headPos = ctx.playerFeet().above();
+        BlockState headState = ctx.world().getBlockState(headPos);
+
+        // Nếu block trên đầu đã có TrapDoor -> click chuột phải để gập xuống ép người chơi crawl
+        if (headState.getBlock() instanceof TrapDoorBlock) {
+            Optional<Rotation> rot = RotationUtils.reachable(ctx, headPos);
+            if (rot.isPresent()) {
+                baritone.getLookBehavior().updateTarget(rot.get(), true);
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
+                crawlCooldown = 10;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+        }
+
+        // Nếu chưa có trapdoor -> Đặt trapdoor lên block trên trần
+        BlockPos ceilingPos = ctx.playerFeet().above(2);
+        BlockState ceilingState = ctx.world().getBlockState(ceilingPos);
+        if (!ceilingState.isAir()) {
+            Optional<Rotation> rot = RotationUtils.reachable(ctx, ceilingPos);
+            if (rot.isPresent()) {
+                baritone.getLookBehavior().updateTarget(rot.get(), true);
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
+                crawlCooldown = 10;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+        }
+
+        return null;
     }
 
     public static List<BlockPos> searchWorld(CalculationContext ctx, BlockOptionalMetaLookup filter, int max, List<BlockPos> alreadyKnown, List<BlockPos> blacklist, List<BlockPos> dropped) {
@@ -883,6 +1055,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.branchPoint = null;
         this.branchPointRunaway = null;
         this.anticipatedDrops = new HashMap<>();
+        this.currentTunnelTarget = null;
         if (filter != null) {
             rescan(new ArrayList<>(), new CalculationContext(baritone));
         }

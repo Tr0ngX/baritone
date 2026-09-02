@@ -55,7 +55,7 @@ public class MovementTraverse extends Movement {
     private boolean wasTheBridgeBlockAlwaysThere = true;
 
     public MovementTraverse(IBaritone baritone, BetterBlockPos from, BetterBlockPos to) {
-        super(baritone, from, to, new BetterBlockPos[]{to.above(), to}, to.below());
+        super(baritone, from, to, Baritone.settings().crawlMineMode.value ? new BetterBlockPos[]{to} : new BetterBlockPos[]{to.above(), to}, to.below());
     }
 
     @Override
@@ -108,7 +108,8 @@ public class MovementTraverse extends Movement {
             if (hardness1 >= COST_INF) {
                 return COST_INF;
             }
-            double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
+            // Crawl mode: chỉ cần clear 1 block ngang chân (y), không cần clear block trên đầu (y+1)
+            double hardness2 = context.crawlMode ? 0 : MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true);
             if (hardness1 == 0 && hardness2 == 0) {
                 if (!water && !sneaking && context.canSprint) {
                     // If there's nothing in the way, and this isn't water, and we aren't sneak placing
@@ -141,7 +142,7 @@ public class MovementTraverse extends Movement {
                 if (hardness1 >= COST_INF) {
                     return COST_INF;
                 }
-                double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
+                double hardness2 = context.crawlMode ? 0 : MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true);
                 double WC = throughWater ? context.waterWalkSpeed : WALK_ONE_BLOCK_COST;
                 for (int i = 0; i < 5; i++) {
                     int againstX = destX + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepX();
@@ -175,8 +176,8 @@ public class MovementTraverse extends Movement {
     @Override
     public MovementState updateState(MovementState state) {
         super.updateState(state);
-        BlockState pb0 = BlockStateInterface.get(ctx, positionsToBreak[0]);
-        BlockState pb1 = BlockStateInterface.get(ctx, positionsToBreak[1]);
+        BlockState pb0 = positionsToBreak.length > 1 ? BlockStateInterface.get(ctx, positionsToBreak[0]) : Blocks.AIR.defaultBlockState();
+        BlockState pb1 = BlockStateInterface.get(ctx, positionsToBreak[positionsToBreak.length - 1]);
         if (state.getStatus() != MovementStatus.RUNNING) {
             // if the setting is enabled
             if (!Baritone.settings().walkWhileBreaking.value) {

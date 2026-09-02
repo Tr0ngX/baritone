@@ -61,6 +61,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optMobAvoid = true;
     public static boolean optParkour = true;
     public static boolean optZeroDelay = true;
+    public static boolean optCrawlMode = false;
     public static int optTargetY = -58;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
@@ -124,7 +125,8 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightCol, startY + gap * 2, btnW, btnH, "Mob Avoid", optMobAvoid, () -> optMobAvoid = !optMobAvoid));
         addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 2, btnW, btnH, "Parkour", optParkour, () -> optParkour = !optParkour));
 
-        addRenderableWidget(createOptBtn(rightCol, startY + gap * 3, optW, btnH, "ARA* Anytime Engine", optZeroDelay, () -> optZeroDelay = !optZeroDelay));
+        addRenderableWidget(createOptBtn(rightCol, startY + gap * 3, btnW, btnH, "Crawl (1-Block)", optCrawlMode, () -> optCrawlMode = !optCrawlMode));
+        addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 3, btnW, btnH, "ARA* Engine", optZeroDelay, () -> optZeroDelay = !optZeroDelay));
 
         // Hàng 4 cột 2: Tầng Y và FPS Limit
         String yLabel = optTargetY == 999 ? "Y-Level: Current" : "Y-Level: " + optTargetY;
@@ -254,7 +256,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().allowDiagonalAscend.value = optParkour;
         Baritone.settings().allowDiagonalDescend.value = optParkour;
 
-        Baritone.settings().allowDownward.value = true;
+        Baritone.settings().crawlMineMode.value = optCrawlMode;
         
         int targetY = optTargetY == 999 ? (playerCtx.player() != null ? playerCtx.playerFeet().y : -58) : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;

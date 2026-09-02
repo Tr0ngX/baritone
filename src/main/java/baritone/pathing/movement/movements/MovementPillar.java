@@ -56,6 +56,9 @@ public class MovementPillar extends Movement {
     }
 
     public static double cost(CalculationContext context, int x, int y, int z) {
+        if (context.crawlMode) {
+            return COST_INF;
+        }
         BlockState fromState = context.get(x, y, z);
         Block from = fromState.getBlock();
         boolean ladder = MovementHelper.isClimbable(from);

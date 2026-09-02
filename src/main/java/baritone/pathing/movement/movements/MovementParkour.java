@@ -61,7 +61,7 @@ public class MovementParkour extends Movement {
     }
 
     public static void cost(CalculationContext context, int x, int y, int z, Direction dir, MutableMoveResult res) {
-        if (!context.allowParkour) {
+        if (context.crawlMode || !context.allowParkour) {
             return;
         }
         if (!context.allowJumpAtBuildLimit && y >= context.world.getMaxY()) {
