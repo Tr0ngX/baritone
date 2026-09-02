@@ -132,11 +132,9 @@ public enum FasterWorldScanner implements IWorldScanner {
     private List<BlockPos> scanChunksInternal(IPlayerContext ctx, BlockOptionalMetaLookup lookup, List<ChunkPos> chunkPositions, int maxBlocks) {
         assert ctx.world() != null;
         try {
-            // p -> scanChunkInternal(ctx, lookup, p)
-            Stream<BlockPos> posStream = chunkPositions.parallelStream().flatMap(p -> scanChunkInternal(ctx, lookup, p));
+            // Quét tuần tự theo thứ tự xoắn ốc từ gần ra xa (đảm bảo quặng ở chunk người chơi đứng luôn được tìm thấy đầu tiên)
+            Stream<BlockPos> posStream = chunkPositions.stream().flatMap(p -> scanChunkInternal(ctx, lookup, p));
             if (maxBlocks >= 0) {
-                // WARNING: this can be expensive if maxBlocks is large...
-                // see limit's javadoc
                 posStream = posStream.limit(maxBlocks);
             }
             return posStream.collect(Collectors.toList());

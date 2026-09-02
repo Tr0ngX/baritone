@@ -76,7 +76,30 @@ public class Avoidance {
                     .filter(entity -> (!(entity instanceof Spider)) || ctx.player().getLightLevelDependentMagicValue() < 0.5)
                     .filter(entity -> !(entity instanceof ZombifiedPiglin) || ((ZombifiedPiglin) entity).getLastHurtByMob() != null)
                     .filter(entity -> !(entity instanceof EnderMan) || ((EnderMan) entity).isCreepy())
-                    .forEach(entity -> res.add(new Avoidance(entity.blockPosition(), mobCoeff, Baritone.settings().mobAvoidanceRadius.value)));
+                    .forEach(entity -> {
+                        double coeff = mobCoeff;
+                        int rad = Baritone.settings().mobAvoidanceRadius.value;
+
+                        if (entity instanceof net.minecraft.world.entity.monster.warden.Warden) {
+                            // 1. WARDEN - Nguy hiểm bậc nhất tuyệt đối (Bán kính né 24 block, hệ số phạt 1000.0)
+                            coeff = 1000.0D;
+                            rad = 24;
+                        } else if (entity instanceof net.minecraft.world.entity.monster.Creeper) {
+                            // 2. CREEPER - Chống nổ tan xác (Bán kính né 16 block, hệ số phạt 500.0)
+                            coeff = 500.0D;
+                            rad = 16;
+                        } else if (entity instanceof net.minecraft.world.entity.monster.Zombie) {
+                            // 3. ZOMBIE - Đánh cận chiến đông đảo (Bán kính né 14 block, hệ số phạt 250.0)
+                            coeff = 250.0D;
+                            rad = 14;
+                        } else if (entity instanceof net.minecraft.world.entity.monster.AbstractSkeleton) {
+                            // 4. SKELETON - Bắn tỉa tầm xa (Bán kính né 16 block, hệ số phạt 200.0)
+                            coeff = 200.0D;
+                            rad = 16;
+                        }
+
+                        res.add(new Avoidance(entity.blockPosition(), coeff, rad));
+                    });
         }
         return res;
     }

@@ -145,7 +145,7 @@ public final class Settings {
      * <p>
      * Enable if you have mods adding custom fluid physics.
      */
-    public final Setting<Boolean> strictLiquidCheck = new Setting<>(false);
+    public final Setting<Boolean> strictLiquidCheck = new Setting<>(true);
 
     /**
      * Allow Baritone to fall arbitrary distances and place a water bucket beneath it.
@@ -215,7 +215,7 @@ public final class Settings {
      * <p>
      * Actually pretty safe, much safer than diagonal descend tbh
      */
-    public final Setting<Boolean> allowDiagonalAscend = new Setting<>(false);
+    public final Setting<Boolean> allowDiagonalAscend = new Setting<>(true);
 
     /**
      * Allow mining the block directly beneath its feet
@@ -230,6 +230,12 @@ public final class Settings {
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(
             Blocks.DIRT.asItem(),
             Blocks.COBBLESTONE.asItem(),
+            Blocks.COBBLED_DEEPSLATE.asItem(),
+            Blocks.DEEPSLATE.asItem(),
+            Blocks.TUFF.asItem(),
+            Blocks.ANDESITE.asItem(),
+            Blocks.DIORITE.asItem(),
+            Blocks.GRANITE.asItem(),
             Blocks.NETHERRACK.asItem(),
             Blocks.STONE.asItem()
     )));
@@ -359,14 +365,14 @@ public final class Settings {
      * <p>
      * It also overshoots the landing pretty much always (making contact with the next block over), so be careful
      */
-    public final Setting<Boolean> allowParkour = new Setting<>(false);
+    public final Setting<Boolean> allowParkour = new Setting<>(true);
 
     /**
      * Actually pretty reliable.
      * <p>
      * Doesn't make it any more dangerous compared to just normal allowParkour th
      */
-    public final Setting<Boolean> allowParkourPlace = new Setting<>(false);
+    public final Setting<Boolean> allowParkourPlace = new Setting<>(true);
 
     /**
      * For example, if you have Mining Fatigue or Haste, adjust the costs of breaking blocks accordingly.
@@ -450,19 +456,16 @@ public final class Settings {
     /**
      * Toggle the following 4 settings
      * <p>
-     * They have a noticeable performance impact, so they default off
-     * <p>
-     * Specifically, building up the avoidance map on the main thread before pathing starts actually takes a noticeable
-     * amount of time, especially when there are a lot of mobs around, and your game jitters for like 200ms while doing so
+     * Avoid hostile mobs (Zombies, Skeletons, Creepers) and mob spawners
      */
-    public final Setting<Boolean> avoidance = new Setting<>(false);
+    public final Setting<Boolean> avoidance = new Setting<>(true);
 
     /**
      * Set to 1.0 to effectively disable this feature
      * <p>
      * Set below 1.0 to go out of your way to walk near mob spawners
      */
-    public final Setting<Double> mobSpawnerAvoidanceCoefficient = new Setting<>(2.0);
+    public final Setting<Double> mobSpawnerAvoidanceCoefficient = new Setting<>(100.0);
 
     /**
      * Distance to avoid mob spawners.
@@ -474,12 +477,27 @@ public final class Settings {
      * <p>
      * Set below 1.0 to go out of your way to walk near mobs
      */
-    public final Setting<Double> mobAvoidanceCoefficient = new Setting<>(1.5);
+    public final Setting<Double> mobAvoidanceCoefficient = new Setting<>(200.0);
 
     /**
-     * Distance to avoid mobs.
+     * Distance to avoid mobs (Zombies, Creepers, etc.).
      */
-    public final Setting<Integer> mobAvoidanceRadius = new Setting<>(8);
+    public final Setting<Integer> mobAvoidanceRadius = new Setting<>(14);
+
+    /**
+     * Automatically pause and eat food when hunger is low
+     */
+    public final Setting<Boolean> autoEat = new Setting<>(true);
+
+    /**
+     * Food level threshold to trigger auto-eat (e.g. 16 means eat when hunger drops below 8 drumsticks)
+     */
+    public final Setting<Integer> autoEatThreshold = new Setting<>(16);
+
+    /**
+     * Automatically equip Totem of Undying to offhand if available in inventory
+     */
+    public final Setting<Boolean> autoTotem = new Setting<>(true);
 
     /**
      * When running a goto towards a container block (chest, ender chest, furnace, etc),
@@ -535,7 +553,29 @@ public final class Settings {
     /**
      * Start planning the next path once the remaining movements tick estimates sum up to less than this value
      */
-    public final Setting<Integer> planningTickLookahead = new Setting<>(150);
+    public final Setting<Integer> planningTickLookahead = new Setting<>(400);
+
+    /**
+     * Use ARA* (Anytime Repairing A*) instead of standard A* for pathfinding.
+     * ARA* uses a weighted heuristic to find suboptimal paths extremely fast,
+     * allowing the bot to start moving immediately instead of waiting for the
+     * optimal path. The path quality is controlled by anytimeSearchEpsilon.
+     * <p>
+     * Benefits: Near-zero delay before bot starts moving.
+     * Tradeoff: Path may be up to epsilon times longer than optimal.
+     */
+    public final Setting<Boolean> useAnytimeSearch = new Setting<>(true);
+
+    /**
+     * Initial epsilon (heuristic weight) for ARA* pathfinding.
+     * Higher values = faster path computation but less optimal paths.
+     * <p>
+     * 1.0 = standard A* (optimal, slowest)
+     * 1.5 = paths up to 50% longer, ~3x faster computation
+     * 2.0 = paths up to 100% longer, ~5x faster computation (recommended)
+     * 3.0 = paths up to 200% longer, ~8x faster computation (for anti-stuck)
+     */
+    public final Setting<Double> anytimeSearchEpsilon = new Setting<>(2.0);
 
     /**
      * Default size of the Long2ObjectOpenHashMap used in pathing
@@ -595,12 +635,12 @@ public final class Settings {
      * <p>
      * If no valid path (length above the minimum) has been found, pathing continues up until the failure timeout
      */
-    public final Setting<Long> primaryTimeoutMS = new Setting<>(500L);
+    public final Setting<Long> primaryTimeoutMS = new Setting<>(4000L);
 
     /**
      * Pathing can never take longer than this, even if that means failing to find any path at all
      */
-    public final Setting<Long> failureTimeoutMS = new Setting<>(2000L);
+    public final Setting<Long> failureTimeoutMS = new Setting<>(6000L);
 
     /**
      * Planning ahead while executing a segment ends after this amount of time, but only if a path has been found
@@ -912,10 +952,10 @@ public final class Settings {
     public final Setting<Integer> pathHistoryCutoffAmount = new Setting<>(50);
 
     /**
-     * Rescan for the goal once every 5 ticks.
+     * Rescan for the goal once every 2 ticks for instant continuous pathing.
      * Set to 0 to disable.
      */
-    public final Setting<Integer> mineGoalUpdateInterval = new Setting<>(5);
+    public final Setting<Integer> mineGoalUpdateInterval = new Setting<>(2);
 
     /**
      * After finding this many instances of the target block in the cache, it will stop expanding outward the chunk search.

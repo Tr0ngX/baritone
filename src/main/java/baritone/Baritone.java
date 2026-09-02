@@ -42,9 +42,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.Executor;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -58,7 +57,20 @@ public class Baritone implements IBaritone {
     private static final ThreadPoolExecutor threadPool;
 
     static {
-        threadPool = new ThreadPoolExecutor(4, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<>());
+        int cores = Math.max(4, Runtime.getRuntime().availableProcessors());
+        threadPool = new ThreadPoolExecutor(
+                cores,
+                cores * 4,
+                60L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(),
+                r -> {
+                    Thread t = new Thread(r, "Baritone-Worker");
+                    t.setDaemon(true);
+                    t.setPriority(Thread.NORM_PRIORITY + 1);
+                    return t;
+                }
+        );
     }
 
     private final Minecraft mc;

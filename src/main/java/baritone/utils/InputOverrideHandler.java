@@ -23,7 +23,10 @@ import baritone.api.event.events.TickEvent;
 import baritone.api.utils.IInputOverrideHandler;
 import baritone.api.utils.input.Input;
 import baritone.behavior.Behavior;
+import baritone.api.utils.Helper;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.player.KeyboardInput;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -45,6 +48,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
 
     private final BlockBreakHelper blockBreakHelper;
     private final BlockPlaceHelper blockPlaceHelper;
+    private boolean f4WasDown = false;
 
     public InputOverrideHandler(Baritone baritone) {
         super(baritone);
@@ -87,6 +91,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         if (event.getType() == TickEvent.Type.OUT) {
             return;
         }
+        checkF4Key();
         if (isInputForcedDown(Input.CLICK_LEFT)) {
             setInputForceState(Input.CLICK_RIGHT, false);
         }
@@ -104,6 +109,24 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         }
         // only set it if it was previously incorrect
         // gotta do it this way, or else it constantly thinks you're beginning a double tap W sprint lol
+    }
+
+    private void checkF4Key() {
+        if (ctx.minecraft() == null || ctx.minecraft().getWindow() == null || ctx.player() == null) {
+            return;
+        }
+        if (ctx.minecraft().screen != null) {
+            f4WasDown = true;
+            return;
+        }
+        try {
+            long window = ctx.minecraft().getWindow().getWindow();
+            boolean f4Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F4);
+            if (f4Down && !f4WasDown) {
+                ctx.minecraft().setScreen(new AutoMineScreen(baritone));
+            }
+            f4WasDown = f4Down;
+        } catch (Throwable ignored) {}
     }
 
     private boolean inControl() {
