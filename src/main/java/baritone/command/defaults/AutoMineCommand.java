@@ -69,7 +69,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().extendCacheOnThreshold.value = true;
         Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L;
 
-        Baritone.settings().blockBreakSpeed.value = 1;
+        Baritone.settings().blockBreakSpeed.value = 5;
         Baritone.settings().rightClickSpeed.value = 1;
         Baritone.settings().blockBreakAdditionalPenalty.value = 0.0;
         Baritone.settings().blockPlacementPenalty.value = 0.0;
