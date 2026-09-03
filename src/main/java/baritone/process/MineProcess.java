@@ -359,8 +359,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
             if (Baritone.settings().straightDownMine.value) {
                 // CHẾ ĐỘ 1: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI (SHAFT DOWN) SIÊU TỐC
-                // Giữ nguyên tọa độ X, Z hiện tại, đào thẳng một mạch xuống tầng targetY!
-                BlockPos shaftTarget = new BlockPos(ctx.playerFeet().x, targetY, ctx.playerFeet().z);
+                // Giữ nguyên tọa độ X, Z hiện tại, đào từng chặng 2 block xuống dưới để A* tính toán 0ms!
+                int drop = Math.min(2, currentY - targetY);
+                BlockPos shaftTarget = new BlockPos(ctx.playerFeet().x, currentY - drop, ctx.playerFeet().z);
                 return new PathingCommand(new GoalTwoBlocks(shaftTarget), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             } else {
                 // CHẾ ĐỘ 2: ĐÀO CẦU THANG DỐC 1:1 (STAIRCASE DESCENT)
