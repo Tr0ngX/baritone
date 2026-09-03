@@ -415,10 +415,10 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().extendCacheOnThreshold.value = true;
         Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L; // Chờ 200ms để quặng rơi hút vào balo
 
-        // Tốc độ đập block an toàn chống anti-cheat (FastBreak 5 ticks) & Tốc độ đặt block
-        Baritone.settings().blockBreakSpeed.value = optFastBreak ? 5 : 6; // 5 ticks FastBreak an toàn, không bị anti-cheat giật lại
+        // Tốc độ đập block chuẩn gốc Minecraft & Baritone (6 ticks)
+        Baritone.settings().blockBreakSpeed.value = 6;
         Baritone.settings().rightClickSpeed.value = optFastPlace ? 1 : 4; // 1 tick đặt block tức thì (0.05s)
-        Baritone.settings().blockBreakAdditionalPenalty.value = optFastBreak ? 0.0 : 2.0;
+        Baritone.settings().blockBreakAdditionalPenalty.value = 2.0;
         Baritone.settings().blockPlacementPenalty.value = 0.0;
         Baritone.settings().jumpPenalty.value = 0.0;
 

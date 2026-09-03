@@ -70,8 +70,8 @@ public final class BlockBreakHelper {
                 if (ctx.playerController().hasBrokenBlock()) { // block broken this tick
                     // break delay timer only applies for multi-tick block breaks like vanilla
                     breakDelayTimer = BaritoneAPI.getSettings().blockBreakSpeed.value - BASE_BREAK_DELAY;
-                    // Đặt destroyDelay tối thiểu 5 ticks chuẩn vanilla để Anti-Cheat (GrimAC / Vulcan) không hủy packet gây khựng
-                    ((IPlayerControllerMP) ctx.minecraft().gameMode).setDestroyDelay(Math.max(5, BaritoneAPI.getSettings().blockBreakSpeed.value));
+                    // must reset controller's destroy delay to prevent the client from delaying itself unnecessarily
+                    ((IPlayerControllerMP) ctx.minecraft().gameMode).setDestroyDelay(0);
                 }
             }
             // if true, we're breaking a block. if false, we broke the block this tick
