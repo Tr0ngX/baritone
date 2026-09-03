@@ -130,6 +130,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int stuckRetries = 0;
     private boolean forceReroute = false;
     private BlockPos currentTunnelTarget = null;
+    private int pillarFailCount = 0;
+    private long lastPillarFailTime = 0;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
@@ -631,6 +633,34 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             lastStuckCheckPos = currentFeet;
             stuckTicks = 0;
             stuckRetries = 0;
+            // Đã di chuyển thành công → Reset trạng thái noPillar
+            if (Baritone.settings().noPillar.value) {
+                pillarFailCount = 0;
+                Baritone.settings().noPillar.value = false;
+                logDirect("§a[AntiPillarLoop] Đã di chuyển thành công, cho phép nhảy+đặt block trở lại.");
+            }
+        }
+
+        // === PHÁT HIỆN PILLAR LOOP ===
+        // Khi bị kẹt 1 chỗ > 60 tick (3 giây), kiểm tra xem bot có đang cố nhảy+đặt block không
+        // Nếu đúng → bật noPillar để ép A* tìm đường khác
+        if (stuckTicks >= 60 && !Baritone.settings().noPillar.value) {
+            // Phát hiện: player đang nhảy lên rồi rơi xuống = cùng vị trí X,Z nhưng Y dao động
+            boolean isJumping = ctx.player().getDeltaMovement().y > 0.1 || !ctx.player().onGround();
+            boolean sameXZ = lastStuckCheckPos != null
+                    && Math.abs(currentFeet.x - lastStuckCheckPos.x) < 2
+                    && Math.abs(currentFeet.z - lastStuckCheckPos.z) < 2;
+
+            if (isJumping && sameXZ) {
+                pillarFailCount++;
+                if (pillarFailCount >= 2) {
+                    Baritone.settings().noPillar.value = true;
+                    logDirect("§c[AntiPillarLoop] Bot bị kẹt nhảy+đặt block dưới chân (" + pillarFailCount + " lần)! Tạm tắt pillar, buộc đổi hướng...");
+                    forceReroute = true;
+                    stuckTicks = 0;
+                    return;
+                }
+            }
         }
 
         // Bị kẹt 1 chỗ quá 120 tick (6 giây):
@@ -1056,6 +1086,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.branchPointRunaway = null;
         this.anticipatedDrops = new HashMap<>();
         this.currentTunnelTarget = null;
+        this.pillarFailCount = 0;
+        Baritone.settings().noPillar.value = false;
         if (filter != null) {
             rescan(new ArrayList<>(), new CalculationContext(baritone));
         }

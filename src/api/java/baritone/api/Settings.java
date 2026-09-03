@@ -232,6 +232,13 @@ public final class Settings {
     public final Setting<Boolean> crawlMineMode = new Setting<>(false);
 
     /**
+     * Khi bật, A* sẽ KHÔNG chọn movement nhảy+đặt block dưới chân (pillar up).
+     * MineProcess tự động bật setting này khi phát hiện bot bị kẹt pillar loop,
+     * và tự động tắt khi di chuyển thành công.
+     */
+    public final Setting<Boolean> noPillar = new Setting<>(false);
+
+    /**
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
      */
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(

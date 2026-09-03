@@ -75,6 +75,7 @@ public class CalculationContext {
     public final boolean allowDiagonalAscend;
     public final boolean allowDownward;
     public final boolean crawlMode;
+    public final boolean noPillar;
     public int minFallHeight;
     public int maxFallHeightNoWater;
     public final int maxFallHeightBucket;
@@ -131,6 +132,7 @@ public class CalculationContext {
         this.allowDiagonalAscend = Baritone.settings().allowDiagonalAscend.value;
         this.allowDownward = Baritone.settings().allowDownward.value;
         this.crawlMode = Baritone.settings().crawlMineMode.value;
+        this.noPillar = Baritone.settings().noPillar.value;
         this.minFallHeight = 3; // Minimum fall height used by MovementFall
         this.maxFallHeightNoWater = Baritone.settings().maxFallHeightNoWater.value;
         this.maxFallHeightBucket = Baritone.settings().maxFallHeightBucket.value;
