@@ -46,6 +46,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().allowInventory.value = true;
         Baritone.settings().ticksBetweenInventoryMoves.value = 1;
         Baritone.settings().strictLiquidCheck.value = true;
+        Baritone.settings().antiLavaOnly.value = true;
         Baritone.settings().allowDownward.value = true;
         Baritone.settings().allowBreak.value = true;
         Baritone.settings().allowPlace.value = true;
@@ -103,20 +104,22 @@ public class AutoMineCommand extends Command {
                 boms.add(args.getDatatypeFor(ForBlockOptionalMeta.INSTANCE));
             }
         } else {
-            // Default: Kim Cương (Diamond), Lapis, Đá Đỏ (Redstone) - cả dạng thường và Deepslate
+            // Default: Kim Cương (Diamond), Lapis, Đá Đỏ (Redstone), Ngọc Lục Bảo (Emerald)
             boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
             boms.add(new BlockOptionalMeta(Blocks.LAPIS_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_LAPIS_ORE));
             boms.add(new BlockOptionalMeta(Blocks.REDSTONE_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_REDSTONE_ORE));
+            boms.add(new BlockOptionalMeta(Blocks.EMERALD_ORE));
+            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_EMERALD_ORE));
         }
 
         BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
         logDirect("§a================================================================");
         logDirect("§a[AutoMine] Đã kích hoạt chế độ Tự Động Đào Quặng & Hầm Thông Minh!");
         logDirect("§a  ✔ Tầng mục tiêu: §eY = -58 §a(Tự động đi xuống an toàn, né Lava 100%)");
-        logDirect("§a  ✔ Mục tiêu quặng: §bKim Cương§a, §9Lapis§a, §cĐá Đỏ");
+        logDirect("§a  ✔ Mục tiêu quặng: §bKim Cương§a, §9Lapis§a, §cĐá Đỏ§a, §2Ngọc Lục Bảo");
         logDirect("§a  ✔ Tự động TRÁNH ZOMBIE & QUÁI VẬT (Bán kính 10 block)");
         logDirect("§a  ✔ Tự động LẮP TOTEM BẤT TỬ vào tay phụ (Auto-Totem)");
         logDirect("§a  ✔ Tự động ĂN KHI ĐÓI (<5 cục thịt) & HỒI MÁU khi bị thương");

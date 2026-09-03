@@ -254,6 +254,13 @@ public final class Settings {
     public final Setting<Boolean> straightDownMine = new Setting<>(true);
 
     /**
+     * Chế độ Anti-Lava Only:
+     * Khi bật (mặc định true), Baritone CHỈ né Lava, tuyệt đối KHÔNG né Nước (Water).
+     * Cho phép bot tự do đào mượt mà qua các mạch nước ngầm, nước rơi hoặc quặng ngập nước mà không bị cản trở.
+     */
+    public final Setting<Boolean> antiLavaOnly = new Setting<>(true);
+
+    /**
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
      */
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(

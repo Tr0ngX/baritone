@@ -41,14 +41,14 @@ public class AutoMineScreen extends Screen implements Helper {
 
     private final Baritone baritone;
 
-    // Trạng thái quặng đã chọn
+    // Trạng thái quặng đã chọn (Mặc định chuẩn theo giao diện)
     public static boolean oreDiamond = true;
     public static boolean oreLapis = true;
     public static boolean oreRedstone = true;
-    public static boolean oreGold = true;
-    public static boolean oreIron = true;
+    public static boolean oreGold = false;
+    public static boolean oreIron = false;
     public static boolean oreEmerald = true;
-    public static boolean oreDebris = true;
+    public static boolean oreDebris = false;
     public static boolean oreCopper = false;
     public static boolean oreCoal = false;
     public static boolean oreQuartz = false;
@@ -127,7 +127,7 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightCol, startY + gap * 2, btnW, btnH, "Mob Avoid", optMobAvoid, () -> optMobAvoid = !optMobAvoid));
         addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 2, btnW, btnH, "Parkour", optParkour, () -> optParkour = !optParkour));
 
-        addRenderableWidget(createOptBtn(rightCol, startY + gap * 3, btnW, btnH, "Crawl (1-Block)", optCrawlMode, () -> optCrawlMode = !optCrawlMode));
+        addRenderableWidget(createOptBtn(rightCol, startY + gap * 3, btnW, btnH, "Crawl 1-Block", optCrawlMode, () -> optCrawlMode = !optCrawlMode));
         addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 3, btnW, btnH, "ARA* Engine", optZeroDelay, () -> optZeroDelay = !optZeroDelay));
 
         // Hàng 4 cột 2: Tầng Y và FPS Limit
@@ -296,6 +296,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().allowInventory.value = true;
         Baritone.settings().ticksBetweenInventoryMoves.value = 1; // 1 tick để server đồng bộ balo
         Baritone.settings().strictLiquidCheck.value = true;
+        Baritone.settings().antiLavaOnly.value = true;
         Baritone.settings().allowDownward.value = true;
         Baritone.settings().allowBreak.value = true;
         Baritone.settings().allowPlace.value = true;
