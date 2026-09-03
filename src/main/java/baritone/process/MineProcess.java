@@ -998,8 +998,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     // is an x-ray and it'll get caught
                     if (filter.has(bsi.get0(x, y, z))) {
                         BlockPos pos = new BlockPos(x, y, z);
-                        if ((Baritone.settings().legitMineIncludeDiagonals.value && knownOreLocations.stream().anyMatch(ore -> ore.distSqr(pos) <= 2 /* sq means this is pytha dist <= sqrt(2) */)) || RotationUtils.reachable(ctx, pos, fakedBlockReachDistance).isPresent()) {
-                            knownOreLocations.add(pos);
+                        if (!blacklist.contains(pos)) {
+                            if ((Baritone.settings().legitMineIncludeDiagonals.value && knownOreLocations.stream().anyMatch(ore -> ore.distSqr(pos) <= 2 /* sq means this is pytha dist <= sqrt(2) */)) || RotationUtils.reachable(ctx, pos, fakedBlockReachDistance).isPresent()) {
+                                knownOreLocations.add(pos);
+                            }
                         }
                     }
                 }
@@ -1039,6 +1041,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 .filter(pos -> pos.getY() >= Baritone.settings().minYLevelWhileMining.value + ctx.world.dimensionType().minY())
 
                 .filter(pos -> pos.getY() <= Baritone.settings().maxYLevelWhileMining.value)
+
+                .filter(pos -> !blacklist.contains(pos))
 
                 .sorted((a, b) -> {
                     BlockPos p = ctx.getBaritone().getPlayerContext().player().blockPosition();
@@ -1081,8 +1085,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return false;
         }
 
-        // bedrock above and below makes it implausible, otherwise we're good
-        return !(ctx.bsi.get0(pos.above()).getBlock() == Blocks.BEDROCK && ctx.bsi.get0(pos.below()).getBlock() == Blocks.BEDROCK);
+        // Cả trên và dưới đều là bedrock -> Không thể đào
+        if (ctx.bsi.get0(pos.above()).getBlock() == Blocks.BEDROCK && ctx.bsi.get0(pos.below()).getBlock() == Blocks.BEDROCK) {
+            return false;
+        }
+
+        // Bị bao vây bởi 4 mặt bedrock trở lên -> Không có không gian tiếp cận
+        int bedrockCount = 0;
+        for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) {
+            if (ctx.bsi.get0(pos.relative(dir)).getBlock() == Blocks.BEDROCK) {
+                bedrockCount++;
+            }
+        }
+        return bedrockCount < 4;
     }
 
     @Override
