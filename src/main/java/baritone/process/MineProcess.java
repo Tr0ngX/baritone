@@ -352,24 +352,30 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         int targetY = Baritone.settings().legitMineYLevel.value;
         int currentY = ctx.playerFeet().y;
 
-        // NGUYÊN TẮC BẮT BUỘC: Khi người chơi chưa xuống tới tầng Y=-58 (ví dụ đang ở mặt đất hoặc tầng cao):
-        // Đào bậc thang 1:1 (1 block tới = 1 block xuống) liên tục chúc xuống dưới cho đến khi chạm đúng tầng Y=-58!
-        // TUYỆT ĐỐI KHÔNG ĐÀO NGANG KHI CHƯA XUỐNG TỚI TẦNG NÀY!
+        // KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y=-58):
         if (currentY > targetY) {
-            if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-                net.minecraft.core.Direction dir = ctx.player().getDirection();
-                tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
-            }
-            int drop = Math.min(4, currentY - targetY);
-            // Tọa độ mục tiêu bậc thang thuần túy đi xuống (1:1 slope, không đào ngang)
-            BlockPos stairPos = new BlockPos(
-                    ctx.playerFeet().x + tunnelDirection.getStepX() * drop,
-                    currentY - drop,
-                    ctx.playerFeet().z + tunnelDirection.getStepZ() * drop
-            );
             boolean fr = forceReroute;
             forceReroute = false;
-            return new PathingCommand(new GoalTwoBlocks(stairPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+
+            if (Baritone.settings().straightDownMine.value) {
+                // CHẾ ĐỘ 1: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI (SHAFT DOWN) SIÊU TỐC
+                // Giữ nguyên tọa độ X, Z hiện tại, đào thẳng một mạch xuống tầng targetY!
+                BlockPos shaftTarget = new BlockPos(ctx.playerFeet().x, targetY, ctx.playerFeet().z);
+                return new PathingCommand(new GoalTwoBlocks(shaftTarget), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            } else {
+                // CHẾ ĐỘ 2: ĐÀO CẦU THANG DỐC 1:1 (STAIRCASE DESCENT)
+                if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                    net.minecraft.core.Direction dir = ctx.player().getDirection();
+                    tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                }
+                int drop = Math.min(4, currentY - targetY);
+                BlockPos stairPos = new BlockPos(
+                        ctx.playerFeet().x + tunnelDirection.getStepX() * drop,
+                        currentY - drop,
+                        ctx.playerFeet().z + tunnelDirection.getStepZ() * drop
+                );
+                return new PathingCommand(new GoalTwoBlocks(stairPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            }
         }
 
         // KHI ĐÃ TỚI ĐÚNG TẦNG TARGET Y (Y <= -58):

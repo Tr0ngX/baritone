@@ -246,6 +246,14 @@ public final class Settings {
     public final Setting<Boolean> noPillar = new Setting<>(false);
 
     /**
+     * Chế độ Đào thẳng đứng xuống (Shaft Down Mode):
+     * Khi chưa đạt tầng Y chỉ định (ví dụ Y=-58), đào thẳng đứng một mạch xuống tại đúng tọa độ (X, Z) hiện tại
+     * thay vì đào bậc thang chéo, giúp tiết kiệm thời gian và độ bền cuốc gấp 3-4 lần.
+     * Có thể bật/tắt trên menu F4 ("Shaft Down").
+     */
+    public final Setting<Boolean> straightDownMine = new Setting<>(true);
+
+    /**
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
      */
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(

@@ -63,6 +63,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optZeroDelay = true;
     public static boolean optCrawlMode = false;
     public static boolean optTunnelBhop = true;
+    public static boolean optShaftDown = true;
     public static int optTargetY = -58;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
@@ -154,8 +155,9 @@ public class AutoMineScreen extends Screen implements Helper {
             this.rebuildWidgets();
         }).bounds(rightCol + 102, startY + gap * 4, btnW, btnH).build());
 
-        // Hàng 5 cột 2: Tunnel Bhop (2-Block)
-        addRenderableWidget(createOptBtn(rightCol, startY + gap * 5, optW, btnH, "Tunnel Bhop (2-Block)", optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
+        // Hàng 5 cột 2: Tunnel Bhop & Shaft Down
+        addRenderableWidget(createOptBtn(rightCol, startY + gap * 5, btnW, btnH, "Tunnel Bhop", optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
+        addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 5, btnW, btnH, "Shaft Down", optShaftDown, () -> optShaftDown = !optShaftDown));
 
 
         // HÀNG DƯỚI: NÚT THAO TÁC (Action Controls)
@@ -262,6 +264,7 @@ public class AutoMineScreen extends Screen implements Helper {
 
         Baritone.settings().crawlMineMode.value = optCrawlMode;
         Baritone.settings().tunnelSprintJump.value = optTunnelBhop;
+        Baritone.settings().straightDownMine.value = optShaftDown;
         
         int targetY = optTargetY == 999 ? (playerCtx.player() != null ? playerCtx.playerFeet().y : -58) : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;
