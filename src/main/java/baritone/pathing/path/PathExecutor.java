@@ -375,6 +375,13 @@ public class PathExecutor implements IPathExecutor, Helper {
             return true;
         }
 
+        // AUTO SPRINT: Tự động chạy nhanh khi di chuyển ngang trên mặt phẳng (Traverse / Diagonal)
+        if (Baritone.settings().allowSprint.value && (current instanceof MovementTraverse || current instanceof MovementDiagonal)) {
+            if (!ctx.player().horizontalCollision && !ctx.player().isCrouching()) {
+                return true;
+            }
+        }
+
         // however, descend and ascend don't request sprinting, because they don't know the context of what movement comes after it
         if (current instanceof MovementDescend) {
 

@@ -65,6 +65,8 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optCrawlMode = false;
     public static boolean optTunnelBhop = true;
     public static boolean optShaftDown = true;
+    public static boolean optWaterCheck = false;
+    public static boolean optAutoSprint = true;
     public static int optTargetY = -58;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
@@ -127,8 +129,8 @@ public class AutoMineScreen extends Screen implements Helper {
         int btnPad = 6;
         btnW = (colW - 16 - btnPad) / 2;
         btnH = 20;
-        gap = this.height < 290 ? 22 : 24;
-        startY = this.height < 290 ? 54 : 62;
+        gap = this.height < 320 ? 21 : 23;
+        startY = this.height < 320 ? 50 : 56;
 
         leftSub1 = leftCardX + 8;
         leftSub2 = leftSub1 + btnW + btnPad;
@@ -161,6 +163,34 @@ public class AutoMineScreen extends Screen implements Helper {
             oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
             this.rebuildWidgets();
         }).bounds(leftSub2, startY + gap * 5, btnW, btnH).build());
+
+        addRenderableWidget(Button.builder(Component.literal("[ INVERT ]"), b -> {
+            oreDiamond = !oreDiamond;
+            oreLapis = !oreLapis;
+            oreRedstone = !oreRedstone;
+            oreGold = !oreGold;
+            oreIron = !oreIron;
+            oreEmerald = !oreEmerald;
+            oreDebris = !oreDebris;
+            oreCopper = !oreCopper;
+            oreCoal = !oreCoal;
+            oreQuartz = !oreQuartz;
+            this.rebuildWidgets();
+        }).bounds(leftSub1, startY + gap * 6, btnW, btnH).build());
+
+        addRenderableWidget(Button.builder(Component.literal("[ RESET ]"), b -> {
+            oreDiamond = true;
+            oreLapis = true;
+            oreRedstone = true;
+            oreGold = false;
+            oreIron = false;
+            oreEmerald = true;
+            oreDebris = false;
+            oreCopper = false;
+            oreCoal = false;
+            oreQuartz = false;
+            this.rebuildWidgets();
+        }).bounds(leftSub2, startY + gap * 6, btnW, btnH).build());
 
 
         // CỘT 2: CÀI ĐẶT TỰ ĐỘNG & SINH TỒN (Bố cục đôi cân xứng)
@@ -205,9 +235,13 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightSub1, startY + gap * 5, btnW, btnH, "Tunnel Bhop", optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
         addRenderableWidget(createOptBtn(rightSub2, startY + gap * 5, btnW, btnH, "Shaft Down", optShaftDown, () -> optShaftDown = !optShaftDown));
 
+        // Hàng 6 cột 2: Water Check & Auto-Sprint
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 6, btnW, btnH, "Water Check", optWaterCheck, () -> optWaterCheck = !optWaterCheck));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 6, btnW, btnH, "Auto-Sprint", optAutoSprint, () -> optAutoSprint = !optAutoSprint));
+
 
         // HÀNG DƯỚI: NÚT THAO TÁC (Responsive Action Controls)
-        panelBottom = startY + gap * 6 + 4;
+        panelBottom = startY + gap * 7 + 4;
         bottomY = panelBottom + 8;
         actionGap = 6;
         actionBtnW = (panelTotalW - (actionGap * 3)) / 4;
@@ -346,13 +380,14 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().ticksBetweenInventoryMoves.value = 1; // 1 tick để server đồng bộ balo
         Baritone.settings().strictLiquidCheck.value = true;
         Baritone.settings().antiLavaOnly.value = true;
+        Baritone.settings().waterCheck.value = optWaterCheck;
         Baritone.settings().allowDownward.value = true;
         Baritone.settings().allowBreak.value = true;
         Baritone.settings().allowPlace.value = true;
         Baritone.settings().allowPlaceInFluidsSource.value = true;
         Baritone.settings().allowPlaceInFluidsFlow.value = true;
-        Baritone.settings().allowSprint.value = false; // TẮT SPRINT khi đào: Người chơi đi bộ bình thường, chống 100% việc lao vào block chưa kịp vỡ bị dựt lùi (rubberband)
-        Baritone.settings().sprintAscends.value = false; // Tắt sprint khi nhảy dốc để tránh anti-cheat giật lùi
+        Baritone.settings().allowSprint.value = optAutoSprint;
+        Baritone.settings().sprintAscends.value = optAutoSprint;
         Baritone.settings().overshootTraverse.value = false; // Tắt cắt cua để không va chạm block chưa kịp vỡ
         Baritone.settings().assumeStep.value = false; // TẮT Step Hack để server không giật lùi (Far away from path)
         Baritone.settings().allowWaterBucketFall.value = true;

@@ -95,9 +95,29 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true; // dont break a block that is adjacent to unsupported gravel because it can cause really weird stuff
         }
 
-        // TỰ ĐỘNG BẬT & KHÓA CHẶT: CHỈ NÉ LAVA, TUYỆT ĐỐI KHÔNG NÉ NƯỚC (WATER)!
-        // Nước an toàn 100%, cho phép đào xuyên qua và đào cạnh nước thoải mái.
-        return isLava(state);
+        // LAVA: Luôn luôn né 100% để chống chết cháy & bảo vệ quặng
+        if (isLava(state)) {
+            return true;
+        }
+
+        // WATER CHECK (Bật/tắt được theo yêu cầu người dùng):
+        // Nếu BẬT (waterCheck = true) -> Né cả nước khi đào
+        // Nếu TẮT (waterCheck = false - Mặc định) -> Nước an toàn 100%, đào xuyên qua & cạnh nước thoải mái!
+        if (Baritone.settings().waterCheck.value) {
+            if (block instanceof LiquidBlock) {
+                if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
+                    return true;
+                }
+                int level = state.getValue(LiquidBlock.LEVEL);
+                if (level == 0) {
+                    return true;
+                }
+                return !(bsi.get0(x, y - 1, z).getBlock() instanceof LiquidBlock);
+            }
+            return !state.getFluidState().isEmpty();
+        }
+
+        return false;
     }
 
     static boolean canWalkThrough(IPlayerContext ctx, BetterBlockPos pos) {
