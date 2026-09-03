@@ -47,7 +47,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().ticksBetweenInventoryMoves.value = 1;
         Baritone.settings().strictLiquidCheck.value = true;
         Baritone.settings().antiLavaOnly.value = true;
-        Baritone.settings().waterCheck.value = false;
+        Baritone.settings().waterCheck.value = true;
         Baritone.settings().allowDownward.value = true;
         Baritone.settings().allowBreak.value = true;
         Baritone.settings().allowPlace.value = true;

@@ -65,7 +65,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optCrawlMode = false;
     public static boolean optTunnelBhop = true;
     public static boolean optShaftDown = true;
-    public static boolean optWaterCheck = false;
+    public static boolean optWaterCheck = true;
     public static boolean optAutoSprint = true;
     public static boolean optFastBreak = true;
     public static boolean optHideSwing = false;

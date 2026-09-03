@@ -281,7 +281,7 @@ public final class Settings {
      * Mặc định = false (Chỉ né Lava, không né Nước).
      * Khi người dùng BẬT trên menu F4 ("Water Check [ON]"), bot sẽ né cả nước khi đào.
      */
-    public final Setting<Boolean> waterCheck = new Setting<>(false);
+    public final Setting<Boolean> waterCheck = new Setting<>(true);
 
     /**
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
