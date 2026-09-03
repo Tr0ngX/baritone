@@ -22,6 +22,7 @@ import baritone.api.BaritoneAPI;
 import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -96,6 +97,13 @@ public class AutoMineScreen extends Screen implements Helper {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    @Override
+    public void resize(Minecraft minecraft, int width, int height) {
+        this.width = width;
+        this.height = height;
+        this.rebuildWidgets();
     }
 
     @Override
