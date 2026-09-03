@@ -71,9 +71,7 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true;
         }
         Block b = state.getBlock();
-        boolean avoidIce = !Baritone.settings().antiLavaOnly.value && b == Blocks.ICE;
         return Baritone.settings().blocksToDisallowBreaking.value.contains(b)
-                || avoidIce
                 || b instanceof InfestedBlock // obvious reasons
                 // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
                 || avoidAdjacentBreaking(bsi, x, y + 1, z, true)
@@ -97,25 +95,9 @@ public interface MovementHelper extends ActionCosts, Helper {
             return true; // dont break a block that is adjacent to unsupported gravel because it can cause really weird stuff
         }
 
-        // CHẾ ĐỘ CHỈ ANTI LAVA: Nếu bật antiLavaOnly (mặc định = true), CHỈ né Lava, tuyệt đối không né nước!
-        if (Baritone.settings().antiLavaOnly.value) {
-            return isLava(state);
-        }
-
-        // only pure liquids for now
-        // waterlogged blocks can have closed bottom sides and such
-        if (block instanceof LiquidBlock) {
-            if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
-                return true;
-            }
-            int level = state.getValue(LiquidBlock.LEVEL);
-            if (level == 0) {
-                return true; // source blocks like to flow horizontally
-            }
-            // everything else will prefer flowing down
-            return !(bsi.get0(x, y - 1, z).getBlock() instanceof LiquidBlock); // assume everything is in a static state
-        }
-        return !state.getFluidState().isEmpty();
+        // TỰ ĐỘNG BẬT & KHÓA CHẶT: CHỈ NÉ LAVA, TUYỆT ĐỐI KHÔNG NÉ NƯỚC (WATER)!
+        // Nước an toàn 100%, cho phép đào xuyên qua và đào cạnh nước thoải mái.
+        return isLava(state);
     }
 
     static boolean canWalkThrough(IPlayerContext ctx, BetterBlockPos pos) {

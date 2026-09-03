@@ -68,6 +68,26 @@ public class AutoMineScreen extends Screen implements Helper {
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
 
+    // Responsive Layout Fields
+    private int panelTotalW;
+    private int panelHalfW;
+    private int colW;
+    private int leftCardX;
+    private int rightCardX;
+    private int btnW;
+    private int btnH;
+    private int startY;
+    private int gap;
+    private int leftSub1;
+    private int leftSub2;
+    private int rightSub1;
+    private int rightSub2;
+    private int panelBottom;
+    private int bottomY;
+    private int actionBtnW;
+    private int actionGap;
+    private int actionStartX;
+
     public AutoMineScreen(Baritone baritone) {
         super(Component.literal("BARITONE CONTROL PANEL"));
         this.baritone = baritone;
@@ -82,53 +102,71 @@ public class AutoMineScreen extends Screen implements Helper {
     protected void init() {
         super.init();
         int cx = this.width / 2;
-        int leftCol = cx - 215;
-        int rightCol = cx + 15;
-        int startY = 62;
-        int btnW = 96;
-        int btnH = 20;
-        int gap = 24;
+
+        // Tự động thích ứng co giãn linh hoạt theo độ rộng cửa sổ (Responsive Width)
+        panelTotalW = Math.max(430, Math.min((int) (this.width * 0.85f), 700));
+        if (panelTotalW > this.width - 24) {
+            panelTotalW = this.width - 24;
+        }
+        panelHalfW = panelTotalW / 2;
+        int cardGap = 12;
+        colW = (panelTotalW - cardGap) / 2;
+
+        leftCardX = cx - panelHalfW;
+        rightCardX = leftCardX + colW + cardGap;
+
+        // Mỗi cột Card chứa 2 nút con cân đối
+        int btnPad = 6;
+        btnW = (colW - 16 - btnPad) / 2;
+        btnH = 20;
+        gap = this.height < 290 ? 22 : 24;
+        startY = this.height < 290 ? 54 : 62;
+
+        leftSub1 = leftCardX + 8;
+        leftSub2 = leftSub1 + btnW + btnPad;
+
+        rightSub1 = rightCardX + 8;
+        rightSub2 = rightSub1 + btnW + btnPad;
 
         // CỘT 1: CHỌN QUẶNG (Color-coded Ore Buttons)
-        addRenderableWidget(createOreBtn(leftCol, startY, btnW, btnH, "Diamond", 0x38BDF8, oreDiamond, () -> oreDiamond = !oreDiamond));
-        addRenderableWidget(createOreBtn(leftCol + 102, startY, btnW, btnH, "Lapis", 0x60A5FA, oreLapis, () -> oreLapis = !oreLapis));
+        addRenderableWidget(createOreBtn(leftSub1, startY, btnW, btnH, "Diamond", 0x38BDF8, oreDiamond, () -> oreDiamond = !oreDiamond));
+        addRenderableWidget(createOreBtn(leftSub2, startY, btnW, btnH, "Lapis", 0x60A5FA, oreLapis, () -> oreLapis = !oreLapis));
 
-        addRenderableWidget(createOreBtn(leftCol, startY + gap, btnW, btnH, "Redstone", 0xF87171, oreRedstone, () -> oreRedstone = !oreRedstone));
-        addRenderableWidget(createOreBtn(leftCol + 102, startY + gap, btnW, btnH, "Gold Ore", 0xFBBF24, oreGold, () -> oreGold = !oreGold));
+        addRenderableWidget(createOreBtn(leftSub1, startY + gap, btnW, btnH, "Redstone", 0xF87171, oreRedstone, () -> oreRedstone = !oreRedstone));
+        addRenderableWidget(createOreBtn(leftSub2, startY + gap, btnW, btnH, "Gold Ore", 0xFBBF24, oreGold, () -> oreGold = !oreGold));
 
-        addRenderableWidget(createOreBtn(leftCol, startY + gap * 2, btnW, btnH, "Iron Ore", 0xE2E8F0, oreIron, () -> oreIron = !oreIron));
-        addRenderableWidget(createOreBtn(leftCol + 102, startY + gap * 2, btnW, btnH, "Emerald", 0x34D399, oreEmerald, () -> oreEmerald = !oreEmerald));
+        addRenderableWidget(createOreBtn(leftSub1, startY + gap * 2, btnW, btnH, "Iron Ore", 0xE2E8F0, oreIron, () -> oreIron = !oreIron));
+        addRenderableWidget(createOreBtn(leftSub2, startY + gap * 2, btnW, btnH, "Emerald", 0x34D399, oreEmerald, () -> oreEmerald = !oreEmerald));
 
-        addRenderableWidget(createOreBtn(leftCol, startY + gap * 3, btnW, btnH, "Debris", 0xC084FC, oreDebris, () -> oreDebris = !oreDebris));
-        addRenderableWidget(createOreBtn(leftCol + 102, startY + gap * 3, btnW, btnH, "Copper", 0xFB923C, oreCopper, () -> oreCopper = !oreCopper));
+        addRenderableWidget(createOreBtn(leftSub1, startY + gap * 3, btnW, btnH, "Debris", 0xC084FC, oreDebris, () -> oreDebris = !oreDebris));
+        addRenderableWidget(createOreBtn(leftSub2, startY + gap * 3, btnW, btnH, "Copper", 0xFB923C, oreCopper, () -> oreCopper = !oreCopper));
 
-        addRenderableWidget(createOreBtn(leftCol, startY + gap * 4, btnW, btnH, "Coal Ore", 0x94A3B8, oreCoal, () -> oreCoal = !oreCoal));
-        addRenderableWidget(createOreBtn(leftCol + 102, startY + gap * 4, btnW, btnH, "Quartz", 0xF1F5F9, oreQuartz, () -> oreQuartz = !oreQuartz));
+        addRenderableWidget(createOreBtn(leftSub1, startY + gap * 4, btnW, btnH, "Coal Ore", 0x94A3B8, oreCoal, () -> oreCoal = !oreCoal));
+        addRenderableWidget(createOreBtn(leftSub2, startY + gap * 4, btnW, btnH, "Quartz", 0xF1F5F9, oreQuartz, () -> oreQuartz = !oreQuartz));
 
         addRenderableWidget(Button.builder(Component.literal("[ ALL ]"), b -> {
             oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = true;
             this.rebuildWidgets();
-        }).bounds(leftCol, startY + gap * 5, btnW, btnH).build());
+        }).bounds(leftSub1, startY + gap * 5, btnW, btnH).build());
 
         addRenderableWidget(Button.builder(Component.literal("[ NONE ]"), b -> {
             oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
             this.rebuildWidgets();
-        }).bounds(leftCol + 102, startY + gap * 5, btnW, btnH).build());
+        }).bounds(leftSub2, startY + gap * 5, btnW, btnH).build());
 
 
         // CỘT 2: CÀI ĐẶT TỰ ĐỘNG & SINH TỒN (Bố cục đôi cân xứng)
-        int optW = 200;
-        addRenderableWidget(createOptBtn(rightCol, startY, btnW, btnH, "Auto-Tool", optAutoTool, () -> optAutoTool = !optAutoTool));
-        addRenderableWidget(createOptBtn(rightCol + 102, startY, btnW, btnH, "Auto-Eat", optAutoEat, () -> optAutoEat = !optAutoEat));
+        addRenderableWidget(createOptBtn(rightSub1, startY, btnW, btnH, "Auto-Tool", optAutoTool, () -> optAutoTool = !optAutoTool));
+        addRenderableWidget(createOptBtn(rightSub2, startY, btnW, btnH, "Auto-Eat", optAutoEat, () -> optAutoEat = !optAutoEat));
 
-        addRenderableWidget(createOptBtn(rightCol, startY + gap, btnW, btnH, "Auto-Totem", optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        addRenderableWidget(createOptBtn(rightCol + 102, startY + gap, btnW, btnH, "Auto-Drop", optAutoDrop, () -> optAutoDrop = !optAutoDrop));
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap, btnW, btnH, "Auto-Totem", optAutoTotem, () -> optAutoTotem = !optAutoTotem));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap, btnW, btnH, "Auto-Drop", optAutoDrop, () -> optAutoDrop = !optAutoDrop));
 
-        addRenderableWidget(createOptBtn(rightCol, startY + gap * 2, btnW, btnH, "Mob Avoid", optMobAvoid, () -> optMobAvoid = !optMobAvoid));
-        addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 2, btnW, btnH, "Parkour", optParkour, () -> optParkour = !optParkour));
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 2, btnW, btnH, "Mob Avoid", optMobAvoid, () -> optMobAvoid = !optMobAvoid));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 2, btnW, btnH, "Parkour", optParkour, () -> optParkour = !optParkour));
 
-        addRenderableWidget(createOptBtn(rightCol, startY + gap * 3, btnW, btnH, "Crawl 1-Block", optCrawlMode, () -> optCrawlMode = !optCrawlMode));
-        addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 3, btnW, btnH, "ARA* Engine", optZeroDelay, () -> optZeroDelay = !optZeroDelay));
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 3, btnW, btnH, "Crawl 1-Block", optCrawlMode, () -> optCrawlMode = !optCrawlMode));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 3, btnW, btnH, "ARA* Engine", optZeroDelay, () -> optZeroDelay = !optZeroDelay));
 
         // Hàng 4 cột 2: Tầng Y và FPS Limit
         String yLabel = optTargetY == 999 ? "Y-Level: Current" : "Y-Level: " + optTargetY;
@@ -138,7 +176,7 @@ public class AutoMineScreen extends Screen implements Helper {
             else if (optTargetY == 11) optTargetY = 999;
             else optTargetY = -58;
             this.rebuildWidgets();
-        }).bounds(rightCol, startY + gap * 4, btnW, btnH).build());
+        }).bounds(rightSub1, startY + gap * 4, btnW, btnH).build());
 
         int currentLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
         String fpsLimitText = currentLimit >= 260 ? "FPS: Unlimited" : "FPS: " + currentLimit;
@@ -153,35 +191,38 @@ public class AutoMineScreen extends Screen implements Helper {
             }
             baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
             this.rebuildWidgets();
-        }).bounds(rightCol + 102, startY + gap * 4, btnW, btnH).build());
+        }).bounds(rightSub2, startY + gap * 4, btnW, btnH).build());
 
         // Hàng 5 cột 2: Tunnel Bhop & Shaft Down
-        addRenderableWidget(createOptBtn(rightCol, startY + gap * 5, btnW, btnH, "Tunnel Bhop", optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
-        addRenderableWidget(createOptBtn(rightCol + 102, startY + gap * 5, btnW, btnH, "Shaft Down", optShaftDown, () -> optShaftDown = !optShaftDown));
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 5, btnW, btnH, "Tunnel Bhop", optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 5, btnW, btnH, "Shaft Down", optShaftDown, () -> optShaftDown = !optShaftDown));
 
 
-        // HÀNG DƯỚI: NÚT THAO TÁC (Action Controls)
-        int bottomY = startY + gap * 7 + 10;
-        int actionBtnW = 98;
+        // HÀNG DƯỚI: NÚT THAO TÁC (Responsive Action Controls)
+        panelBottom = startY + gap * 6 + 4;
+        bottomY = panelBottom + 8;
+        actionGap = 6;
+        actionBtnW = (panelTotalW - (actionGap * 3)) / 4;
+        actionStartX = leftCardX;
 
         addRenderableWidget(Button.builder(Component.literal("START MINING"), b -> {
             startAutoMine();
             this.onClose();
-        }).bounds(cx - 204, bottomY, actionBtnW, 22).build());
+        }).bounds(actionStartX, bottomY, actionBtnW, 22).build());
 
         addRenderableWidget(Button.builder(Component.literal("CHOP WOOD \uD83E\uDE93"), b -> {
             startAutoChop();
             this.onClose();
-        }).bounds(cx - 100, bottomY, actionBtnW, 22).build());
+        }).bounds(actionStartX + (actionBtnW + actionGap), bottomY, actionBtnW, 22).build());
 
         addRenderableWidget(Button.builder(Component.literal("STOP"), b -> {
             stopAutoMine();
             this.onClose();
-        }).bounds(cx + 4, bottomY, actionBtnW, 22).build());
+        }).bounds(actionStartX + (actionBtnW + actionGap) * 2, bottomY, actionBtnW, 22).build());
 
         addRenderableWidget(Button.builder(Component.literal("CLOSE (F4)"), b -> {
             this.onClose();
-        }).bounds(cx + 108, bottomY, actionBtnW, 22).build());
+        }).bounds(actionStartX + (actionBtnW + actionGap) * 3, bottomY, actionBtnW, 22).build());
     }
 
     private Button createOreBtn(int x, int y, int w, int h, String name, int activeColor, boolean state, Runnable toggle) {
@@ -430,8 +471,8 @@ public class AutoMineScreen extends Screen implements Helper {
 
         int cx = this.width / 2;
 
-        // Tiêu đề Header với thanh viền neon
-        graphics.fill(cx - 225, 6, cx + 225, 7, 0xFF38BDF8);
+        // Tiêu đề Header với thanh viền neon responsive
+        graphics.fill(cx - panelHalfW, 6, cx + panelHalfW, 7, 0xFF38BDF8);
         graphics.drawCenteredString(this.font, "BARITONE NEXTGEN CONTROL PANEL", cx, 10, 0xFFFFFF);
 
         // Hardware Telemetry HUD (RAM / CPU / GPU / FPS)
@@ -445,35 +486,34 @@ public class AutoMineScreen extends Screen implements Helper {
         if (gpu == null || gpu.trim().isEmpty()) {
             gpu = "Unknown GPU";
         }
-        if (gpu.length() > 22) {
-            gpu = gpu.substring(0, 22) + "..";
+        if (gpu.length() > 24) {
+            gpu = gpu.substring(0, 24) + "..";
         }
         int curFps = baritone.getPlayerContext().minecraft().getFps();
         int curLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
         String limitStr = curLimit >= 260 ? "Unlimited" : curLimit + " FPS";
 
-        // Vẽ Telemetry Card với viền kính mỏng
-        graphics.fill(cx - 225, 23, cx + 225, 41, 0x900F172A);
-        drawOutline(graphics, cx - 225, 23, 450, 18, 0x3038BDF8);
+        // Vẽ Telemetry Card với viền kính mỏng co giãn responsive
+        graphics.fill(cx - panelHalfW, 23, cx + panelHalfW, 41, 0x900F172A);
+        drawOutline(graphics, cx - panelHalfW, 23, panelTotalW, 18, 0x3038BDF8);
 
         String perfLine = "RAM: " + usedMem + "/" + maxMem + "MB (" + usedPct + "%) | CPU: " + cores + " Cores | GPU: " + gpu + " | " + curFps + " FPS (" + limitStr + ")";
         graphics.drawCenteredString(this.font, perfLine, cx, 28, 0x34D399);
 
         // Khối Card Cột Trái (TARGET ORES)
-        int panelBottom = this.height - 40;
-        graphics.fill(cx - 225, 47, cx - 8, panelBottom, 0x600F172A);
-        drawOutline(graphics, cx - 225, 47, 217, panelBottom - 47, 0x20FFFFFF);
-        graphics.fill(cx - 225, 47, cx - 8, 48, 0xFF38BDF8); // Cyan Accent Header Line
-        graphics.drawString(this.font, "TARGET ORES & VEINS", cx - 215, 51, 0x38BDF8);
+        graphics.fill(leftCardX, 47, leftCardX + colW, panelBottom, 0x600F172A);
+        drawOutline(graphics, leftCardX, 47, colW, panelBottom - 47, 0x20FFFFFF);
+        graphics.fill(leftCardX, 47, leftCardX + colW, 48, 0xFF38BDF8); // Cyan Accent Header Line
+        graphics.drawString(this.font, "TARGET ORES & VEINS", leftCardX + 10, 51, 0x38BDF8);
 
         // Khối Card Cột Phải (AUTOMATION & SAFETY)
-        graphics.fill(cx + 8, 47, cx + 225, panelBottom, 0x600F172A);
-        drawOutline(graphics, cx + 8, 47, 217, panelBottom - 47, 0x20FFFFFF);
-        graphics.fill(cx + 8, 47, cx + 225, 48, 0xFF10B981); // Emerald Accent Header Line
-        graphics.drawString(this.font, "AUTOMATION & RAGE ENGINE", cx + 18, 51, 0x34D399);
+        graphics.fill(rightCardX, 47, rightCardX + colW, panelBottom, 0x600F172A);
+        drawOutline(graphics, rightCardX, 47, colW, panelBottom - 47, 0x20FFFFFF);
+        graphics.fill(rightCardX, 47, rightCardX + colW, 48, 0xFF10B981); // Emerald Accent Header Line
+        graphics.drawString(this.font, "AUTOMATION & RAGE ENGINE", rightCardX + 10, 51, 0x34D399);
 
         // Footer Telemetry Status Line
-        String footerStatus = "STATUS: RAGE ENGINE READY | ARA* ANYTIME (EPS=3.0) | 0ms DELAY";
+        String footerStatus = "STATUS: RAGE ENGINE READY | ARA* ANYTIME (EPS=3.0) | ANTI-LAVA 100% | 0ms DELAY";
         graphics.drawCenteredString(this.font, footerStatus, cx, this.height - 14, 0x64748B);
 
         super.render(graphics, mouseX, mouseY, partialTicks);
