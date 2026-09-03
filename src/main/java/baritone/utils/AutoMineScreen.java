@@ -67,6 +67,10 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optShaftDown = true;
     public static boolean optWaterCheck = false;
     public static boolean optAutoSprint = true;
+    public static boolean optFastBreak = true;
+    public static boolean optFastPlace = true;
+    public static boolean optOvershoot = true;
+    public static boolean optWaterSprint = true;
     public static int optTargetY = -58;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
@@ -128,9 +132,9 @@ public class AutoMineScreen extends Screen implements Helper {
         // Mỗi cột Card chứa 2 nút con cân đối
         int btnPad = 6;
         btnW = (colW - 16 - btnPad) / 2;
-        btnH = 20;
-        gap = this.height < 320 ? 21 : 23;
-        startY = this.height < 320 ? 50 : 56;
+        btnH = 19;
+        gap = this.height < 320 ? 20 : 22;
+        startY = this.height < 320 ? 46 : 52;
 
         leftSub1 = leftCardX + 8;
         leftSub2 = leftSub1 + btnW + btnPad;
@@ -192,6 +196,10 @@ public class AutoMineScreen extends Screen implements Helper {
             this.rebuildWidgets();
         }).bounds(leftSub2, startY + gap * 6, btnW, btnH).build());
 
+        // Hàng 7 cột 1: Overshoot & Water Sprint
+        addRenderableWidget(createOptBtn(leftSub1, startY + gap * 7, btnW, btnH, "Overshoot", optOvershoot, () -> optOvershoot = !optOvershoot));
+        addRenderableWidget(createOptBtn(leftSub2, startY + gap * 7, btnW, btnH, "Water Sprint", optWaterSprint, () -> optWaterSprint = !optWaterSprint));
+
 
         // CỘT 2: CÀI ĐẶT TỰ ĐỘNG & SINH TỒN (Bố cục đôi cân xứng)
         addRenderableWidget(createOptBtn(rightSub1, startY, btnW, btnH, "Auto-Tool", optAutoTool, () -> optAutoTool = !optAutoTool));
@@ -239,9 +247,13 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightSub1, startY + gap * 6, btnW, btnH, "Water Check", optWaterCheck, () -> optWaterCheck = !optWaterCheck));
         addRenderableWidget(createOptBtn(rightSub2, startY + gap * 6, btnW, btnH, "Auto-Sprint", optAutoSprint, () -> optAutoSprint = !optAutoSprint));
 
+        // Hàng 7 cột 2: FastBreak & FastPlace
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 7, btnW, btnH, "FastBreak", optFastBreak, () -> optFastBreak = !optFastBreak));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 7, btnW, btnH, "FastPlace", optFastPlace, () -> optFastPlace = !optFastPlace));
+
 
         // HÀNG DƯỚI: NÚT THAO TÁC (Responsive Action Controls)
-        panelBottom = startY + gap * 7 + 4;
+        panelBottom = startY + gap * 8 + 4;
         bottomY = panelBottom + 8;
         actionGap = 6;
         actionBtnW = (panelTotalW - (actionGap * 3)) / 4;
@@ -388,7 +400,8 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().allowPlaceInFluidsFlow.value = true;
         Baritone.settings().allowSprint.value = optAutoSprint;
         Baritone.settings().sprintAscends.value = optAutoSprint;
-        Baritone.settings().overshootTraverse.value = false; // Tắt cắt cua để không va chạm block chưa kịp vỡ
+        Baritone.settings().overshootTraverse.value = optOvershoot; // BẬT CẮT CUA TỐC ĐỘ CAO
+        Baritone.settings().sprintInWater.value = optWaterSprint; // BẬT SPRINT TRONG NƯỚC
         Baritone.settings().assumeStep.value = false; // TẮT Step Hack để server không giật lùi (Far away from path)
         Baritone.settings().allowWaterBucketFall.value = true;
 
@@ -402,9 +415,10 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().extendCacheOnThreshold.value = true;
         Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L; // Chờ 200ms để quặng rơi hút vào balo
 
-        // Tốc độ đập block chuẩn Server (Tránh Anti-Cheat hủy packet / rollback block)
-        Baritone.settings().blockBreakSpeed.value = 6; // 6 ticks = Chuẩn gốc 100% của Baritone, chống dựt về do FastBreak
-        Baritone.settings().blockBreakAdditionalPenalty.value = 2.0; // Chuẩn gốc Baritone
+        // Tốc độ đập block siêu tốc (FastBreak) & Tốc độ đặt block
+        Baritone.settings().blockBreakSpeed.value = optFastBreak ? 1 : 6; // 1 tick FastBreak siêu tốc
+        Baritone.settings().rightClickSpeed.value = optFastPlace ? 1 : 4; // 1 tick đặt block tức thì (0.05s)
+        Baritone.settings().blockBreakAdditionalPenalty.value = optFastBreak ? 0.0 : 2.0;
         Baritone.settings().blockPlacementPenalty.value = 0.0;
         Baritone.settings().jumpPenalty.value = 0.0;
 
@@ -414,8 +428,8 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().planningTickLookahead.value = 400; // Tính trước liên tục
         Baritone.settings().mineGoalUpdateInterval.value = 5; // 5 ticks chuẩn gốc Baritone (chống giật cục và chống đổi hướng nửa chừng)
         Baritone.settings().splicePath.value = true;
-        Baritone.settings().primaryTimeoutMS.value = 4000L;
-        Baritone.settings().failureTimeoutMS.value = 6000L;
+        Baritone.settings().primaryTimeoutMS.value = 1200L; // Giảm xuống 1.2s để không bao giờ đứng yên đơ nhìn đường màu xanh
+        Baritone.settings().failureTimeoutMS.value = 2000L;
 
         // Sinh tồn & Né quái vật (God Mode)
         Baritone.settings().autoEat.value = optAutoEat;

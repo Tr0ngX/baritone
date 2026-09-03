@@ -55,7 +55,8 @@ public class AutoMineCommand extends Command {
         Baritone.settings().allowPlaceInFluidsFlow.value = true;
         Baritone.settings().allowSprint.value = true;
         Baritone.settings().sprintAscends.value = true;
-        Baritone.settings().overshootTraverse.value = false;
+        Baritone.settings().overshootTraverse.value = true;
+        Baritone.settings().sprintInWater.value = true;
         Baritone.settings().assumeStep.value = false;
         Baritone.settings().allowWaterBucketFall.value = true;
 
@@ -68,8 +69,9 @@ public class AutoMineCommand extends Command {
         Baritone.settings().extendCacheOnThreshold.value = true;
         Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L;
 
-        Baritone.settings().blockBreakSpeed.value = 6;
-        Baritone.settings().blockBreakAdditionalPenalty.value = 2.0;
+        Baritone.settings().blockBreakSpeed.value = 1;
+        Baritone.settings().rightClickSpeed.value = 1;
+        Baritone.settings().blockBreakAdditionalPenalty.value = 0.0;
         Baritone.settings().blockPlacementPenalty.value = 0.0;
         Baritone.settings().jumpPenalty.value = 0.0;
 
@@ -78,8 +80,8 @@ public class AutoMineCommand extends Command {
         Baritone.settings().planningTickLookahead.value = 400;
         Baritone.settings().mineGoalUpdateInterval.value = 5;
         Baritone.settings().splicePath.value = true;
-        Baritone.settings().primaryTimeoutMS.value = 4000L;
-        Baritone.settings().failureTimeoutMS.value = 6000L;
+        Baritone.settings().primaryTimeoutMS.value = 1200L;
+        Baritone.settings().failureTimeoutMS.value = 2000L;
 
         Baritone.settings().avoidance.value = true;
         Baritone.settings().mobAvoidanceRadius.value = 14;
