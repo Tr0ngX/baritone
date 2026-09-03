@@ -436,6 +436,7 @@ public class AutoMineScreen extends Screen implements Helper {
 
         Baritone.settings().crawlMineMode.value = optCrawlMode;
         Baritone.settings().tunnelSprintJump.value = optTunnelBhop;
+        Baritone.settings().fastJump.value = true;
         Baritone.settings().straightDownMine.value = optShaftDown;
         
         int targetY = optTargetY == 999 ? (playerCtx.player() != null ? playerCtx.playerFeet().y : -58) : optTargetY;

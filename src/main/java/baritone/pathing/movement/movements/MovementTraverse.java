@@ -293,7 +293,6 @@ public class MovementTraverse extends Movement {
 
             // TỰ ĐỘNG SPAM NHẢY KHI Ở ĐƯỜNG HẦM 2 BLOCK (Ceiling Sprint-Jump / Bhop)
             if (Baritone.settings().tunnelSprintJump.value
-                    && wasTheBridgeBlockAlwaysThere
                     && !ladder
                     && feet.getY() == dest.getY()
                     && !MovementHelper.isLiquid(ctx, feet)
@@ -304,17 +303,11 @@ public class MovementTraverse extends Movement {
                     && ctx.player().getFoodData().getFoodLevel() > 6) {
 
                 BlockPos ceilFeet = feet.above(2);
-                BlockPos ceilDest = dest.above(2);
                 BlockState csFeet = BlockStateInterface.get(ctx, ceilFeet);
-                BlockState csDest = BlockStateInterface.get(ctx, ceilDest);
-
                 boolean hasCeilFeet = !csFeet.isAir() && (csFeet.blocksMotion() || MovementHelper.isBlockNormalCube(csFeet));
-                boolean hasCeilDest = !csDest.isAir() && (csDest.blocksMotion() || MovementHelper.isBlockNormalCube(csDest));
-
                 BlockState headFeet = BlockStateInterface.get(ctx, feet.above());
-                BlockState headDest = BlockStateInterface.get(ctx, dest.above());
 
-                if (hasCeilFeet && hasCeilDest && !headFeet.blocksMotion() && !headDest.blocksMotion()) {
+                if (hasCeilFeet && !headFeet.blocksMotion()) {
                     state.setInput(Input.SPRINT, true);
                     state.setInput(Input.JUMP, true);
                 }

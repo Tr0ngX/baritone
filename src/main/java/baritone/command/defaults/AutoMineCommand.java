@@ -95,6 +95,8 @@ public class AutoMineCommand extends Command {
         Baritone.settings().allowParkourAscend.value = true;
         Baritone.settings().allowDiagonalAscend.value = true;
         Baritone.settings().allowDiagonalDescend.value = true;
+        Baritone.settings().tunnelSprintJump.value = true;
+        Baritone.settings().fastJump.value = true;
 
         Baritone.settings().legitMineYLevel.value = -58;
         Baritone.settings().exploreMaintainY.value = -58;

@@ -288,17 +288,11 @@ public class MovementDiagonal extends Movement {
 
                 BlockPos feet = ctx.playerFeet();
                 BlockPos ceilFeet = feet.above(2);
-                BlockPos ceilDest = dest.above(2);
                 BlockState csFeet = BlockStateInterface.get(ctx, ceilFeet);
-                BlockState csDest = BlockStateInterface.get(ctx, ceilDest);
-
                 boolean hasCeilFeet = !csFeet.isAir() && (csFeet.blocksMotion() || MovementHelper.isBlockNormalCube(csFeet));
-                boolean hasCeilDest = !csDest.isAir() && (csDest.blocksMotion() || MovementHelper.isBlockNormalCube(csDest));
-
                 BlockState headFeet = BlockStateInterface.get(ctx, feet.above());
-                BlockState headDest = BlockStateInterface.get(ctx, dest.above());
 
-                if (hasCeilFeet && hasCeilDest && !headFeet.blocksMotion() && !headDest.blocksMotion()) {
+                if (hasCeilFeet && !headFeet.blocksMotion()) {
                     state.setInput(Input.JUMP, true);
                 }
             }

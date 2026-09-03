@@ -17,6 +17,7 @@
 
 package baritone.launch.mixins;
 
+import baritone.Baritone;
 import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.event.events.RotationMoveEvent;
@@ -27,6 +28,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -43,6 +45,9 @@ import java.util.Optional;
 @Mixin(LivingEntity.class)
 public abstract class MixinLivingEntity extends Entity {
 
+    @Shadow
+    private int noJumpDelay;
+
     /**
      * Event called to override the movement direction when jumping
      */
@@ -54,6 +59,26 @@ public abstract class MixinLivingEntity extends Entity {
 
     private MixinLivingEntity(EntityType<?> entityTypeIn, Level worldIn) {
         super(entityTypeIn, worldIn);
+    }
+
+    @Inject(
+            method = "aiStep",
+            at = @At("HEAD")
+    )
+    private void onAiStepFastJump(CallbackInfo ci) {
+        if (this.getBaritone().isPresent() && Baritone.settings().fastJump.value) {
+            this.noJumpDelay = 0;
+        }
+    }
+
+    @Inject(
+            method = "jumpFromGround",
+            at = @At("RETURN")
+    )
+    private void postJumpFastJump(CallbackInfo ci) {
+        if (this.getBaritone().isPresent() && Baritone.settings().fastJump.value) {
+            this.noJumpDelay = 0;
+        }
     }
 
     @Inject(

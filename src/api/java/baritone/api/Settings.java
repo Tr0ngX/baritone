@@ -80,6 +80,14 @@ public final class Settings {
     public final Setting<Boolean> tunnelSprintJump = new Setting<>(true);
 
     /**
+     * Tự động loại bỏ độ trễ nhảy 10-tick của Minecraft vanilla (Fast Jump / Instant Bhop).
+     * Khi người chơi hoặc bot giữ phím Nhảy (hoặc khi chạy trong hầm 2 block / nhảy vượt chướng ngại),
+     * ngay khoảnh khắc chân vừa chạm đất (onGround), bot sẽ lập tức nhảy tiếp với độ trễ 0 tick thay vì
+     * phải chờ 10 tick (0.5 giây) như Minecraft mặc định, giúp spam nhảy cực nhanh và bứt tốc tối đa.
+     */
+    public final Setting<Boolean> fastJump = new Setting<>(true);
+
+    /**
      * Allow Baritone to place blocks
      */
     public final Setting<Boolean> allowPlace = new Setting<>(true);
