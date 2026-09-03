@@ -317,6 +317,58 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
+        int targetY = Baritone.settings().legitMineYLevel.value;
+        int currentY = ctx.playerFeet().y;
+
+        // =========================================================================
+        // NGUYÊN TẮC VÀNG: KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y > -58)
+        // Ưu tiên số 1: Đi thẳng xuống tầng Y=-58!
+        // Chỉ ghé đào nếu có quặng nằm NGAY SÁT BÊN CẠNH trong lúc đào xuống (bán kính <= 6 block).
+        // Tuyệt đối KHÔNG tìm đường tới các quặng ở sâu tít bên dưới (tránh nghẽn A* & quét lặp).
+        // =========================================================================
+        if (currentY > targetY) {
+            // Nếu có quặng ngay sát bên cạnh (<= 6 block) thì đào trước
+            if (!knownOreLocations.isEmpty()) {
+                CalculationContext context = new CalculationContext(baritone);
+                List<BlockPos> locs2 = prune(context, new ArrayList<>(knownOreLocations), filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
+                List<BlockPos> veryCloseOres = locs2.stream()
+                        .filter(pos -> ctx.playerFeet().distSqr(pos) <= 36) // 6 * 6 = 36
+                        .collect(java.util.stream.Collectors.toList());
+                if (!veryCloseOres.isEmpty()) {
+                    Goal goal = new GoalComposite(veryCloseOres.stream().map(loc -> coalesce(loc, locs2, context)).toArray(Goal[]::new));
+                    return new PathingCommand(goal, PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                }
+            }
+
+            // Không có quặng ngay cạnh -> Đi thẳng một mạch xuống tầng targetY!
+            boolean fr = forceReroute;
+            forceReroute = false;
+
+            if (Baritone.settings().straightDownMine.value) {
+                // CHẾ ĐỘ 1: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI (SHAFT DOWN) SIÊU TỐC
+                // Giữ nguyên tọa độ X, Z hiện tại, đào thẳng một mạch xuống tầng targetY!
+                BlockPos shaftTarget = new BlockPos(ctx.playerFeet().x, targetY, ctx.playerFeet().z);
+                return new PathingCommand(new GoalTwoBlocks(shaftTarget), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            } else {
+                // CHẾ ĐỘ 2: ĐÀO CẦU THANG DỐC 1:1 (STAIRCASE DESCENT)
+                if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                    net.minecraft.core.Direction dir = ctx.player().getDirection();
+                    tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                }
+                int drop = Math.min(4, currentY - targetY);
+                BlockPos stairPos = new BlockPos(
+                        ctx.playerFeet().x + tunnelDirection.getStepX() * drop,
+                        currentY - drop,
+                        ctx.playerFeet().z + tunnelDirection.getStepZ() * drop
+                );
+                return new PathingCommand(new GoalTwoBlocks(stairPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            }
+        }
+
+        // =========================================================================
+        // KHI ĐÃ TỚI ĐÚNG TẦNG TARGET Y (currentY <= targetY):
+        // Lúc này mới bắt đầu tìm quặng toàn bản đồ, đào hầm ngang, và gom sạch quặng!
+        // =========================================================================
         boolean legit = Baritone.settings().legitMine.value;
         List<BlockPos> locs = knownOreLocations;
         if (!locs.isEmpty()) {
@@ -346,36 +398,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // we don't know any ore locations at the moment
         if (!legit && !Baritone.settings().exploreForBlocks.value) {
             return null;
-        }
-        
-        // KHI KHÔNG CÓ QUẶNG TRONG TẦM QUÉT:
-        int targetY = Baritone.settings().legitMineYLevel.value;
-        int currentY = ctx.playerFeet().y;
-
-        // KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y=-58):
-        if (currentY > targetY) {
-            boolean fr = forceReroute;
-            forceReroute = false;
-
-            if (Baritone.settings().straightDownMine.value) {
-                // CHẾ ĐỘ 1: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI (SHAFT DOWN) SIÊU TỐC
-                // Giữ nguyên tọa độ X, Z hiện tại, đào thẳng một mạch xuống tầng targetY!
-                BlockPos shaftTarget = new BlockPos(ctx.playerFeet().x, targetY, ctx.playerFeet().z);
-                return new PathingCommand(new GoalTwoBlocks(shaftTarget), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
-            } else {
-                // CHẾ ĐỘ 2: ĐÀO CẦU THANG DỐC 1:1 (STAIRCASE DESCENT)
-                if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-                    net.minecraft.core.Direction dir = ctx.player().getDirection();
-                    tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
-                }
-                int drop = Math.min(4, currentY - targetY);
-                BlockPos stairPos = new BlockPos(
-                        ctx.playerFeet().x + tunnelDirection.getStepX() * drop,
-                        currentY - drop,
-                        ctx.playerFeet().z + tunnelDirection.getStepZ() * drop
-                );
-                return new PathingCommand(new GoalTwoBlocks(stairPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
-            }
         }
 
         // KHI ĐÃ TỚI ĐÚNG TẦNG TARGET Y (Y <= -58):
@@ -426,6 +448,23 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (Baritone.settings().legitMine.value) {
             return;
         }
+
+        int targetY = Baritone.settings().legitMineYLevel.value;
+        int currentY = ctx.playerFeet().y;
+
+        // KHI ĐANG Ở TRÊN CAO (currentY > targetY):
+        // Tuyệt đối KHÔNG quét quặng ở sâu tít bên dưới đáy thế giới!
+        // Việc quét quặng sâu ở Y=-58 khi bot đang ở Y=70 sẽ làm A* cố tìm đường xuyên 130 block đá -> timeout, lag và quét lặp liên tục!
+        if (currentY > targetY) {
+            List<BlockPos> dropped = droppedItemsScan();
+            List<BlockPos> locs = searchWorld(context, filter, 16, already, blacklist, dropped);
+            // Chỉ giữ lại quặng lộ ra ngang tầm hoặc sát bên cạnh (<= 8 block bên dưới)
+            locs.removeIf(pos -> pos.getY() < currentY - 8);
+            locs.addAll(dropped);
+            knownOreLocations = locs;
+            return;
+        }
+
         List<BlockPos> dropped = droppedItemsScan();
         List<BlockPos> locs = searchWorld(context, filter, Baritone.settings().mineMaxOreLocationsCount.value, already, blacklist, dropped);
         locs.addAll(dropped);
