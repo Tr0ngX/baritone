@@ -276,6 +276,32 @@ public class MovementDiagonal extends Movement {
         }
         if (sprint()) {
             state.setInput(Input.SPRINT, true);
+            // TỰ ĐỘNG SPAM NHẢY KHI CHẠY CHÉO TRONG HẦM 2 BLOCK (Ceiling Sprint-Jump / Bhop)
+            if (Baritone.settings().tunnelSprintJump.value
+                    && dest.y == src.y
+                    && !MovementHelper.isLiquid(ctx, ctx.playerFeet())
+                    && !ctx.player().isInWater()
+                    && !ctx.player().isCrouching()
+                    && !ctx.player().isSwimming()
+                    && !Baritone.settings().crawlMineMode.value
+                    && ctx.player().getFoodData().getFoodLevel() > 6) {
+
+                BlockPos feet = ctx.playerFeet();
+                BlockPos ceilFeet = feet.above(2);
+                BlockPos ceilDest = dest.above(2);
+                BlockState csFeet = BlockStateInterface.get(ctx, ceilFeet);
+                BlockState csDest = BlockStateInterface.get(ctx, ceilDest);
+
+                boolean hasCeilFeet = !csFeet.isAir() && (csFeet.blocksMotion() || MovementHelper.isBlockNormalCube(csFeet));
+                boolean hasCeilDest = !csDest.isAir() && (csDest.blocksMotion() || MovementHelper.isBlockNormalCube(csDest));
+
+                BlockState headFeet = BlockStateInterface.get(ctx, feet.above());
+                BlockState headDest = BlockStateInterface.get(ctx, dest.above());
+
+                if (hasCeilFeet && hasCeilDest && !headFeet.blocksMotion() && !headDest.blocksMotion()) {
+                    state.setInput(Input.JUMP, true);
+                }
+            }
         }
         state.setInput(Input.SNEAK, Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
         MovementHelper.moveTowards(ctx, state, dest);

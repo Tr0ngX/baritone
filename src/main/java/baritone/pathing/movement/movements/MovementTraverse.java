@@ -116,6 +116,14 @@ public class MovementTraverse extends Movement {
                     // We can sprint =D
                     // Don't check for soul sand, since we can sprint on that too
                     WC *= SPRINT_MULTIPLIER;
+                    if (context.tunnelSprintJump && !context.crawlMode) {
+                        BlockState ceil1 = context.get(x, y + 2, z);
+                        BlockState ceil2 = context.get(destX, y + 2, destZ);
+                        if (!ceil1.isAir() && (ceil1.blocksMotion() || MovementHelper.isBlockNormalCube(ceil1))
+                                && !ceil2.isAir() && (ceil2.blocksMotion() || MovementHelper.isBlockNormalCube(ceil2))) {
+                            WC *= 0.7; // Chạy nhảy hầm 2 block (bhop) nhanh hơn sprint thường
+                        }
+                    }
                 }
                 return WC;
             }
@@ -282,6 +290,36 @@ public class MovementTraverse extends Movement {
             if (feet.getY() != dest.getY() && ladder && MovementHelper.isClimbable(destDown.getBlock())) {
                 state.setInput(Input.JUMP, true);
             }
+
+            // TỰ ĐỘNG SPAM NHẢY KHI Ở ĐƯỜNG HẦM 2 BLOCK (Ceiling Sprint-Jump / Bhop)
+            if (Baritone.settings().tunnelSprintJump.value
+                    && wasTheBridgeBlockAlwaysThere
+                    && !ladder
+                    && feet.getY() == dest.getY()
+                    && !MovementHelper.isLiquid(ctx, feet)
+                    && !ctx.player().isInWater()
+                    && !ctx.player().isCrouching()
+                    && !ctx.player().isSwimming()
+                    && !Baritone.settings().crawlMineMode.value
+                    && ctx.player().getFoodData().getFoodLevel() > 6) {
+
+                BlockPos ceilFeet = feet.above(2);
+                BlockPos ceilDest = dest.above(2);
+                BlockState csFeet = BlockStateInterface.get(ctx, ceilFeet);
+                BlockState csDest = BlockStateInterface.get(ctx, ceilDest);
+
+                boolean hasCeilFeet = !csFeet.isAir() && (csFeet.blocksMotion() || MovementHelper.isBlockNormalCube(csFeet));
+                boolean hasCeilDest = !csDest.isAir() && (csDest.blocksMotion() || MovementHelper.isBlockNormalCube(csDest));
+
+                BlockState headFeet = BlockStateInterface.get(ctx, feet.above());
+                BlockState headDest = BlockStateInterface.get(ctx, dest.above());
+
+                if (hasCeilFeet && hasCeilDest && !headFeet.blocksMotion() && !headDest.blocksMotion()) {
+                    state.setInput(Input.SPRINT, true);
+                    state.setInput(Input.JUMP, true);
+                }
+            }
+
             MovementHelper.moveTowards(ctx, state, positionsToBreak[0]);
             return state;
         } else {

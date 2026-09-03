@@ -73,6 +73,13 @@ public final class Settings {
     public final Setting<Boolean> allowSprint = new Setting<>(true);
 
     /**
+     * Tự động liên tục nhảy (Bhop / Ceiling Sprint-Jump) khi đang chạy trong đường hầm 2 block.
+     * Khi đầu va vào trần hầm ở độ cao 2 block, nhân vật rơi xuống đất ngay lập tức và kích hoạt
+     * liên tục momentum boost (+0.2 speed mỗi cú nhảy), giúp chạy nhanh gấp 2-3 lần bình thường.
+     */
+    public final Setting<Boolean> tunnelSprintJump = new Setting<>(true);
+
+    /**
      * Allow Baritone to place blocks
      */
     public final Setting<Boolean> allowPlace = new Setting<>(true);

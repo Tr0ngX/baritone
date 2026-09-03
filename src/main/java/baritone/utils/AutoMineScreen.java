@@ -62,6 +62,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optParkour = true;
     public static boolean optZeroDelay = true;
     public static boolean optCrawlMode = false;
+    public static boolean optTunnelBhop = true;
     public static int optTargetY = -58;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
@@ -152,6 +153,9 @@ public class AutoMineScreen extends Screen implements Helper {
             baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
             this.rebuildWidgets();
         }).bounds(rightCol + 102, startY + gap * 4, btnW, btnH).build());
+
+        // Hàng 5 cột 2: Tunnel Bhop (2-Block)
+        addRenderableWidget(createOptBtn(rightCol, startY + gap * 5, optW, btnH, "Tunnel Bhop (2-Block)", optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
 
 
         // HÀNG DƯỚI: NÚT THAO TÁC (Action Controls)
@@ -257,6 +261,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().allowDiagonalDescend.value = optParkour;
 
         Baritone.settings().crawlMineMode.value = optCrawlMode;
+        Baritone.settings().tunnelSprintJump.value = optTunnelBhop;
         
         int targetY = optTargetY == 999 ? (playerCtx.player() != null ? playerCtx.playerFeet().y : -58) : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;
