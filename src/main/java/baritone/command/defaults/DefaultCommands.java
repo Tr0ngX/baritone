@@ -62,6 +62,7 @@ public final class DefaultCommands {
                 new FindCommand(baritone),
                 new MineCommand(baritone),
                 new AutoMineCommand(baritone),
+                new ChopCommand(baritone),
                 new ClickCommand(baritone),
                 new SurfaceCommand(baritone),
                 new ThisWayCommand(baritone),

@@ -162,21 +162,26 @@ public class AutoMineScreen extends Screen implements Helper {
 
         // HÀNG DƯỚI: NÚT THAO TÁC (Action Controls)
         int bottomY = startY + gap * 7 + 10;
-        int actionBtnW = 132;
+        int actionBtnW = 98;
 
         addRenderableWidget(Button.builder(Component.literal("START MINING"), b -> {
             startAutoMine();
             this.onClose();
-        }).bounds(cx - 206, bottomY, actionBtnW, 22).build());
+        }).bounds(cx - 204, bottomY, actionBtnW, 22).build());
 
-        addRenderableWidget(Button.builder(Component.literal("STOP MINING"), b -> {
+        addRenderableWidget(Button.builder(Component.literal("CHOP WOOD \uD83E\uDE93"), b -> {
+            startAutoChop();
+            this.onClose();
+        }).bounds(cx - 100, bottomY, actionBtnW, 22).build());
+
+        addRenderableWidget(Button.builder(Component.literal("STOP"), b -> {
             stopAutoMine();
             this.onClose();
-        }).bounds(cx - 66, bottomY, actionBtnW, 22).build());
+        }).bounds(cx + 4, bottomY, actionBtnW, 22).build());
 
         addRenderableWidget(Button.builder(Component.literal("CLOSE (F4)"), b -> {
             this.onClose();
-        }).bounds(cx + 74, bottomY, actionBtnW, 22).build());
+        }).bounds(cx + 108, bottomY, actionBtnW, 22).build());
     }
 
     private Button createOreBtn(int x, int y, int w, int h, String name, int activeColor, boolean state, Runnable toggle) {
@@ -197,7 +202,89 @@ public class AutoMineScreen extends Screen implements Helper {
 
     private void stopAutoMine() {
         baritone.getCommandManager().execute("stop");
-        Helper.HELPER.logDirect("[AutoMine] Mining process stopped.");
+        Helper.HELPER.logDirect("[AutoMine] Process stopped.");
+    }
+
+    private void startAutoChop() {
+        IPlayerContext playerCtx = baritone.getPlayerContext();
+        if (playerCtx.player() == null) {
+            return;
+        }
+
+        // Tối ưu hóa các cài đặt cho tự động chặt cây (Lumberjack)
+        Baritone.settings().autoTool.value = optAutoTool;
+        Baritone.settings().assumeExternalAutoTool.value = false;
+        Baritone.settings().allowInventory.value = true;
+        Baritone.settings().ticksBetweenInventoryMoves.value = 1;
+        Baritone.settings().allowDownward.value = true;
+        Baritone.settings().allowBreak.value = true;
+        Baritone.settings().allowPlace.value = true;
+        Baritone.settings().allowPlaceInFluidsSource.value = true;
+        Baritone.settings().allowPlaceInFluidsFlow.value = true;
+
+        // Sinh tồn & Né quái
+        Baritone.settings().autoEat.value = optAutoEat;
+        Baritone.settings().autoEatThreshold.value = 19;
+        Baritone.settings().autoTotem.value = optAutoTotem;
+        Baritone.settings().avoidance.value = optMobAvoid;
+        Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
+        Baritone.settings().mobAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;
+
+        // Parkour để leo cành cây/nhảy qua lá
+        Baritone.settings().allowParkour.value = optParkour;
+        Baritone.settings().allowParkourPlace.value = optParkour;
+        Baritone.settings().allowParkourAscend.value = optParkour;
+        Baritone.settings().allowDiagonalAscend.value = optParkour;
+        Baritone.settings().allowDiagonalDescend.value = optParkour;
+        Baritone.settings().noPillar.value = false;
+
+        Baritone.settings().legitMine.value = false;
+        Baritone.settings().exploreForBlocks.value = true;
+        Baritone.settings().mineScanDroppedItems.value = true;
+        Baritone.settings().blacklistClosestOnFailure.value = true;
+        Baritone.settings().mineMaxOreLocationsCount.value = 256;
+        Baritone.settings().maxCachedWorldScanCount.value = 1000;
+        Baritone.settings().extendCacheOnThreshold.value = true;
+
+        List<BlockOptionalMeta> boms = new ArrayList<>();
+        // Tất cả loại gỗ thân cây trong Minecraft (Logs & Stems)
+        boms.add(new BlockOptionalMeta(Blocks.OAK_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.BIRCH_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.SPRUCE_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.DARK_OAK_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.ACACIA_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.JUNGLE_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.CHERRY_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.MANGROVE_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.CRIMSON_STEM));
+        boms.add(new BlockOptionalMeta(Blocks.WARPED_STEM));
+
+        // Các khối gỗ 6 mặt (Wood)
+        boms.add(new BlockOptionalMeta(Blocks.OAK_WOOD));
+        boms.add(new BlockOptionalMeta(Blocks.BIRCH_WOOD));
+        boms.add(new BlockOptionalMeta(Blocks.SPRUCE_WOOD));
+        boms.add(new BlockOptionalMeta(Blocks.DARK_OAK_WOOD));
+        boms.add(new BlockOptionalMeta(Blocks.ACACIA_WOOD));
+        boms.add(new BlockOptionalMeta(Blocks.JUNGLE_WOOD));
+        boms.add(new BlockOptionalMeta(Blocks.CHERRY_WOOD));
+        boms.add(new BlockOptionalMeta(Blocks.MANGROVE_WOOD));
+
+        // Gỗ đã lột vỏ (Stripped Logs & Stems)
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_OAK_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_BIRCH_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_SPRUCE_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_DARK_OAK_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_ACACIA_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_JUNGLE_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CHERRY_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_MANGROVE_LOG));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CRIMSON_STEM));
+        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_WARPED_STEM));
+
+        BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
+        Helper.HELPER.logDirect("§a[AutoChop] Đã bắt đầu TỰ ĐỘNG CHẶT CÂY (Tất cả loại gỗ: Sồi, Bạch Dương, Thông, Sồi Sẫm, Keo, Rừng, Anh Đào, Đước...)!");
+
+        baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }
 
     private void startAutoMine() {
