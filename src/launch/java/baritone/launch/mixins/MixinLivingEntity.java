@@ -82,6 +82,17 @@ public abstract class MixinLivingEntity extends Entity {
     }
 
     @Inject(
+            method = "getAttackAnim",
+            at = @At("HEAD"),
+            cancellable = true
+    )
+    private void onGetAttackAnim(float partialTicks, CallbackInfoReturnable<Float> cir) {
+        if (this.getBaritone().isPresent() && Baritone.settings().hideSwingAnimation.value) {
+            cir.setReturnValue(0.0F);
+        }
+    }
+
+    @Inject(
             method = "jumpFromGround",
             at = @At("HEAD")
     )

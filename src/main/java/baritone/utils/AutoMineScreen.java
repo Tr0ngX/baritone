@@ -68,6 +68,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optWaterCheck = false;
     public static boolean optAutoSprint = true;
     public static boolean optFastBreak = true;
+    public static boolean optHideSwing = false;
     public static boolean optFastPlace = true;
     public static boolean optOvershoot = true;
     public static boolean optWaterSprint = true;
@@ -247,8 +248,8 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightSub1, startY + gap * 6, btnW, btnH, "Water Check", optWaterCheck, () -> optWaterCheck = !optWaterCheck));
         addRenderableWidget(createOptBtn(rightSub2, startY + gap * 6, btnW, btnH, "Auto-Sprint", optAutoSprint, () -> optAutoSprint = !optAutoSprint));
 
-        // Hàng 7 cột 2: FastBreak & FastPlace
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 7, btnW, btnH, "FastBreak", optFastBreak, () -> optFastBreak = !optFastBreak));
+        // Hàng 7 cột 2: No-Swing & FastPlace
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 7, btnW, btnH, "No-Swing", optHideSwing, () -> optHideSwing = !optHideSwing));
         addRenderableWidget(createOptBtn(rightSub2, startY + gap * 7, btnW, btnH, "FastPlace", optFastPlace, () -> optFastPlace = !optFastPlace));
 
 
@@ -418,6 +419,7 @@ public class AutoMineScreen extends Screen implements Helper {
         // Tốc độ đập block chuẩn gốc Minecraft & Baritone (6 ticks)
         Baritone.settings().blockBreakSpeed.value = 6;
         Baritone.settings().rightClickSpeed.value = optFastPlace ? 1 : 4; // 1 tick đặt block tức thì (0.05s)
+        Baritone.settings().hideSwingAnimation.value = optHideSwing;
         Baritone.settings().blockBreakAdditionalPenalty.value = 2.0;
         Baritone.settings().blockPlacementPenalty.value = 0.0;
         Baritone.settings().jumpPenalty.value = 0.0;

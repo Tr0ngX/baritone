@@ -88,6 +88,14 @@ public final class Settings {
     public final Setting<Boolean> fastJump = new Setting<>(true);
 
     /**
+     * Ẩn animation vung cúp / vung tay phía client (No-Swing / Hide Pickaxe Swing).
+     * Khi bật, màn hình client sẽ không hiển thị hoạt ảnh vung cúp giật lắc, giúp tầm nhìn cực thoáng,
+     * mượt mà và tăng FPS khi đào quặng hoặc dọn hầm.
+     * Gói tin swing vẫn được gửi đầy đủ lên server để đảm bảo không bị Anti-Cheat nghi ngờ hay lỗi đào block.
+     */
+    public final Setting<Boolean> hideSwingAnimation = new Setting<>(false);
+
+    /**
      * Allow Baritone to place blocks
      */
     public final Setting<Boolean> allowPlace = new Setting<>(true);

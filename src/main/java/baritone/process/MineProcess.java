@@ -132,6 +132,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private BlockPos currentTunnelTarget = null;
     private int pillarFailCount = 0;
     private long lastPillarFailTime = 0;
+    private boolean hasReachedTargetY = false;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
@@ -352,8 +353,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         int targetY = Baritone.settings().legitMineYLevel.value;
         int currentY = ctx.playerFeet().y;
 
-        // KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y=-58):
-        if (currentY > targetY) {
+        // Đánh dấu đã chạm tới độ sâu targetY (hoặc xuất phát ngay tại tầng đào)
+        if (currentY <= targetY) {
+            hasReachedTargetY = true;
+        }
+
+        // KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y=-58 từ mặt đất):
+        // CHỈ kích hoạt đào thẳng đứng / đào dốc khi:
+        // 1. Chưa từng chạm tới tầng đào (hasReachedTargetY == false) VÀ currentY > targetY
+        // 2. HOẶC người chơi bị văng lên quá xa khỏi tầng đào (currentY > targetY + 3)
+        // Tuyệt đối KHÔNG kích hoạt khi đang đào hầm ngang mà chỉ bước lên 1-2 block chướng ngại vật!
+        if (!hasReachedTargetY || currentY > targetY + 3) {
             boolean fr = forceReroute;
             forceReroute = false;
 
@@ -404,11 +414,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             net.minecraft.core.Direction dir = ctx.player().getDirection();
             tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
         }
-        // Điểm waypoint ổn định: chỉ tính mới khi đã tới gần mục tiêu (cách <= 3 block) hoặc đổi hướng
-        if (currentTunnelTarget == null || ctx.playerFeet().distSqr(currentTunnelTarget) <= 9 || forceReroute || currentTunnelTarget.getY() != currentY) {
+        // Điểm waypoint ổn định: neo ở targetY (ví dụ -58), không reset chỉ vì bot vừa bước lên 1 bậc block!
+        if (currentTunnelTarget == null || ctx.playerFeet().distSqr(currentTunnelTarget) <= 9 || forceReroute) {
             currentTunnelTarget = new BlockPos(
                     ctx.playerFeet().x + tunnelDirection.getStepX() * 16,
-                    currentY,
+                    targetY,
                     ctx.playerFeet().z + tunnelDirection.getStepZ() * 16
             );
         }
@@ -677,7 +687,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
             int targetY = Baritone.settings().legitMineYLevel.value;
             // ƯU TIÊN SỐ 1 KHI BỊ KẸT: ĐÀO XUỐNG DƯỚI NẾU CHƯA ĐẠT TẦNG TARGET Y (Y=-58)!
-            if (currentFeet.y > targetY) {
+            if (!hasReachedTargetY || currentFeet.y > targetY + 3) {
                 if (tunnelDirection != null) {
                     net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
                     tunnelDirection = newDir;
@@ -1094,6 +1104,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.anticipatedDrops = new HashMap<>();
         this.currentTunnelTarget = null;
         this.pillarFailCount = 0;
+        this.hasReachedTargetY = false;
         Baritone.settings().noPillar.value = false;
         if (filter != null) {
             rescan(new ArrayList<>(), new CalculationContext(baritone));
