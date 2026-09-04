@@ -93,6 +93,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().autoEat.value = true;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = true;
+        Baritone.settings().autoShulkerStorage.value = true;
 
         Baritone.settings().allowParkour.value = true;
         Baritone.settings().allowParkourPlace.value = true;

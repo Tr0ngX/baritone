@@ -34,6 +34,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -50,8 +51,12 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -154,6 +159,28 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int recentPosCount = 0;
     private BetterBlockPos lastAntiStuckPos = null;
 
+    private enum ShulkerStorageState {
+        IDLE,
+        SWAP_TO_HOTBAR,
+        SELECT_SLOT,
+        PLACE_BOX,
+        WAIT_FOR_BLOCK,
+        OPEN_BOX,
+        WAIT_FOR_CONTAINER,
+        TRANSFER_ITEMS,
+        CLOSE_CONTAINER,
+        WAIT_FOR_CLOSE,
+        MINE_BOX,
+        WAIT_FOR_PICKUP
+    }
+
+    private ShulkerStorageState shulkerState = ShulkerStorageState.IDLE;
+    private BlockPos shulkerPlacedPos = null;
+    private int shulkerStateTicks = 0;
+    private int shulkerHotbarSlot = 1;
+    private int shulkerTransferCooldown = 0;
+    private int shulkerConsecutiveNoTransfer = 0;
+
     public MineProcess(Baritone baritone) {
         super(baritone);
     }
@@ -231,6 +258,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         updateLoucaSystem();
+
+        if (Baritone.settings().autoShulkerStorage.value || shulkerState != ShulkerStorageState.IDLE) {
+            PathingCommand shulkerCmd = handleShulkerStorage(isSafeToCancel);
+            if (shulkerCmd != null) {
+                return shulkerCmd;
+            }
+        }
+
         // Gọi mỗi tick nếu đang có hàng đợi vứt rác, ngược lại quét mỗi 40 tick
         if (!pendingDropSlots.isEmpty() || tickCount % 40 == 0) {
             cleanInventoryIfFull();
@@ -428,6 +463,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         recentPosIndex = 0;
         recentPosCount = 0;
         lastAntiStuckPos = null;
+        if (shulkerState != ShulkerStorageState.IDLE) {
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+            shulkerState = ShulkerStorageState.IDLE;
+            shulkerPlacedPos = null;
+            shulkerStateTicks = 0;
+        }
         mine(0, (BlockOptionalMetaLookup) null);
     }
 
@@ -858,6 +900,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return;
         }
 
+        if (Baritone.settings().autoShulkerStorage.value && findShulkerBoxSlot() != -1) {
+            return; // Đang bật chế độ Shulker Box và có Shulker trong người -> không vứt đồ ra ngoài!
+        }
+
         // Nếu đang có hàng đợi vứt rác → vứt 1 stack mỗi 5 tick (tránh bị server kick vì spam packet)
         if (!pendingDropSlots.isEmpty()) {
             if (dropCooldown > 0) {
@@ -920,6 +966,346 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 dropCooldown = 0; // Bắt đầu vứt ngay
             }
         }
+    }
+
+    public static boolean isShulkerBox(ItemStack stack) {
+        return !stack.isEmpty()
+                && stack.getItem() instanceof BlockItem bi
+                && bi.getBlock() instanceof ShulkerBoxBlock;
+    }
+
+    private int findShulkerBoxSlot() {
+        if (ctx.player() == null) return -1;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        // Kiểm tra hotbar trước (ưu tiên slot 1-8, tránh đè lên slot 0 cúp đào)
+        for (int i = 1; i < 9; i++) {
+            if (isShulkerBox(inv.get(i))) return i;
+        }
+        // Sau đó kiểm tra balo chính (slot 9-35)
+        for (int i = 9; i < 36; i++) {
+            if (isShulkerBox(inv.get(i))) return i;
+        }
+        if (isShulkerBox(inv.get(0))) return 0;
+        return -1;
+    }
+
+    private boolean isToolOrEssential(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        if (stack.has(DataComponents.TOOL) || stack.has(DataComponents.MAX_DAMAGE) || stack.isDamageableItem()) {
+            return true;
+        }
+        if (stack.is(ItemTags.SWORDS) || stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES)
+                || stack.is(ItemTags.SHOVELS) || stack.is(ItemTags.HOES)) {
+            return true;
+        }
+        if (isGoodFood(stack)) {
+            return true;
+        }
+        Item item = stack.getItem();
+        if (item == Items.WATER_BUCKET
+                || item == Items.TOTEM_OF_UNDYING
+                || (item instanceof BlockItem bi && bi.getBlock() instanceof TrapDoorBlock)
+                || isShulkerBox(stack)) {
+            return true;
+        }
+        return false;
+    }
+
+    private static class ShulkerPlacementTarget {
+        final BlockPos placePos;
+        final BlockPos againstPos;
+        final net.minecraft.core.Direction face;
+
+        ShulkerPlacementTarget(BlockPos placePos, BlockPos againstPos, net.minecraft.core.Direction face) {
+            this.placePos = placePos;
+            this.againstPos = againstPos;
+            this.face = face;
+        }
+    }
+
+    private Optional<ShulkerPlacementTarget> findShulkerPlacePos() {
+        if (ctx.player() == null || ctx.world() == null) return Optional.empty();
+        BetterBlockPos feet = ctx.playerFeet();
+        net.minecraft.core.Direction playerFacing = ctx.player().getDirection();
+        List<net.minecraft.core.Direction> dirs = new ArrayList<>();
+        if (playerFacing.getAxis().isHorizontal()) {
+            dirs.add(playerFacing);
+        }
+        for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
+            if (d.getAxis().isHorizontal() && !dirs.contains(d)) {
+                dirs.add(d);
+            }
+        }
+
+        AABB playerBox = ctx.player().getBoundingBox();
+
+        for (net.minecraft.core.Direction dir : dirs) {
+            BlockPos target = feet.relative(dir);
+            BlockState targetState = ctx.world().getBlockState(target);
+            boolean targetPassable = targetState.isAir() || targetState.canBeReplaced();
+            if (!targetPassable) continue;
+
+            // Block phía trên target phải là Air để nắp Shulker bung lên được
+            BlockState aboveState = ctx.world().getBlockState(target.above());
+            if (!aboveState.isAir()) continue;
+
+            // Block dưới target phải là solid để làm sàn đặt
+            BlockPos floor = target.below();
+            BlockState floorState = ctx.world().getBlockState(floor);
+            if (floorState.isAir() || !floorState.isSolid()) continue;
+
+            // Không được đè lên người chơi
+            AABB targetBox = new AABB(target);
+            if (targetBox.intersects(playerBox)) continue;
+
+            return Optional.of(new ShulkerPlacementTarget(target, floor, net.minecraft.core.Direction.UP));
+        }
+
+        return Optional.empty();
+    }
+
+    private PathingCommand handleShulkerStorage(boolean isSafeToCancel) {
+        if (ctx.player() == null) return null;
+
+        // Kích hoạt khi đang IDLE
+        if (shulkerState == ShulkerStorageState.IDLE) {
+            NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+            int emptySlots = 0;
+            for (int i = 0; i < 36; i++) {
+                if (inv.get(i).isEmpty()) emptySlots++;
+            }
+            // Khi balo còn <= 4 ô trống:
+            if (emptySlots <= 4) {
+                int shulkerSlot = findShulkerBoxSlot();
+                if (shulkerSlot != -1) {
+                    logDirect("§a[AutoShulker] Balo gần đầy (" + emptySlots + " ô trống)! Bắt đầu quy trình cất đồ vào Shulker Box...");
+                    shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                    shulkerStateTicks = 0;
+                    shulkerConsecutiveNoTransfer = 0;
+                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    baritone.getInputOverrideHandler().clearAllKeys();
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+            }
+            return null;
+        }
+
+        // Đang trong quy trình Shulker: tạm dừng di chuyển để thao tác
+        baritone.getPathingBehavior().cancelSegmentIfSafe();
+        baritone.getInputOverrideHandler().clearAllKeys();
+        shulkerStateTicks++;
+
+        switch (shulkerState) {
+            case SWAP_TO_HOTBAR -> {
+                int slot = findShulkerBoxSlot();
+                if (slot == -1) {
+                    logDirect("§e[AutoShulker] Không tìm thấy Shulker Box trong balo! Hủy quy trình.");
+                    shulkerState = ShulkerStorageState.IDLE;
+                    return null;
+                }
+                if (slot < 9) {
+                    shulkerHotbarSlot = slot;
+                    shulkerState = ShulkerStorageState.SELECT_SLOT;
+                    shulkerStateTicks = 0;
+                } else {
+                    // Swap vào hotbar slot 1 (slot 0 dành cho cúp đào)
+                    shulkerHotbarSlot = 1;
+                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, slot, 1, ClickType.SWAP, ctx.player());
+                    shulkerState = ShulkerStorageState.SELECT_SLOT;
+                    shulkerStateTicks = 0;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case SELECT_SLOT -> {
+                ctx.player().getInventory().setSelectedSlot(shulkerHotbarSlot);
+                ctx.playerController().syncHeldItem();
+                Optional<ShulkerPlacementTarget> targetOpt = findShulkerPlacePos();
+                if (targetOpt.isEmpty()) {
+                    if (shulkerStateTicks > 20) {
+                        logDirect("§c[AutoShulker] Không tìm thấy vị trí thích hợp để đặt Shulker Box! Hủy quy trình...");
+                        shulkerState = ShulkerStorageState.IDLE;
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+                shulkerPlacedPos = targetOpt.get().placePos;
+                shulkerState = ShulkerStorageState.PLACE_BOX;
+                shulkerStateTicks = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case PLACE_BOX -> {
+                Optional<ShulkerPlacementTarget> targetOpt = findShulkerPlacePos();
+                if (targetOpt.isEmpty()) {
+                    shulkerState = ShulkerStorageState.IDLE;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+                ShulkerPlacementTarget pt = targetOpt.get();
+                shulkerPlacedPos = pt.placePos;
+                Vec3 hitVec = new Vec3(pt.againstPos.getX() + 0.5, pt.againstPos.getY() + 1.0, pt.againstPos.getZ() + 0.5);
+                BlockHitResult bhr = new BlockHitResult(hitVec, pt.face, pt.againstPos, false);
+                Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), hitVec, ctx.playerRotations());
+                baritone.getLookBehavior().updateTarget(rot, true);
+                ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
+                shulkerState = ShulkerStorageState.WAIT_FOR_BLOCK;
+                shulkerStateTicks = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case WAIT_FOR_BLOCK -> {
+                if (shulkerPlacedPos != null && ctx.world().getBlockState(shulkerPlacedPos).getBlock() instanceof ShulkerBoxBlock) {
+                    shulkerState = ShulkerStorageState.OPEN_BOX;
+                    shulkerStateTicks = 0;
+                } else if (shulkerStateTicks > 15) {
+                    logDirect("§c[AutoShulker] Không thể đặt Shulker Box (server từ chối hoặc lag)! Hủy quy trình...");
+                    shulkerState = ShulkerStorageState.IDLE;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case OPEN_BOX -> {
+                if (shulkerPlacedPos == null) {
+                    shulkerState = ShulkerStorageState.IDLE;
+                    return null;
+                }
+                Vec3 center = new Vec3(shulkerPlacedPos.getX() + 0.5, shulkerPlacedPos.getY() + 0.5, shulkerPlacedPos.getZ() + 0.5);
+                BlockHitResult bhr = new BlockHitResult(center, net.minecraft.core.Direction.UP, shulkerPlacedPos, false);
+                Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), center, ctx.playerRotations());
+                baritone.getLookBehavior().updateTarget(rot, true);
+                ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
+                shulkerState = ShulkerStorageState.WAIT_FOR_CONTAINER;
+                shulkerStateTicks = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case WAIT_FOR_CONTAINER -> {
+                if (ctx.player().containerMenu instanceof ShulkerBoxMenu || (ctx.player().containerMenu != ctx.player().inventoryMenu && ctx.player().containerMenu.slots.size() >= 63)) {
+                    shulkerState = ShulkerStorageState.TRANSFER_ITEMS;
+                    shulkerStateTicks = 0;
+                    shulkerTransferCooldown = 0;
+                    shulkerConsecutiveNoTransfer = 0;
+                } else if (shulkerStateTicks > 25) {
+                    logDirect("§c[AutoShulker] Không thể mở Shulker Box! Đang đào thu hồi lại...");
+                    shulkerState = ShulkerStorageState.MINE_BOX;
+                    shulkerStateTicks = 0;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case TRANSFER_ITEMS -> {
+                if (ctx.player().containerMenu == ctx.player().inventoryMenu) {
+                    shulkerState = ShulkerStorageState.MINE_BOX;
+                    shulkerStateTicks = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (shulkerTransferCooldown > 0) {
+                    shulkerTransferCooldown--;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                int containerId = ctx.player().containerMenu.containerId;
+                int keptBuildingBlocks = 0;
+                int transferSlot = -1;
+
+                for (int slotId = 27; slotId < 63; slotId++) {
+                    ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
+                    if (stack.isEmpty()) continue;
+                    if (isToolOrEssential(stack)) continue;
+
+                    if (stack.is(Items.COBBLESTONE) || stack.is(Items.COBBLED_DEEPSLATE)) {
+                        if (keptBuildingBlocks < 64) {
+                            keptBuildingBlocks += stack.getCount();
+                            continue;
+                        }
+                    }
+
+                    transferSlot = slotId;
+                    break;
+                }
+
+                if (transferSlot != -1 && shulkerConsecutiveNoTransfer < 3) {
+                    ItemStack before = ctx.player().containerMenu.getSlot(transferSlot).getItem().copy();
+                    ctx.playerController().windowClick(containerId, transferSlot, 0, ClickType.QUICK_MOVE, ctx.player());
+                    ItemStack after = ctx.player().containerMenu.getSlot(transferSlot).getItem();
+                    if (before.getCount() == after.getCount()) {
+                        shulkerConsecutiveNoTransfer++;
+                    } else {
+                        shulkerConsecutiveNoTransfer = 0;
+                    }
+                    shulkerTransferCooldown = 2;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                logDirect("§a[AutoShulker] Đã cất gọn toàn bộ quặng và vật phẩm vào Shulker Box!");
+                shulkerState = ShulkerStorageState.CLOSE_CONTAINER;
+                shulkerStateTicks = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case CLOSE_CONTAINER -> {
+                ctx.player().closeContainer();
+                shulkerState = ShulkerStorageState.WAIT_FOR_CLOSE;
+                shulkerStateTicks = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case WAIT_FOR_CLOSE -> {
+                if (ctx.player().containerMenu == ctx.player().inventoryMenu || shulkerStateTicks > 6) {
+                    shulkerState = ShulkerStorageState.MINE_BOX;
+                    shulkerStateTicks = 0;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case MINE_BOX -> {
+                if (shulkerPlacedPos == null) {
+                    shulkerState = ShulkerStorageState.IDLE;
+                    return null;
+                }
+                BlockState state = ctx.world().getBlockState(shulkerPlacedPos);
+                if (state.isAir()) {
+                    baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                    shulkerState = ShulkerStorageState.WAIT_FOR_PICKUP;
+                    shulkerStateTicks = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+                ctx.player().getInventory().setSelectedSlot(0);
+                ctx.playerController().syncHeldItem();
+                MovementHelper.switchToBestToolFor(ctx, state);
+
+                Optional<Rotation> rot = RotationUtils.reachable(ctx, shulkerPlacedPos);
+                if (rot.isPresent()) {
+                    baritone.getLookBehavior().updateTarget(rot.get(), true);
+                    if (ctx.isLookingAt(shulkerPlacedPos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                    }
+                }
+                if (shulkerStateTicks > 140) {
+                    baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                    logDirect("§c[AutoShulker] Quá thời gian đào Shulker Box! Tiếp tục hành trình...");
+                    shulkerState = ShulkerStorageState.IDLE;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case WAIT_FOR_PICKUP -> {
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                if (shulkerPlacedPos != null && ctx.playerFeet().distSqr(shulkerPlacedPos) > 1.5) {
+                    Optional<Rotation> rot = RotationUtils.reachable(ctx, shulkerPlacedPos);
+                    rot.ifPresent(rotation -> baritone.getLookBehavior().updateTarget(rotation, true));
+                }
+                if (shulkerStateTicks > 15 || findShulkerBoxSlot() != -1) {
+                    logDirect("§a[AutoShulker] Đã thu hồi Shulker Box vào balo thành công!");
+                    shulkerState = ShulkerStorageState.IDLE;
+                    shulkerPlacedPos = null;
+                    shulkerStateTicks = 0;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+        }
+
+        return null;
     }
 
     private void handleAntiStuck() {
@@ -1652,6 +2038,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.recentPosIndex = 0;
         this.recentPosCount = 0;
         this.lastAntiStuckPos = null;
+        this.shulkerState = ShulkerStorageState.IDLE;
+        this.shulkerPlacedPos = null;
+        this.shulkerStateTicks = 0;
         Baritone.settings().noPillar.value = false;
         if (filter != null) {
             rescan(new ArrayList<>(), new CalculationContext(baritone));

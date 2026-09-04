@@ -59,6 +59,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optAutoEat = true;
     public static boolean optAutoTotem = true;
     public static boolean optAutoDrop = true;
+    public static boolean optShulkerStorage = true;
     public static boolean optMobAvoid = true;
     public static boolean optParkour = true;
     public static boolean optZeroDelay = true;
@@ -207,7 +208,7 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightSub2, startY, btnW, btnH, "Auto-Eat", optAutoEat, () -> optAutoEat = !optAutoEat));
 
         addRenderableWidget(createOptBtn(rightSub1, startY + gap, btnW, btnH, "Auto-Totem", optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap, btnW, btnH, "Auto-Drop", optAutoDrop, () -> optAutoDrop = !optAutoDrop));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap, btnW, btnH, "Shulker Box", optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
 
         addRenderableWidget(createOptBtn(rightSub1, startY + gap * 2, btnW, btnH, "Mob Avoid", optMobAvoid, () -> optMobAvoid = !optMobAvoid));
         addRenderableWidget(createOptBtn(rightSub2, startY + gap * 2, btnW, btnH, "Parkour", optParkour, () -> optParkour = !optParkour));
@@ -439,6 +440,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoEat.value = optAutoEat;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
+        Baritone.settings().autoShulkerStorage.value = optShulkerStorage;
         Baritone.settings().avoidance.value = optMobAvoid;
         Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
         Baritone.settings().mobAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;

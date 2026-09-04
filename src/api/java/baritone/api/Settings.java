@@ -1318,6 +1318,12 @@ public final class Settings {
     public final Setting<Boolean> internalMiningAirException = new Setting<>(true);
 
     /**
+     * When inventory is full while mining, automatically place a Shulker Box from inventory,
+     * transfer ores and mined items into it, then mine it back up instead of dropping items on the floor.
+     */
+    public final Setting<Boolean> autoShulkerStorage = new Setting<>(true);
+
+    /**
      * The actual GoalNear is set this distance away from the entity you're following
      * <p>
      * For example, set followOffsetDistance to 5 and followRadius to 0 to always stay precisely 5 blocks north of your follow target.
