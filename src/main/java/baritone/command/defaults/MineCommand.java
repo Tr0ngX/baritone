@@ -84,11 +84,11 @@ public class MineCommand extends Command {
             Baritone.settings().avoidance.value = true;
             Baritone.settings().mobAvoidanceRadius.value = 10;
             Baritone.settings().mobSpawnerAvoidanceRadius.value = 16;
-            Baritone.settings().primaryTimeoutMS.value = 30000L;
-            Baritone.settings().failureTimeoutMS.value = 35000L;
-            Baritone.settings().planAheadPrimaryTimeoutMS.value = 30000L;
-            Baritone.settings().planAheadFailureTimeoutMS.value = 35000L;
-            Baritone.settings().movementTimeoutTicks.value = 600;
+            Baritone.settings().primaryTimeoutMS.value = 2500L;
+            Baritone.settings().failureTimeoutMS.value = 4000L;
+            Baritone.settings().planAheadPrimaryTimeoutMS.value = 2500L;
+            Baritone.settings().planAheadFailureTimeoutMS.value = 4000L;
+            Baritone.settings().movementTimeoutTicks.value = 140;
             Baritone.settings().legitMineYLevel.value = -58;
             Baritone.settings().exploreMaintainY.value = -58;
         }
