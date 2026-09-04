@@ -776,12 +776,15 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             dx = currentFeet.x - lastStuckCheckPos.x;
             dz = currentFeet.z - lastStuckCheckPos.z;
         }
-        // Kiểm tra kẹt theo khoảng cách MẶT PHẲNG NGANG (không tính nhảy lên rơi xuống tại chỗ)
-        boolean sameXZ = lastStuckCheckPos != null && (dx * dx + dz * dz) < 2.0;
+        // Kiểm tra di chuyển: Di chuyển theo mặt phẳng ngang >= 2 block HOẶC di chuyển độ cao Y khi chạm đất/bơi trong nước
+        boolean movedHorizontally = lastStuckCheckPos != null && (dx * dx + dz * dz) >= 2.0;
+        boolean movedVertically = lastStuckCheckPos != null && (ctx.player().onGround() || ctx.player().isInWater()) && currentFeet.y != lastStuckCheckPos.y;
+        boolean moved = movedHorizontally || movedVertically;
+        boolean samePosition = lastStuckCheckPos != null && !moved;
         boolean pathCalcInProgress = baritone.getPathingBehavior().getInProgress().isPresent()
                 && baritone.getPathingBehavior().getCurrent() == null;
 
-        if (sameXZ) {
+        if (samePosition) {
             if (!pathCalcInProgress) {
                 stuckTicks++;
             }
@@ -791,7 +794,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             stuckRetries = 0;
             placeBreakOscillationCount = 0;
             placedThisCycle = false;
-            // Đã thực sự di chuyển sang tọa độ XZ khác → Cho phép nhảy+đặt block trở lại
+            // Đã thực sự di chuyển → Cho phép nhảy+đặt block trở lại
             if (Baritone.settings().noPillar.value) {
                 pillarFailCount = 0;
                 Baritone.settings().noPillar.value = false;
@@ -806,14 +809,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             boolean isJumpIntent = baritone.getInputOverrideHandler().isInputForcedDown(Input.JUMP)
                     || ctx.minecraft().options.keyJump.isDown();
             boolean isJumping = !isMobKnockback && isJumpIntent && (ctx.player().getDeltaMovement().y > 0.1 || !ctx.player().onGround());
-            if (isJumping && sameXZ) {
-                pillarFailCount++;
-                if (pillarFailCount >= 2) {
-                    Baritone.settings().noPillar.value = true;
-                    logDirect("§c[AntiPillarLoop] Bot bị kẹt nhảy+đặt block dưới chân (" + pillarFailCount + " lần)! Tạm tắt pillar, buộc đổi hướng...");
-                    forceReroute = true;
-                    stuckTicks = 0;
-                    return;
+            if (isJumping && samePosition) {
+                long now = System.currentTimeMillis();
+                if (now - lastPillarFailTime > 600) { // ít nhất 600ms (12 tick) giữa các lần nhảy riêng biệt
+                    lastPillarFailTime = now;
+                    pillarFailCount++;
+                    if (pillarFailCount >= 2) {
+                        Baritone.settings().noPillar.value = true;
+                        logDirect("§c[AntiPillarLoop] Bot bị kẹt nhảy+đặt block dưới chân (" + pillarFailCount + " lần)! Tạm tắt pillar, buộc đổi hướng...");
+                        forceReroute = true;
+                        stuckTicks = 0;
+                        return;
+                    }
                 }
             }
         }
@@ -828,6 +835,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             placedThisCycle = false;
             stuckRetries++;
 
+            // Khắc phục cát/sỏi sập trúng đầu
+            BlockPos head = currentFeet.above();
+            BlockState headState = ctx.world().getBlockState(head);
+            if (headState.isSuffocating(ctx.world(), head) || !headState.isAir()) {
+                ctx.playerController().clickBlock(head, net.minecraft.core.Direction.UP);
+            }
+
             int targetY = Baritone.settings().legitMineYLevel.value;
 
             // 1. ƯU TIÊN SỐ 1: Nếu kẹt khi đang đào quặng (quặng không tới được / treo trên vách / bị chặn): Blacklist và đổi quặng khác!
@@ -837,58 +851,58 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 candidates.stream()
                         .min(Comparator.comparingDouble(currentFeet::distSqr))
                         .ifPresent(pos -> {
-                            blacklist.add(pos);
-                            oreMemory.remove(pos);
-                            if (knownOreLocations != null) {
-                                try {
-                                    knownOreLocations.remove(pos);
-                                } catch (Exception ignored) {}
+                            // Blacklist quặng gần nhất và toàn bộ quặng cùng vỉa lân cận (bán kính 3 block) để không bị kẹt lặp lại
+                            List<BlockPos> veinOres = candidates.stream()
+                                    .filter(p -> p.equals(pos) || p.distSqr(pos) <= 9)
+                                    .collect(Collectors.toList());
+                            for (BlockPos p : veinOres) {
+                                blacklist.add(p);
+                                oreMemory.remove(p);
                             }
-                            logDirect("§e[AntiStuck] Quặng tại " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + " bị chặn/không tới được! Đang tự động đổi sang vỉa quặng khác...");
+                            if (knownOreLocations != null) {
+                                knownOreLocations.removeIf(blacklist::contains);
+                            }
+                            logDirect("§e[AntiStuck] Vỉa quặng tại " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + " (" + veinOres.size() + " block) bị chặn/không tới được! Đang tự động đổi sang vỉa quặng khác...");
                         });
                 forceReroute = true;
                 return;
             }
 
-            // 2. Khi đang đào dốc xuống mà gặp vật cản (CHỈ khi không có quặng nào đang đào): Đổi hướng đào dốc
+            // 2. Khi đang đào dốc xuống mà gặp vật cản (CHỈ khi không có quặng nào đang đào): Đổi hướng đào dốc theo chiều kim đồng hồ
             boolean noOres = (knownOreLocations == null || knownOreLocations.isEmpty()) && oreMemory.isEmpty();
             if (noOres && (!hasReachedTargetY || currentFeet.y > targetY + 3)) {
-                if (tunnelDirection != null) {
-                    net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
-                    tunnelDirection = newDir;
-                    logDirect("§6[AntiStuck] Gặp vật cản khi đào dốc xuống! Tự động đổi hướng đào sang " + newDir.getName().toUpperCase() + "...");
+                if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                    net.minecraft.core.Direction dir = ctx.player().getDirection();
+                    tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
                 }
+                net.minecraft.core.Direction newDir = tunnelDirection.getClockWise();
+                tunnelDirection = newDir;
+                logDirect("§6[AntiStuck] Gặp vật cản khi đào dốc xuống! Tự động đổi hướng đào sang " + newDir.getName().toUpperCase() + "...");
                 forceReroute = true;
                 return;
             }
 
             // 3. Đào hầm tại tầng đáy bị kẹt bedrock:
-            if (tunnelDirection != null) {
-                // Sau 4 lần thử (đã xoay cả 4 hướng) mà vẫn kẹt = toàn Bedrock -> Đào ngược lên 2 block
-                if (stuckRetries >= 4) {
-                    int escapeY = Math.min(currentFeet.y + 2, targetY + 5);
-                    logDirect("§c[AntiStuck] Bị kẹt bedrock cả 4 hướng! Đào ngược lên Y=" + escapeY + " để thoát...");
-                    tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
-                    stuckRetries = 0;
-                    forceReroute = true;
-                    return;
-                }
-                net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
-                tunnelDirection = newDir;
-                tunnelOrigin = new BlockPos(currentFeet.x, targetY, currentFeet.z);
-                currentTunnelTarget = null;
-                logDirect("§6[AntiStuck] Bị kẹt hầm/gặp Bedrock tại tầng đáy! Tự động chuyển hướng đào hầm sang " + newDir.getName().toUpperCase() + "!");
+            if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                net.minecraft.core.Direction dir = ctx.player().getDirection();
+                tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+            }
+            // Sau 4 lần thử (đã xoay cả 4 hướng) mà vẫn kẹt = toàn Bedrock -> Đào ngược lên 2 block
+            if (stuckRetries >= 4) {
+                int escapeY = Math.min(currentFeet.y + 2, targetY + 5);
+                logDirect("§c[AntiStuck] Bị kẹt bedrock cả 4 hướng! Đào ngược lên Y=" + escapeY + " để thoát...");
+                tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
+                stuckRetries = 0;
                 forceReroute = true;
                 return;
             }
-
-            // 4. Khắc phục cát/sỏi sập trúng đầu
-            BlockPos head = currentFeet.above();
-            BlockState headState = ctx.world().getBlockState(head);
-            if (headState.isSuffocating(ctx.world(), head) || !headState.isAir()) {
-                ctx.playerController().clickBlock(head, net.minecraft.core.Direction.UP);
-            }
+            net.minecraft.core.Direction newDir = tunnelDirection.getClockWise();
+            tunnelDirection = newDir;
+            tunnelOrigin = new BlockPos(currentFeet.x, targetY, currentFeet.z);
+            currentTunnelTarget = null;
+            logDirect("§6[AntiStuck] Bị kẹt hầm/gặp Bedrock tại tầng đáy! Tự động chuyển hướng đào hầm sang " + newDir.getName().toUpperCase() + "!");
             forceReroute = true;
+            return;
         }
     }
 
@@ -1264,7 +1278,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 .collect(Collectors.toList());
 
         if (locs.size() > max) {
-            return locs.subList(0, max);
+            return new ArrayList<>(locs.subList(0, max));
         }
         return locs;
     }

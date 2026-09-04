@@ -119,10 +119,6 @@ public final class ARAStarPathFinder extends AbstractNodeCostSearch {
         double epsilon = initialEpsilon;
         IPath bestFoundPath = null;
 
-        // INCONS list: nodes whose g-values were updated after being expanded
-        // These need to be re-inserted into OPEN at the start of each new iteration
-        List<PathNode> inconsistent = new ArrayList<>();
-
         searchLoop:
         while (epsilon >= 1.0 && !cancelRequested) {
             // Run weighted A* with current epsilon
