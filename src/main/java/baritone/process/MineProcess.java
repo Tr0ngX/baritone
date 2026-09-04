@@ -192,10 +192,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
-        PathingCommand stuckCmd = handleAntiStuck();
-        if (stuckCmd != null) {
-            return stuckCmd;
-        }
+        handleAntiStuck();
 
         if (Baritone.settings().autoEat.value) {
             PathingCommand eatCmd = handleAutoEat(isSafeToCancel);
@@ -733,9 +730,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
     }
 
-    private PathingCommand handleAntiStuck() {
+    private void handleAntiStuck() {
         if (ctx.player() == null || eatingSlot != -1) {
-            return null;
+            return;
         }
 
         // Theo dõi hành động đặt block và đào block để phát hiện vòng lặp "đặt lên rồi đào xuống"
@@ -757,156 +754,121 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (isLeft && placedThisCycle) {
                 lastBrokenBlockPos = targetedBlock;
                 lastBrokenBlockTime = now;
-                // Nếu đang đào đúng block vừa đặt trong vòng 2.5 giây (hoặc đào block ngay dưới chân)
                 if ((lastPlacedBlockPos != null && targetedBlock.equals(lastPlacedBlockPos) && (now - lastPlacedBlockTime) < 2500)
                         || (targetedBlock.equals(ctx.playerFeet()) && (now - lastPlacedBlockTime) < 2500)) {
                     placeBreakOscillationCount++;
-                    placedThisCycle = false; // Phải đặt block tiếp theo mới tính thêm 1 lần
+                    placedThisCycle = false;
                 }
             }
         }
 
         BetterBlockPos currentFeet = ctx.playerFeet();
-        double flatDistSqr = 0;
+        double dx = 0;
+        double dz = 0;
         if (lastStuckCheckPos != null) {
-            double dx = currentFeet.x - lastStuckCheckPos.x;
-            double dz = currentFeet.z - lastStuckCheckPos.z;
-            flatDistSqr = dx * dx + dz * dz;
+            dx = currentFeet.x - lastStuckCheckPos.x;
+            dz = currentFeet.z - lastStuckCheckPos.z;
         }
-
         // Kiểm tra kẹt theo khoảng cách MẶT PHẲNG NGANG (không tính nhảy lên rơi xuống tại chỗ)
-        if (lastStuckCheckPos != null && flatDistSqr < 2.0 && Math.abs(currentFeet.y - lastStuckCheckPos.y) <= 1) {
+        boolean sameXZ = lastStuckCheckPos != null && (dx * dx + dz * dz) < 2.0;
+
+        if (sameXZ) {
             stuckTicks++;
         } else {
             lastStuckCheckPos = currentFeet;
             stuckTicks = 0;
-            // CHỈ reset khi đã di chuyển xa thực sự (ít nhất 5 block ngang = 25 distSqr)
-            if (flatDistSqr >= 25.0) {
-                stuckRetries = 0;
+            stuckRetries = 0;
+            placeBreakOscillationCount = 0;
+            placedThisCycle = false;
+            // Đã thực sự di chuyển sang tọa độ XZ khác → Cho phép nhảy+đặt block trở lại
+            if (Baritone.settings().noPillar.value) {
                 pillarFailCount = 0;
-                placeBreakOscillationCount = 0;
-                placedThisCycle = false;
+                Baritone.settings().noPillar.value = false;
+                logDirect("§a[AntiPillarLoop] Đã di chuyển thành công, cho phép nhảy+đặt block trở lại.");
             }
         }
 
-        // Trong quá trình đào mỏ, LUÔN cấm nhảy+đặt block dưới chân để triệt tiêu 100% bug kẹt pillar
-        Baritone.settings().noPillar.value = true;
-
-        // === ĐIỀU KIỆN 1: PHÁT HIỆN VÒNG LẶP "ĐẶT LÊN BLOCK RỒI LẠI ĐÀO XUỐNG" ===
-        if (placeBreakOscillationCount >= 2) {
-            return createImmediateEscapePlan("Phát hiện vòng lặp đặt block rồi đào xuống");
-        }
-
-        // === ĐIỀU KIỆN 2: PHÁT HIỆN KẸT NHẢY / PILLAR LOOP ===
-        boolean isJumping = ctx.player().getDeltaMovement().y > 0.08 || !ctx.player().onGround();
-        boolean sameXZ = flatDistSqr < 2.0;
-
-        if (stuckTicks >= 15 && isJumping && sameXZ) {
-            pillarFailCount++;
-            return createImmediateEscapePlan("Bot bị kẹt nhảy/pillar liên tục (" + pillarFailCount + " lần)");
-        }
-
-        // === ĐIỀU KIỆN 3: BỊ STUCK Ở HÀNH ĐỘNG QUÁ LÂU ===
-        boolean isBreaking = baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT);
-        boolean isHittingBedrock = false;
-        if (isBreaking && hit instanceof BlockHitResult bhrTarget) {
-            BlockPos targeted = bhrTarget.getBlockPos();
-            if (ctx.world().getBlockState(targeted).getBlock() == Blocks.BEDROCK) {
-                isHittingBedrock = true;
-            }
-        }
-
-        // Nếu bot đang đập Bedrock (không thể phá vỡ): sau 15 tick (0.75s) lập tức đổi hướng
-        if (isHittingBedrock && stuckTicks >= 15) {
-            return createImmediateEscapePlan("Bot cố đào Bedrock không thể phá vỡ");
-        }
-
-        // Nếu bot đang đập block bình thường (deepslate/quặng): cho phép tối đa 60 tick (3 giây)
-        // Nếu bot không đập block mà đứng yên/chạy đâm đầu vào tường: sau 40 tick (2 giây) tạo kế hoạch thoát
-        int maxStuckTicks = isBreaking ? 60 : 40;
-        if (stuckTicks >= maxStuckTicks) {
-            return createImmediateEscapePlan("Bị kẹt hành động quá lâu (" + (maxStuckTicks / 20.0) + "s không tiến triển)");
-        }
-
-        return null;
-    }
-
-    private PathingCommand createImmediateEscapePlan(String reason) {
-        BetterBlockPos currentFeet = ctx.playerFeet();
-        stuckTicks = 0;
-        placeBreakOscillationCount = 0;
-        placedThisCycle = false;
-        stuckRetries++;
-        logDirect("§c[ImmediatePlan] " + reason + "! Dừng hành động cũ, tạo Immediate Plan...");
-
-        // 1. Dọn sạch phím bấm, dừng đập block, hủy đường đi hiện tại
-        baritone.getInputOverrideHandler().clearAllKeys();
-        baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
-        baritone.getPathingBehavior().cancelEverything();
-
-        // 2. Tuyệt đối cấm pillar để tránh nhảy lại vào chỗ kẹt
-        Baritone.settings().noPillar.value = true;
-
-        // 3. Nếu đang nhắm quặng gần mà không tới được: Blacklist ngay quặng đó!
-        if (knownOreLocations != null && !knownOreLocations.isEmpty()) {
-            Optional<BlockPos> nearestOre = knownOreLocations.stream().min(Comparator.comparingDouble(currentFeet::distSqr));
-            if (nearestOre.isPresent()) {
-                BlockPos orePos = nearestOre.get();
-                if (currentFeet.distSqr(orePos) <= 36) { // Trong vòng 6 block mà bị kẹt
-                    blacklist.add(orePos);
-                    oreMemory.remove(orePos);
-                    knownOreLocations.remove(orePos);
-                    logDirect("§e[ImmediatePlan] Quặng tại " + orePos.getX() + ", " + orePos.getY() + ", " + orePos.getZ() + " gây kẹt! Đã blacklist để đổi mục tiêu.");
+        // === PHÁT HIỆN PILLAR LOOP ===
+        // Khi bị kẹt 1 chỗ > 60 tick (3 giây), kiểm tra xem bot có đang cố nhảy+đặt block không
+        if (stuckTicks >= 60 && !Baritone.settings().noPillar.value) {
+            boolean isJumping = ctx.player().getDeltaMovement().y > 0.1 || !ctx.player().onGround();
+            if (isJumping && sameXZ) {
+                pillarFailCount++;
+                if (pillarFailCount >= 2) {
+                    Baritone.settings().noPillar.value = true;
+                    logDirect("§c[AntiPillarLoop] Bot bị kẹt nhảy+đặt block dưới chân (" + pillarFailCount + " lần)! Tạm tắt pillar, buộc đổi hướng...");
+                    forceReroute = true;
+                    stuckTicks = 0;
+                    return;
                 }
             }
         }
 
-        // 4. KIỂM TRA ĐẦU & TRẦN: Đào trực tiếp bằng clickBlock thay vì tạo GoalBlock ép nhảy lên
-        BlockPos eyePos = currentFeet.above();
-        BlockState eyeState = ctx.world().getBlockState(eyePos);
-        if (!eyeState.isAir() && !(eyeState.getBlock() instanceof AirBlock) && eyeState.getBlock() != Blocks.BEDROCK) {
-            logDirect("§b[ImmediatePlan] Đào thông đầu bị nghẹt tại (" + eyePos.getX() + ", " + eyePos.getY() + ", " + eyePos.getZ() + ")...");
-            ctx.playerController().clickBlock(eyePos, net.minecraft.core.Direction.UP);
-        }
+        // === PHÁT HIỆN KẸT HÀNH ĐỘNG QUÁ LÂU (>= 100 tick = 5s) HOẶC VÒNG LẶP ĐẶT/ĐÀO ===
+        if (stuckTicks >= 100 || placeBreakOscillationCount >= 2) {
+            if (placeBreakOscillationCount >= 2) {
+                logDirect("§c[AntiStuck] Phát hiện vòng lặp đặt block rồi đào xuống! Đổi hướng ngay...");
+            }
+            stuckTicks = 0;
+            placeBreakOscillationCount = 0;
+            placedThisCycle = false;
+            stuckRetries++;
 
-        BlockPos headPos = currentFeet.above(2);
-        BlockState headState = ctx.world().getBlockState(headPos);
-        if (!headState.isAir() && !(headState.getBlock() instanceof AirBlock) && headState.getBlock() != Blocks.BEDROCK) {
-            logDirect("§b[ImmediatePlan] Đập block trên trần (" + headPos.getX() + ", " + headPos.getY() + ", " + headPos.getZ() + ") để lấy khoảng trống đầu...");
-            ctx.playerController().clickBlock(headPos, net.minecraft.core.Direction.UP);
-        }
+            int targetY = Baritone.settings().legitMineYLevel.value;
 
-        // 5. ĐỔI HƯỚNG ĐÀO HẦM (xoay 90 độ) VÀ TẠO WAYPOINT TIẾP THEO NGAY LẬP TỨC
-        int targetY = Baritone.settings().legitMineYLevel.value;
-        if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-            net.minecraft.core.Direction dir = ctx.player().getDirection();
-            tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
-        }
+            // 1. Khi đang đào dốc xuống mà gặp vật cản: Đổi hướng đào dốc
+            if (!hasReachedTargetY || currentFeet.y > targetY + 3) {
+                if (tunnelDirection != null) {
+                    net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
+                    tunnelDirection = newDir;
+                    logDirect("§6[AntiStuck] Gặp vật cản khi đào dốc xuống! Tự động đổi hướng đào sang " + newDir.getName().toUpperCase() + "...");
+                }
+                forceReroute = true;
+                return;
+            }
 
-        // Nếu đã xoay cả 4 hướng mà vẫn kẹt = toàn Bedrock -> Đào ngược lên 2 block
-        if (stuckRetries >= 4) {
-            int escapeY = Math.min(currentFeet.y + 2, targetY + 5);
-            logDirect("§c[ImmediatePlan] Kẹt bedrock cả 4 hướng! Đào ngược lên Y=" + escapeY + " để thoát...");
-            tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
-            stuckRetries = 0;
+            // 2. Nếu kẹt không tới được quặng gần nhất: Blacklist và đổi quặng khác
+            if (knownOreLocations != null && !knownOreLocations.isEmpty()) {
+                knownOreLocations.stream()
+                        .min(Comparator.comparingDouble(currentFeet::distSqr))
+                        .ifPresent(pos -> {
+                            blacklist.add(pos);
+                            oreMemory.remove(pos);
+                            knownOreLocations.remove(pos);
+                            logDirect("§e[AntiStuck] Quặng tại " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + " bị chặn/không tới được! Đang tự động đổi sang vỉa quặng khác...");
+                        });
+                forceReroute = true;
+                return;
+            }
+
+            // 3. Đào hầm tại tầng đáy bị kẹt bedrock:
+            if (tunnelDirection != null) {
+                // Sau 4 lần thử (đã xoay cả 4 hướng) mà vẫn kẹt = toàn Bedrock -> Đào ngược lên 2 block
+                if (stuckRetries >= 4) {
+                    int escapeY = Math.min(currentFeet.y + 2, targetY + 5);
+                    logDirect("§c[AntiStuck] Bị kẹt bedrock cả 4 hướng! Đào ngược lên Y=" + escapeY + " để thoát...");
+                    tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
+                    stuckRetries = 0;
+                    forceReroute = true;
+                    return;
+                }
+                net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
+                tunnelDirection = newDir;
+                tunnelOrigin = new BlockPos(currentFeet.x, targetY, currentFeet.z);
+                currentTunnelTarget = null;
+                logDirect("§6[AntiStuck] Bị kẹt hầm/gặp Bedrock tại tầng đáy! Tự động chuyển hướng đào hầm sang " + newDir.getName().toUpperCase() + "!");
+                forceReroute = true;
+                return;
+            }
+
+            // 4. Khắc phục cát/sỏi sập trúng đầu
+            BlockPos head = currentFeet.above();
+            BlockState headState = ctx.world().getBlockState(head);
+            if (headState.isSuffocating(ctx.world(), head) || !headState.isAir()) {
+                ctx.playerController().clickBlock(head, net.minecraft.core.Direction.UP);
+            }
             forceReroute = true;
-            return updateGoal();
         }
-
-        net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
-        tunnelDirection = newDir;
-        tunnelOrigin = new BlockPos(currentFeet.x, targetY, currentFeet.z);
-
-        // Tạo ngay mục tiêu mới 12 block phía trước theo hướng mới để bot đi ngay lập tức
-        BlockPos newTarget = new BlockPos(
-                currentFeet.x + newDir.getStepX() * 12,
-                targetY,
-                currentFeet.z + newDir.getStepZ() * 12
-        );
-        currentTunnelTarget = newTarget;
-        forceReroute = true;
-        logDirect("§6[ImmediatePlan] Lập tức chuyển hướng đào hầm sang " + newDir.getName().toUpperCase() + " tại " + newTarget.getX() + ", " + newTarget.getY() + ", " + newTarget.getZ());
-        return new PathingCommand(new GoalTwoBlocks(newTarget), PathingCommandType.CANCEL_AND_SET_GOAL);
     }
 
     private PathingCommand handleAutoEat(boolean isSafeToCancel) {
