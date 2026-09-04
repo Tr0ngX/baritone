@@ -55,6 +55,7 @@ import net.minecraft.world.phys.HitResult;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import static baritone.api.pathing.movement.ActionCosts.COST_INF;
@@ -117,7 +118,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     );
 
     private BlockOptionalMetaLookup filter;
-    private List<BlockPos> knownOreLocations;
+    private volatile List<BlockPos> knownOreLocations = new CopyOnWriteArrayList<>();
     private final Set<BlockPos> blacklist = ConcurrentHashMap.newKeySet(); // inaccessible
     private final Set<BlockPos> oreMemory = ConcurrentHashMap.newKeySet(); // persistent ore memory across unloaded chunks
     private Map<BlockPos, Long> anticipatedDrops;
@@ -235,6 +236,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             cleanInventoryIfFull();
         }
         int mineGoalUpdateInterval = Baritone.settings().mineGoalUpdateInterval.value;
+        addNearbyQuick();
         List<BlockPos> curr = new ArrayList<>(knownOreLocations);
         if (mineGoalUpdateInterval != 0 && tickCount++ % mineGoalUpdateInterval == 0) { // big brain
             CalculationContext context = new CalculationContext(baritone, true);
@@ -321,12 +323,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         // 3. Quét tìm BẤT KỲ quặng mục tiêu nào đang nằm trong tầm với (Reachable) quanh người:
         // Đào trực tiếp ngay tại chỗ mà không cần A* di chuyển hay huỷ đường!
-        if (ctx.player().onGround() || ctx.player().isInWater()) {
+        boolean canDirectMine = ctx.player().onGround() || ctx.player().isInWater() || ctx.player().getDeltaMovement().y > -0.5;
+        if (canDirectMine) {
             Optional<BlockPos> reachableOre = curr.stream()
                     .filter(pos -> ctx.playerFeet().distSqr(pos) <= 25)
-                    .filter(pos -> !(BlockStateInterface.get(ctx, pos).getBlock() instanceof AirBlock))
+                    .filter(pos -> !ctx.world().getBlockState(pos).isAir())
                     .filter(pos -> {
-                        BlockState s = baritone.bsi.get0(pos);
+                        BlockState s = ctx.world().getBlockState(pos);
                         return filter.has(s) && !MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), s);
                     })
                     .filter(pos -> RotationUtils.reachable(ctx, pos).isPresent())
@@ -338,13 +341,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     activeMiningBlock = pos;
                     activeMiningTicks = 0;
                 }
-                BlockState state = baritone.bsi.get0(pos);
+                BlockState state = ctx.world().getBlockState(pos);
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
                 if (rot.isPresent()) {
                     baritone.getPathingBehavior().cancelSegmentIfSafe();
                     baritone.getInputOverrideHandler().clearAllKeys();
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
-                    MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos));
+                    MovementHelper.switchToBestToolFor(ctx, state);
                     if (ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
                     }
@@ -434,7 +437,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     }
 
     private void cleanOreMemory(CalculationContext context, BlockOptionalMetaLookup filter) {
-        if (filter == null || oreMemory.isEmpty()) {
+        if (filter == null || oreMemory.isEmpty() || ctx.world() == null) {
             return;
         }
         // 1. Loại bỏ các vị trí đã bị blacklist
@@ -442,8 +445,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         // 2. Kiểm tra các vị trí trong chunk ĐANG LOAD mà không còn là quặng (đã đào) hoặc không thể đào (bedrock)
         oreMemory.removeIf(pos -> {
-            if (context.bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ())) {
-                BlockState state = context.bsi.get0(pos);
+            net.minecraft.world.level.chunk.LevelChunk chunk = ctx.world().getChunkSource().getChunk(pos.getX() >> 4, pos.getZ() >> 4, false);
+            if (chunk != null && !chunk.isEmpty()) {
+                BlockState state = chunk.getBlockState(pos);
                 if (!filter.has(state)) {
                     return true; // Đã đào xong / không còn là quặng mục tiêu
                 }
@@ -452,7 +456,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return true;
                 }
             }
-            // Chunk KHÔNG LOAD (đi xa): Tuyệt đối giữ nguyên trong oreMemory, không được xóa!
+            // Chunk KHÔNG LOAD hoặc CHƯA ĐẦY ĐỦ DATA: Tuyệt đối giữ nguyên trong oreMemory, không được xóa!
             return false;
         });
     }
@@ -506,7 +510,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             allCandidates.addAll(droppedItemsScan());
             locs = prune(context, allCandidates, filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
             if (!locs.isEmpty()) {
-                knownOreLocations = locs;
+                knownOreLocations = new CopyOnWriteArrayList<>(locs);
                 logDirect("§a[OreMemory] Chuyển hướng tới " + locs.size() + " quặng đã lưu trong bộ nhớ (cách " + (int)Math.sqrt(ctx.playerFeet().distSqr(locs.get(0))) + "m)!");
             }
         }
@@ -531,9 +535,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     lockedTargetOre = null;
                 }
 
-                // Cơ chế Hysteresis: Nếu lockedTargetOre ở xa (> 8 block), nhưng có quặng lộ diện ngay sát người (<= 4 block),
-                // thì mới đổi lockedTargetOre sang quặng sát người đó.
-                if (lockedTargetOre != null && ctx.playerFeet().distSqr(lockedTargetOre) > 64) {
+                // Cơ chế Hysteresis thông minh: Nếu có quặng ngay sát người (<= 4 block, distSqr <= 16)
+                // trong khi lockedTargetOre ở xa hơn (> 4 block), lập tức đổi lockedTargetOre sang quặng sát người!
+                if (lockedTargetOre != null && ctx.playerFeet().distSqr(lockedTargetOre) > 16) {
                     Optional<BlockPos> veryClose = locs2.stream()
                             .filter(pos -> ctx.playerFeet().distSqr(pos) <= 16)
                             .min(Comparator.comparingDouble(ctx.playerFeet()::distSqr));
@@ -560,10 +564,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 List<BlockPos> targetOres;
                 if (lockedTargetOre != null) {
-                    // Gom toàn bộ quặng trong cùng cụm (bán kính 6 block quanh lockedTargetOre) để GoalComposite bao trùm cả vỉa
+                    // Gom toàn bộ quặng trong cùng cụm (bán kính 10 block quanh lockedTargetOre) để GoalComposite bao trùm cả vỉa
                     final BlockPos target = lockedTargetOre;
                     targetOres = locs2.stream()
-                            .filter(pos -> pos.equals(target) || pos.distSqr(target) <= 36)
+                            .filter(pos -> pos.equals(target) || pos.distSqr(target) <= 100)
                             .collect(Collectors.toList());
                     if (targetOres.isEmpty()) {
                         targetOres = Collections.singletonList(target);
@@ -573,7 +577,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 }
 
                 Goal goal = new GoalComposite(targetOres.stream().map(loc -> coalesce(loc, locs2, context)).toArray(Goal[]::new));
-                knownOreLocations = locs2;
+                knownOreLocations = new CopyOnWriteArrayList<>(locs2);
                 boolean isPathing = baritone.getPathingBehavior().isPathing();
                 boolean fr = forceReroute;
                 forceReroute = false;
@@ -727,7 +731,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             cancel();
             return;
         }
-        knownOreLocations = locs;
+        knownOreLocations = new CopyOnWriteArrayList<>(locs);
     }
 
     private boolean internalMiningGoal(BlockPos pos, CalculationContext context, List<BlockPos> locs) {
@@ -1073,14 +1077,26 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
             int targetY = Baritone.settings().legitMineYLevel.value;
 
-            // 1. ƯU TIÊN SỐ 1: Nếu kẹt khi đang đào quặng (quặng không tới được / treo trên vách / bị chặn): Blacklist và đổi quặng khác!
+            // 1. ƯU TIÊN SỐ 1: Nếu kẹt khi đang tiếp cận quặng ở cự ly gần:
             if ((knownOreLocations != null && !knownOreLocations.isEmpty()) || !oreMemory.isEmpty()) {
                 List<BlockPos> candidates = (knownOreLocations != null && !knownOreLocations.isEmpty())
                         ? knownOreLocations : new ArrayList<>(oreMemory);
-                candidates.stream()
-                        .min(Comparator.comparingDouble(currentFeet::distSqr))
-                        .ifPresent(pos -> {
-                            // Blacklist quặng gần nhất và toàn bộ quặng cùng vỉa lân cận (bán kính 3 block) để không bị kẹt lặp lại
+                Optional<BlockPos> closestCandidate = candidates.stream()
+                        .min(Comparator.comparingDouble(currentFeet::distSqr));
+                if (closestCandidate.isPresent()) {
+                    BlockPos pos = closestCandidate.get();
+                    double distSq = currentFeet.distSqr(pos);
+                    // CHỈ xử lý theo quặng nếu quặng ở gần (<= 7 block, distSq <= 49).
+                    // Nếu quặng ở xa (> 7 block), bot bị kẹt là do chướng ngại hầm trên đường đi, KHÔNG ĐƯỢC blacklist quặng!
+                    if (distSq <= 49) {
+                        if (stuckRetries < 2) {
+                            // Lần đầu bị kẹt: CHỈ reroute/reset path, KHÔNG blacklist vội quặng còn ngon!
+                            logDirect("§e[AntiStuck] Tạm thời khựng khi đến quặng tại " + pos.toShortString() + " (thử 1/2)! Đang thử đổi góc tiếp cận...");
+                            lockedTargetOre = null;
+                            forceReroute = true;
+                            return;
+                        } else {
+                            // Đã kẹt liên tiếp >= 2 lần ngay tại quặng này: Lúc này mới blacklist vỉa quặng không tới được
                             List<BlockPos> veinOres = candidates.stream()
                                     .filter(p -> p.equals(pos) || p.distSqr(pos) <= 9)
                                     .collect(Collectors.toList());
@@ -1091,11 +1107,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             if (knownOreLocations != null) {
                                 knownOreLocations.removeIf(blacklist::contains);
                             }
-                            logDirect("§e[AntiStuck] Vỉa quặng tại " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + " (" + veinOres.size() + " block) bị chặn/không tới được! Đang tự động đổi sang vỉa quặng khác...");
-                        });
-                lockedTargetOre = null;
-                forceReroute = true;
-                return;
+                            logDirect("§c[AntiStuck] Vỉa quặng tại " + pos.toShortString() + " (" + veinOres.size() + " block) không thể tiếp cận sau 2 lần thử! Bỏ qua vỉa này...");
+                            lockedTargetOre = null;
+                            forceReroute = true;
+                            return;
+                        }
+                    }
+                }
             }
 
             // 2. Khi đang đào dốc xuống mà gặp vật cản (CHỈ khi không có quặng nào đang đào): Đổi hướng đào dốc theo chiều kim đồng hồ
@@ -1474,8 +1492,42 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         cleanOreMemory(context, filter);
         List<BlockPos> allCandidates = new ArrayList<>(oreMemory);
         allCandidates.addAll(dropped);
-        knownOreLocations = prune(context, allCandidates, filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, dropped);
+        knownOreLocations = new CopyOnWriteArrayList<>(prune(context, allCandidates, filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, dropped));
         return true;
+    }
+
+    private void addNearbyQuick() {
+        BlockOptionalMetaLookup f = filterFilter();
+        if (f == null || ctx.world() == null || ctx.player() == null) {
+            return;
+        }
+        BetterBlockPos feet = ctx.playerFeet();
+        int r = 5;
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -3; dy <= 4; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (dx * dx + dz * dz > r * r) {
+                        continue;
+                    }
+                    BlockPos pos = new BlockPos(feet.x + dx, feet.y + dy, feet.z + dz);
+                    BlockState state = ctx.world().getBlockState(pos);
+                    if (f.has(state)) {
+                        if (!blacklist.contains(pos)) {
+                            oreMemory.add(pos);
+                            if (!knownOreLocations.contains(pos)) {
+                                knownOreLocations.add(pos);
+                            }
+                        }
+                    } else if (state.isAir()) {
+                        oreMemory.remove(pos);
+                        knownOreLocations.remove(pos);
+                        if (lockedTargetOre != null && lockedTargetOre.equals(pos)) {
+                            lockedTargetOre = null;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static List<BlockPos> prune(CalculationContext ctx, List<BlockPos> locs2, BlockOptionalMetaLookup filter, int max, Collection<BlockPos> blacklist, List<BlockPos> dropped) {
@@ -1585,7 +1637,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             this.filter = null;
         }
         this.desiredQuantity = quantity;
-        this.knownOreLocations = new ArrayList<>();
+        this.knownOreLocations = new CopyOnWriteArrayList<>();
         this.blacklist.clear();
         this.oreMemory.clear();
         this.branchPoint = null;
