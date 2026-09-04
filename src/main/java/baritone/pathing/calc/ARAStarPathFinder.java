@@ -123,6 +123,7 @@ public final class ARAStarPathFinder extends AbstractNodeCostSearch {
         // These need to be re-inserted into OPEN at the start of each new iteration
         List<PathNode> inconsistent = new ArrayList<>();
 
+        searchLoop:
         while (epsilon >= 1.0 && !cancelRequested) {
             // Run weighted A* with current epsilon
             while (!openSet.isEmpty() && numEmptyChunk < pathingMaxChunkBorderFetch && !cancelRequested) {
@@ -136,7 +137,7 @@ public final class ARAStarPathFinder extends AbstractNodeCostSearch {
                             return Optional.of(bestFoundPath);
                         }
                         // Fall through to bestSoFar
-                        break;
+                        break searchLoop;
                     }
                 }
                 if (slowPath) {
@@ -248,6 +249,16 @@ public final class ARAStarPathFinder extends AbstractNodeCostSearch {
                 }
             }
 
+            // Cannot continue if openSet is empty or chunk boundary reached
+            if (openSet.isEmpty() || numEmptyChunk >= pathingMaxChunkBorderFetch) {
+                break searchLoop;
+            }
+
+            // Already reached optimal epsilon (1.0), cannot improve further
+            if (epsilon <= 1.0) {
+                break searchLoop;
+            }
+
             // Decrease epsilon for next iteration
             epsilon *= epsilonDecayFactor;
             if (epsilon < 1.0) {
@@ -260,6 +271,9 @@ public final class ARAStarPathFinder extends AbstractNodeCostSearch {
 
         if (cancelRequested) {
             return Optional.empty();
+        }
+        if (bestFoundPath != null) {
+            return Optional.of(bestFoundPath);
         }
         System.out.println(numMovementsConsidered + " movements considered");
         System.out.println("Open set size: " + openSet.size());

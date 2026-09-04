@@ -157,6 +157,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
         this.lastCalcFailed = calcFailed;
+        int targetY = Baritone.settings().legitMineYLevel.value;
+        if (ctx.playerFeet().y <= targetY) {
+            hasReachedTargetY = true;
+        }
         if (desiredQuantity > 0) {
             int curr = ctx.player().getInventory().getNonEquipmentItems().stream()
                     .filter(stack -> filter.has(stack))
@@ -361,6 +365,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         boolean legit = Baritone.settings().legitMine.value;
+        int targetY = Baritone.settings().legitMineYLevel.value;
+        if (ctx.playerFeet().y <= targetY) {
+            hasReachedTargetY = true;
+        }
         List<BlockPos> locs = knownOreLocations;
 
         // Nếu knownOreLocations rỗng nhưng trong oreMemory vẫn còn quặng đã lưu (ở chunk xa đã unload):
@@ -406,7 +414,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         
         // KHI KHÔNG CÓ QUẶNG TRONG TẦM QUÉT:
-        int targetY = Baritone.settings().legitMineYLevel.value;
         int currentY = ctx.playerFeet().y;
 
         // Đánh dấu đã chạm tới độ sâu targetY (hoặc xuất phát ngay tại tầng đào)
@@ -771,9 +778,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         // Kiểm tra kẹt theo khoảng cách MẶT PHẲNG NGANG (không tính nhảy lên rơi xuống tại chỗ)
         boolean sameXZ = lastStuckCheckPos != null && (dx * dx + dz * dz) < 2.0;
+        boolean pathCalcInProgress = baritone.getPathingBehavior().getInProgress().isPresent()
+                && baritone.getPathingBehavior().getCurrent() == null;
 
         if (sameXZ) {
-            stuckTicks++;
+            if (!pathCalcInProgress) {
+                stuckTicks++;
+            }
         } else {
             lastStuckCheckPos = currentFeet;
             stuckTicks = 0;
@@ -791,7 +802,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // === PHÁT HIỆN PILLAR LOOP ===
         // Khi bị kẹt 1 chỗ > 60 tick (3 giây), kiểm tra xem bot có đang cố nhảy+đặt block không
         if (stuckTicks >= 60 && !Baritone.settings().noPillar.value) {
-            boolean isJumping = ctx.player().getDeltaMovement().y > 0.1 || !ctx.player().onGround();
+            boolean isMobKnockback = ctx.player().hurtTime > 0;
+            boolean isJumpIntent = baritone.getInputOverrideHandler().isInputForcedDown(Input.JUMP)
+                    || ctx.minecraft().options.keyJump.isDown();
+            boolean isJumping = !isMobKnockback && isJumpIntent && (ctx.player().getDeltaMovement().y > 0.1 || !ctx.player().onGround());
             if (isJumping && sameXZ) {
                 pillarFailCount++;
                 if (pillarFailCount >= 2) {
@@ -816,27 +830,34 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
             int targetY = Baritone.settings().legitMineYLevel.value;
 
-            // 1. Khi đang đào dốc xuống mà gặp vật cản: Đổi hướng đào dốc
-            if (!hasReachedTargetY || currentFeet.y > targetY + 3) {
+            // 1. ƯU TIÊN SỐ 1: Nếu kẹt khi đang đào quặng (quặng không tới được / treo trên vách / bị chặn): Blacklist và đổi quặng khác!
+            if ((knownOreLocations != null && !knownOreLocations.isEmpty()) || !oreMemory.isEmpty()) {
+                List<BlockPos> candidates = (knownOreLocations != null && !knownOreLocations.isEmpty())
+                        ? knownOreLocations : new ArrayList<>(oreMemory);
+                candidates.stream()
+                        .min(Comparator.comparingDouble(currentFeet::distSqr))
+                        .ifPresent(pos -> {
+                            blacklist.add(pos);
+                            oreMemory.remove(pos);
+                            if (knownOreLocations != null) {
+                                try {
+                                    knownOreLocations.remove(pos);
+                                } catch (Exception ignored) {}
+                            }
+                            logDirect("§e[AntiStuck] Quặng tại " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + " bị chặn/không tới được! Đang tự động đổi sang vỉa quặng khác...");
+                        });
+                forceReroute = true;
+                return;
+            }
+
+            // 2. Khi đang đào dốc xuống mà gặp vật cản (CHỈ khi không có quặng nào đang đào): Đổi hướng đào dốc
+            boolean noOres = (knownOreLocations == null || knownOreLocations.isEmpty()) && oreMemory.isEmpty();
+            if (noOres && (!hasReachedTargetY || currentFeet.y > targetY + 3)) {
                 if (tunnelDirection != null) {
                     net.minecraft.core.Direction newDir = (stuckRetries % 2 == 1) ? tunnelDirection.getClockWise() : tunnelDirection.getCounterClockWise();
                     tunnelDirection = newDir;
                     logDirect("§6[AntiStuck] Gặp vật cản khi đào dốc xuống! Tự động đổi hướng đào sang " + newDir.getName().toUpperCase() + "...");
                 }
-                forceReroute = true;
-                return;
-            }
-
-            // 2. Nếu kẹt không tới được quặng gần nhất: Blacklist và đổi quặng khác
-            if (knownOreLocations != null && !knownOreLocations.isEmpty()) {
-                knownOreLocations.stream()
-                        .min(Comparator.comparingDouble(currentFeet::distSqr))
-                        .ifPresent(pos -> {
-                            blacklist.add(pos);
-                            oreMemory.remove(pos);
-                            knownOreLocations.remove(pos);
-                            logDirect("§e[AntiStuck] Quặng tại " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + " bị chặn/không tới được! Đang tự động đổi sang vỉa quặng khác...");
-                        });
                 forceReroute = true;
                 return;
             }
