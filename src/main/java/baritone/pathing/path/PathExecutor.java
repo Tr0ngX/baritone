@@ -239,14 +239,16 @@ public class PathExecutor implements IPathExecutor, Helper {
                 ctx.player().setSprinting(false); // letting go of control doesn't make you stop sprinting actually
             }
             ticksOnCurrent++;
+            boolean isActivelyMining = ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock()
+                    || behavior.baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT);
             if (ticksOnCurrent > currentMovementOriginalCostEstimate + Baritone.settings().movementTimeoutTicks.value) {
                 // only cancel if the total time has exceeded the initial estimate
-                // as you break the blocks required, the remaining cost goes down, to the point where
-                // ticksOnCurrent is greater than recalculateCost + 100
-                // this is why we cache cost at the beginning, and don't recalculate for this comparison every tick
-                logDebug("This movement has taken too long (" + ticksOnCurrent + " ticks, expected " + currentMovementOriginalCostEstimate + "). Cancelling.");
-                cancel();
-                return true;
+                // if we are actively breaking a block, do not cancel prematurely
+                if (!isActivelyMining || ticksOnCurrent > currentMovementOriginalCostEstimate + Baritone.settings().movementTimeoutTicks.value * 2) {
+                    logDebug("This movement has taken too long (" + ticksOnCurrent + " ticks, expected " + currentMovementOriginalCostEstimate + "). Cancelling.");
+                    cancel();
+                    return true;
+                }
             }
         }
         return canCancel; // movement is in progress, but if it reports cancellable, PathingBehavior is good to cut onto the next path

@@ -144,6 +144,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private long lastBrokenBlockTime = 0;
     private int placeBreakOscillationCount = 0;
     private boolean lastCalcFailed = false;
+    private BlockPos activeMiningBlock = null;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
@@ -172,27 +173,32 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
         if (calcFailed) {
-            if (!knownOreLocations.isEmpty() && Baritone.settings().blacklistClosestOnFailure.value) {
-                logDirect("Unable to find any path to " + filter + ", retrying...");
-                knownOreLocations.stream().min(Comparator.comparingDouble(ctx.playerFeet()::distSqr)).ifPresent(pos -> {
-                    blacklist.add(pos);
-                    oreMemory.remove(pos);
-                });
-                knownOreLocations.removeIf(blacklist::contains);
-            } else if (Baritone.settings().exploreForBlocks.value || Baritone.settings().legitMine.value) {
-                // When exploring/tunneling, never cancel! Just reset origin and continue tunnel
-                if (tunnelDirection == null) {
-                    tunnelDirection = ctx.player().getDirection().getAxis().isHorizontal() ? ctx.player().getDirection() : net.minecraft.core.Direction.NORTH;
+            boolean isMining = activeMiningBlock != null
+                    || baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
+                    || ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock();
+            if (!isMining) {
+                if (!knownOreLocations.isEmpty() && Baritone.settings().blacklistClosestOnFailure.value) {
+                    logDirect("Unable to find any path to " + filter + ", retrying...");
+                    knownOreLocations.stream().min(Comparator.comparingDouble(ctx.playerFeet()::distSqr)).ifPresent(pos -> {
+                        blacklist.add(pos);
+                        oreMemory.remove(pos);
+                    });
+                    knownOreLocations.removeIf(blacklist::contains);
+                } else if (Baritone.settings().exploreForBlocks.value || Baritone.settings().legitMine.value) {
+                    // When exploring/tunneling, never cancel! Just reset origin and continue tunnel
+                    if (tunnelDirection == null) {
+                        tunnelDirection = ctx.player().getDirection().getAxis().isHorizontal() ? ctx.player().getDirection() : net.minecraft.core.Direction.NORTH;
+                    }
+                    branchPoint = ctx.playerFeet();
+                    branchPointRunaway = null;
+                } else {
+                    logDirect("Unable to find any path to " + filter + ", canceling mine");
+                    if (Baritone.settings().notificationOnMineFail.value) {
+                        logNotification("Unable to find any path to " + filter + ", canceling mine", true);
+                    }
+                    cancel();
+                    return null;
                 }
-                branchPoint = ctx.playerFeet();
-                branchPointRunaway = null;
-            } else {
-                logDirect("Unable to find any path to " + filter + ", canceling mine");
-                if (Baritone.settings().notificationOnMineFail.value) {
-                    logNotification("Unable to find any path to " + filter + ", canceling mine", true);
-                }
-                cancel();
-                return null;
             }
         }
 
@@ -233,6 +239,78 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 return null;
             }
         }
+        // === CƠ CHẾ PHẢI ĐÀO XONG MỚI TIẾP TỤC (FINISH MINING BEFORE CONTINUING) ===
+        // 1. Nếu đang đào dở một block (activeMiningBlock), TIẾP TỤC ĐÀO ĐẾN CÙNG:
+        if (activeMiningBlock != null) {
+            BlockState state = ctx.world().getBlockState(activeMiningBlock);
+            if (!state.isAir() && (filter == null || filter.has(state))) {
+                Optional<Rotation> rot = RotationUtils.reachable(ctx, activeMiningBlock);
+                if (rot.isPresent()) {
+                    baritone.getInputOverrideHandler().clearAllKeys();
+                    baritone.getLookBehavior().updateTarget(rot.get(), true);
+                    MovementHelper.switchToBestToolFor(ctx, state);
+                    if (ctx.isLookingAt(activeMiningBlock) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+            }
+            // Đã đào vỡ block hoặc không còn với tới được
+            blacklist.remove(activeMiningBlock);
+            oreMemory.remove(activeMiningBlock);
+            knownOreLocations.remove(activeMiningBlock);
+            activeMiningBlock = null;
+        }
+
+        // 2. Kiểm tra nếu client game đang trực tiếp đập block mục tiêu:
+        BlockPos destroyingPos = ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).getCurrentBlock();
+        if (destroyingPos != null && ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock()) {
+            BlockState state = ctx.world().getBlockState(destroyingPos);
+            if (!state.isAir() && filter != null && filter.has(state)) {
+                activeMiningBlock = destroyingPos;
+                Optional<Rotation> rot = RotationUtils.reachable(ctx, destroyingPos);
+                if (rot.isPresent()) {
+                    baritone.getInputOverrideHandler().clearAllKeys();
+                    baritone.getLookBehavior().updateTarget(rot.get(), true);
+                    MovementHelper.switchToBestToolFor(ctx, state);
+                    if (ctx.isLookingAt(destroyingPos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+            }
+        }
+
+        // 3. Quét tìm BẤT KỲ quặng mục tiêu nào đang nằm trong tầm với (Reachable) quanh người:
+        // Đào trực tiếp ngay tại chỗ mà không cần A* di chuyển hay huỷ đường!
+        if (ctx.player().onGround() || ctx.player().isInWater()) {
+            Optional<BlockPos> reachableOre = curr.stream()
+                    .filter(pos -> ctx.playerFeet().distSqr(pos) <= 25)
+                    .filter(pos -> !(BlockStateInterface.get(ctx, pos).getBlock() instanceof AirBlock))
+                    .filter(pos -> {
+                        BlockState s = baritone.bsi.get0(pos);
+                        return filter.has(s) && !MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), s);
+                    })
+                    .filter(pos -> RotationUtils.reachable(ctx, pos).isPresent())
+                    .min(Comparator.comparingDouble(ctx.playerFeet().above()::distSqr));
+
+            if (reachableOre.isPresent()) {
+                BlockPos pos = reachableOre.get();
+                activeMiningBlock = pos;
+                BlockState state = baritone.bsi.get0(pos);
+                Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
+                if (rot.isPresent()) {
+                    baritone.getInputOverrideHandler().clearAllKeys();
+                    baritone.getLookBehavior().updateTarget(rot.get(), true);
+                    MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos));
+                    if (ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+            }
+        }
+
         Optional<BlockPos> shaft = curr.stream()
                 .filter(pos -> pos.getX() == ctx.playerFeet().getX() && pos.getZ() == ctx.playerFeet().getZ())
                 .filter(pos -> pos.getY() >= ctx.playerFeet().getY())
@@ -299,6 +377,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         lastStuckCheckPos = null;
         stuckTicks = 0;
         stuckRetries = 0;
+        activeMiningBlock = null;
         mine(0, (BlockOptionalMetaLookup) null);
     }
 
@@ -784,6 +863,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         boolean pathCalcInProgress = baritone.getPathingBehavior().getInProgress().isPresent()
                 && baritone.getPathingBehavior().getCurrent() == null;
 
+        // Đang đào block hoặc swing tay thì KHÔNG tính là bị kẹt (phải đào xong mới tiếp tục)!
+        boolean isMining = activeMiningBlock != null
+                || baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
+                || ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock()
+                || ctx.player().swinging;
+        if (isMining) {
+            stuckTicks = 0;
+            return;
+        }
+
         if (samePosition) {
             if (!pathCalcInProgress) {
                 stuckTicks++;
@@ -803,8 +892,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         // === PHÁT HIỆN PILLAR LOOP ===
-        // Khi bị kẹt 1 chỗ > 60 tick (3 giây), kiểm tra xem bot có đang cố nhảy+đặt block không
-        if (stuckTicks >= 60 && !Baritone.settings().noPillar.value) {
+        // Khi bị kẹt 1 chỗ > 100 tick (5 giây), kiểm tra xem bot có đang cố nhảy+đặt block không
+        if (stuckTicks >= 100 && !Baritone.settings().noPillar.value) {
             boolean isMobKnockback = ctx.player().hurtTime > 0;
             boolean isJumpIntent = baritone.getInputOverrideHandler().isInputForcedDown(Input.JUMP)
                     || ctx.minecraft().options.keyJump.isDown();
@@ -825,8 +914,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
-        // === PHÁT HIỆN KẸT HÀNH ĐỘNG QUÁ LÂU (>= 100 tick = 5s) HOẶC VÒNG LẶP ĐẶT/ĐÀO ===
-        if (stuckTicks >= 100 || placeBreakOscillationCount >= 2) {
+        // === PHÁT HIỆN KẸT HÀNH ĐỘNG QUÁ LÂU (>= 600 tick = 30s) HOẶC VÒNG LẶP ĐẶT/ĐÀO ===
+        if (stuckTicks >= 600 || placeBreakOscillationCount >= 2) {
             if (placeBreakOscillationCount >= 2) {
                 logDirect("§c[AntiStuck] Phát hiện vòng lặp đặt block rồi đào xuống! Đổi hướng ngay...");
             }

@@ -429,9 +429,11 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().anytimeSearchEpsilon.value = 2.0; // Xuất phát 0ms, đường đi ổn định
         Baritone.settings().planningTickLookahead.value = 400; // Tính trước liên tục
         Baritone.settings().mineGoalUpdateInterval.value = 5; // 5 ticks chuẩn gốc Baritone (chống giật cục và chống đổi hướng nửa chừng)
-        Baritone.settings().splicePath.value = true;
-        Baritone.settings().primaryTimeoutMS.value = 1200L; // Giảm xuống 1.2s để không bao giờ đứng yên đơ nhìn đường màu xanh
-        Baritone.settings().failureTimeoutMS.value = 2000L;
+        Baritone.settings().primaryTimeoutMS.value = 30000L; // 30s timeout theo yêu cầu
+        Baritone.settings().failureTimeoutMS.value = 35000L;
+        Baritone.settings().planAheadPrimaryTimeoutMS.value = 30000L;
+        Baritone.settings().planAheadFailureTimeoutMS.value = 35000L;
+        Baritone.settings().movementTimeoutTicks.value = 600; // 30s (600 ticks) cho mỗi movement
 
         // Sinh tồn & Né quái vật (God Mode)
         Baritone.settings().autoEat.value = optAutoEat;
