@@ -73,6 +73,10 @@ public final class InventoryBehavior extends Behavior implements Helper {
         if (pick >= 9) {
             requestSwapWithHotBar(pick, 0);
         }
+        int water = ctx.player().getInventory().findSlotMatchingItem(new ItemStack(net.minecraft.world.item.Items.WATER_BUCKET));
+        if (water >= 9) {
+            attemptToPutOnHotbar(water, slot -> slot == 0 || slot == 8);
+        }
         if (lastTickRequestedMove != null) {
             logDebug("Remembering to move " + lastTickRequestedMove[0] + " " + lastTickRequestedMove[1] + " from a previous tick");
             requestSwapWithHotBar(lastTickRequestedMove[0], lastTickRequestedMove[1]);

@@ -659,7 +659,7 @@ public final class Settings {
      * How far are you allowed to fall onto solid ground (with a water bucket)?
      * It's not that reliable, so I've set it below what would kill an unarmored player (23)
      */
-    public final Setting<Integer> maxFallHeightBucket = new Setting<>(20);
+    public final Setting<Integer> maxFallHeightBucket = new Setting<>(40);
 
     /**
      * Is it okay to sprint through a descend followed by a diagonal?

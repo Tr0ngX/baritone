@@ -17,6 +17,7 @@
 
 package baritone.pathing.movement.movements;
 
+import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
@@ -102,16 +103,22 @@ public class MovementFall extends Movement {
 
         boolean isWater = destState.getFluidState().getType() instanceof WaterFluid;
         if (!isWater && willPlaceBucket() && !playerFeet.equals(dest)) {
-            if (!Inventory.isHotbarSlot(ctx.player().getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) || ctx.world().dimension() == Level.NETHER) {
+            int waterSlot = ctx.player().getInventory().findSlotMatchingItem(STACK_BUCKET_WATER);
+            if (waterSlot == -1 || ctx.world().dimension() == Level.NETHER) {
                 return state.setStatus(MovementStatus.UNREACHABLE);
             }
+            if (!Inventory.isHotbarSlot(waterSlot)) {
+                ((Baritone) baritone).getInventoryBehavior().attemptToPutOnHotbar(waterSlot, s -> s == 0 || s == 8);
+                waterSlot = ctx.player().getInventory().findSlotMatchingItem(STACK_BUCKET_WATER);
+            }
 
-            if (ctx.player().position().y - dest.getY() < ctx.playerController().getBlockReachDistance() && !ctx.player().onGround()) {
-                ctx.player().getInventory().setSelectedSlot(ctx.player().getInventory().findSlotMatchingItem(STACK_BUCKET_WATER));
-
+            double distToGround = ctx.player().position().y - dest.getY();
+            if (distToGround < 25.0 && !ctx.player().onGround()) {
                 targetRotation = new Rotation(toDest.getYaw(), 90.0F);
-
-                if (ctx.isLookingAt(dest) || ctx.isLookingAt(dest.below())) {
+                if (Inventory.isHotbarSlot(waterSlot)) {
+                    ctx.player().getInventory().setSelectedSlot(waterSlot);
+                }
+                if (distToGround <= 5.2) {
                     state.setInput(Input.CLICK_RIGHT, true);
                 }
             }

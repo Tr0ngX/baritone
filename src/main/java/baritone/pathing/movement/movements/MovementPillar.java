@@ -41,8 +41,18 @@ import java.util.Set;
 
 public class MovementPillar extends Movement {
 
+    private int placeAttempts = 0;
+    private int pillarTicks = 0;
+
     public MovementPillar(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
         super(baritone, start, end, new BetterBlockPos[]{start.above(2)}, start);
+    }
+
+    @Override
+    public void reset() {
+        super.reset();
+        placeAttempts = 0;
+        pillarTicks = 0;
     }
 
     @Override
@@ -181,6 +191,14 @@ public class MovementPillar extends Movement {
             state.setInput(Input.JUMP, true);
             return state;
         } else {
+            pillarTicks++;
+            if (pillarTicks > 25) {
+                // Kẹt hành động pillar quá 25 tick (> 1.25s) mà không leo lên được
+                Baritone.settings().noPillar.value = true;
+                logDebug("MovementPillar timeout (" + pillarTicks + " ticks). Failing movement.");
+                return state.setStatus(MovementStatus.FAILED);
+            }
+
             // Get ready to place a throwaway block
             if (!((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, src.x, src.y, src.z)) {
                 return state.setStatus(MovementStatus.UNREACHABLE);
@@ -210,6 +228,12 @@ public class MovementPillar extends Movement {
                 Block fr = frState.getBlock();
                 // TODO: Evaluate usage of getMaterial().isReplaceable()
                 if (!(fr instanceof AirBlock || frState.canBeReplaced())) {
+                    if (placeAttempts > 0) {
+                        // Đã đặt block lên mà không leo lên được và giờ lại định đào xuống -> Dừng ngay vòng lặp đặt/đào!
+                        Baritone.settings().noPillar.value = true;
+                        logDebug("Detected place-and-break pillar loop at " + src + ". Failing movement immediately.");
+                        return state.setStatus(MovementStatus.FAILED);
+                    }
                     RotationUtils.reachable(ctx, src, ctx.playerController().getBlockReachDistance())
                             .map(rot -> new MovementState.MovementTarget(rot, true))
                             .ifPresent(state::setTarget);
@@ -217,6 +241,7 @@ public class MovementPillar extends Movement {
                     state.setInput(Input.CLICK_LEFT, true);
                     blockIsThere = false;
                 } else if (ctx.player().position().y >= dest.getY() && (ctx.isLookingAt(src.below()) || ctx.isLookingAt(src) || ctx.playerRotations().getPitch() >= 80.0F)) {
+                    placeAttempts++;
                     state.setInput(Input.CLICK_RIGHT, true);
                 }
             }
