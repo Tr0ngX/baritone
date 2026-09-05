@@ -446,7 +446,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
         Baritone.settings().mobAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;
         Baritone.settings().mobSpawnerAvoidanceRadius.value = optMobAvoid ? 16 : 0;
-        Baritone.settings().mobSpawnerAvoidanceCoefficient.value = optMobAvoid ? 200.0 : 1.0;
+        Baritone.settings().mobSpawnerAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;
 
         // Parkour & Leo dốc chéo
         Baritone.settings().allowParkour.value = optParkour;

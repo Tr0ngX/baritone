@@ -90,7 +90,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().mobAvoidanceRadius.value = 14;
         Baritone.settings().mobAvoidanceCoefficient.value = 500.0;
         Baritone.settings().mobSpawnerAvoidanceRadius.value = 16;
-        Baritone.settings().mobSpawnerAvoidanceCoefficient.value = 200.0;
+        Baritone.settings().mobSpawnerAvoidanceCoefficient.value = 500.0;
         Baritone.settings().autoEat.value = true;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = true;

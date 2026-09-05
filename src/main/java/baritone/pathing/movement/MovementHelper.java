@@ -73,6 +73,8 @@ public interface MovementHelper extends ActionCosts, Helper {
         Block b = state.getBlock();
         return Baritone.settings().blocksToDisallowBreaking.value.contains(b)
                 || b instanceof InfestedBlock // obvious reasons
+                || b == Blocks.SPAWNER
+                || b instanceof SpawnerBlock
                 // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
                 || avoidAdjacentBreaking(bsi, x, y + 1, z, true)
                 || avoidAdjacentBreaking(bsi, x + 1, y, z, false)
