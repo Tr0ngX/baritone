@@ -32,6 +32,10 @@ import baritone.utils.ToolSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
+import net.minecraft.core.NonNullList;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -670,7 +674,42 @@ public interface MovementHelper extends ActionCosts, Helper {
      */
     static void switchToBestToolFor(IPlayerContext ctx, BlockState b, ToolSet ts, boolean preferSilkTouch) {
         if (Baritone.settings().autoTool.value && !Baritone.settings().assumeExternalAutoTool.value) {
-            ctx.player().getInventory().setSelectedSlot(ts.getBestSlot(b.getBlock(), preferSilkTouch));
+            int bestHotbar = ts.getBestSlot(b.getBlock(), preferSilkTouch);
+            ItemStack hotbarStack = ctx.player().getInventory().getItem(bestHotbar);
+            double hotbarSpeed = ToolSet.calculateSpeedVsBlock(hotbarStack, b);
+            boolean hotbarIsUsable = !hotbarStack.isEmpty() && (!Baritone.settings().itemSaver.value || (hotbarStack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) < hotbarStack.getMaxDamage());
+
+            // Nếu trên hotbar không có tool hiệu quả (tốc độ <= 1.0 hoặc tool đã hỏng/bị cấm bởi itemSaver),
+            // tự động tìm trong Balo (slots 9-35) xem có tool nào phá block này nhanh hơn không:
+            if (ctx.player().containerMenu == ctx.player().inventoryMenu && (!hotbarIsUsable || hotbarSpeed <= 1.0)) {
+                NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+                int bestBaloSlot = -1;
+                double bestBaloSpeed = hotbarIsUsable ? hotbarSpeed : 1.0;
+                for (int i = 9; i < 36; i++) {
+                    ItemStack stack = inv.get(i);
+                    if (stack.isEmpty()) continue;
+                    if (Baritone.settings().itemSaver.value && (stack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) >= stack.getMaxDamage() && stack.getMaxDamage() > 1) {
+                        continue;
+                    }
+                    double speed = ToolSet.calculateSpeedVsBlock(stack, b);
+                    if (speed > bestBaloSpeed) {
+                        bestBaloSpeed = speed;
+                        bestBaloSlot = i;
+                    }
+                }
+                if (bestBaloSlot != -1) {
+                    int targetHotbar = bestHotbar;
+                    if (inv.get(bestBaloSlot).is(ItemTags.PICKAXES)) {
+                        targetHotbar = 0;
+                    } else if (targetHotbar == 0) {
+                        targetHotbar = 1;
+                    }
+                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, bestBaloSlot, targetHotbar, ClickType.SWAP, ctx.player());
+                    ctx.player().getInventory().setSelectedSlot(targetHotbar);
+                    return;
+                }
+            }
+            ctx.player().getInventory().setSelectedSlot(bestHotbar);
         }
     }
 

@@ -30,6 +30,7 @@ import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
 import baritone.utils.BaritoneProcessHelper;
 import baritone.utils.BlockStateInterface;
+import baritone.utils.ToolSet;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
@@ -168,7 +169,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int activeMiningTicks = 0;
     private BlockPos lockedTargetOre = null;
     private BlockPos lastStuckOrePos = null;
-    private static final int RECENT_POS_BUFFER_SIZE = 120;
+    private static final int RECENT_POS_BUFFER_SIZE = 200; // 10 giây (200 ticks) theo dõi vị trí
     private final BetterBlockPos[] recentPositions = new BetterBlockPos[RECENT_POS_BUFFER_SIZE];
     private int recentPosIndex = 0;
     private int recentPosCount = 0;
@@ -189,7 +190,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         WAIT_FOR_PICKUP
     }
 
+    private enum ShulkerMode {
+        DEPOSIT,
+        RETRIEVE_FOOD,
+        RETRIEVE_TOOL
+    }
+
     private ShulkerStorageState shulkerState = ShulkerStorageState.IDLE;
+    private ShulkerMode shulkerMode = ShulkerMode.DEPOSIT;
     private BlockPos shulkerPlacedPos = null;
     private int shulkerStateTicks = 0;
     private int shulkerHotbarSlot = 1;
@@ -197,6 +205,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int shulkerConsecutiveNoTransfer = 0;
     private int shulkerBoxCountBefore = 0;
     private long lastShulkerFullWarningTime = 0;
+    private long lastNoPickaxeWarningTime = 0;
     private final Set<Integer> shulkerUntransferableSlots = new HashSet<>();
     private int shulkerTransferredCount = 0;
     private boolean shulkerClearingInProgress = false;
@@ -274,6 +283,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             PathingCommand eatCmd = handleAutoEat(isSafeToCancel);
             if (eatCmd != null) {
                 return eatCmd;
+            }
+        }
+
+        if (Baritone.settings().autoTool.value) {
+            PathingCommand toolCmd = handleAutoTool(isSafeToCancel);
+            if (toolCmd != null) {
+                return toolCmd;
             }
         }
 
@@ -545,6 +561,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             shulkerUntransferableSlots.clear();
             shulkerTransferredCount = 0;
             shulkerClearingInProgress = false;
+            shulkerMode = ShulkerMode.DEPOSIT;
         }
         mine(0, (BlockOptionalMetaLookup) null);
     }
@@ -1375,6 +1392,176 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         return bestSlot;
     }
 
+    public static boolean isUsableMiningTool(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        if (!stack.is(ItemTags.PICKAXES)) return false;
+        if (Baritone.settings().itemSaver.value && (stack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) >= stack.getMaxDamage() && stack.getMaxDamage() > 1) {
+            return false;
+        }
+        return true;
+    }
+
+    public static boolean shulkerContainsFood(ItemStack shulkerStack) {
+        if (!isShulkerBox(shulkerStack)) return false;
+        ItemContainerContents contents = shulkerStack.get(DataComponents.CONTAINER);
+        if (contents == null) return false;
+        for (ItemStack item : contents.nonEmptyItems()) {
+            if (isGoodFood(item)) return true;
+        }
+        return false;
+    }
+
+    public static boolean shulkerContainsTool(ItemStack shulkerStack) {
+        if (!isShulkerBox(shulkerStack)) return false;
+        ItemContainerContents contents = shulkerStack.get(DataComponents.CONTAINER);
+        if (contents == null) return false;
+        for (ItemStack item : contents.nonEmptyItems()) {
+            if (isUsableMiningTool(item)) return true;
+        }
+        return false;
+    }
+
+    private int findShulkerBoxWithFoodSlot() {
+        if (ctx.player() == null) return -1;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        int[] slotOrder = new int[36];
+        int idx = 0;
+        for (int i = 1; i < 9; i++) slotOrder[idx++] = i;
+        for (int i = 9; i < 36; i++) slotOrder[idx++] = i;
+        slotOrder[idx++] = 0;
+
+        for (int slot : slotOrder) {
+            ItemStack stack = inv.get(slot);
+            if (shulkerContainsFood(stack)) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private int findShulkerBoxWithToolSlot() {
+        if (ctx.player() == null) return -1;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        int[] slotOrder = new int[36];
+        int idx = 0;
+        for (int i = 1; i < 9; i++) slotOrder[idx++] = i;
+        for (int i = 9; i < 36; i++) slotOrder[idx++] = i;
+        slotOrder[idx++] = 0;
+
+        for (int slot : slotOrder) {
+            ItemStack stack = inv.get(slot);
+            if (shulkerContainsTool(stack)) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private int findBestHotbarSlotForFood() {
+        if (ctx.player() == null) return 1;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        for (int i = 1; i < 9; i++) {
+            if (inv.get(i).isEmpty()) return i;
+        }
+        for (int i = 1; i < 9; i++) {
+            if (isBuildingBlock(inv.get(i)) && !isTargetOre(inv.get(i))) return i;
+        }
+        for (int i = 1; i < 9; i++) {
+            ItemStack s = inv.get(i);
+            if (!s.is(ItemTags.PICKAXES) && !s.is(ItemTags.SWORDS) && !s.is(Items.TOTEM_OF_UNDYING) && !s.is(Items.WATER_BUCKET)) {
+                return i;
+            }
+        }
+        return 1;
+    }
+
+    private void triggerShulkerRetrieveFood(int shulkerSlot) {
+        pendingDropSlots.clear();
+        shulkerClearingInProgress = true;
+        shulkerMode = ShulkerMode.RETRIEVE_FOOD;
+        shulkerBoxCountBefore = countShulkerBoxesInInventory();
+        logDirect("§6[AutoShulker] Hết đồ ăn trong balo! Phát hiện có đồ ăn trong Shulker Box (slot " + shulkerSlot + "), đang mở để lấy...");
+        shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+        shulkerStateTicks = 0;
+        shulkerConsecutiveNoTransfer = 0;
+        shulkerUntransferableSlots.clear();
+        shulkerTransferredCount = 0;
+        baritone.getPathingBehavior().cancelSegmentIfSafe();
+        baritone.getInputOverrideHandler().clearAllKeys();
+    }
+
+    private void triggerShulkerRetrieveTool(int shulkerSlot) {
+        pendingDropSlots.clear();
+        shulkerClearingInProgress = true;
+        shulkerMode = ShulkerMode.RETRIEVE_TOOL;
+        shulkerBoxCountBefore = countShulkerBoxesInInventory();
+        logDirect("§6[AutoShulker] Hết Cúp trong balo! Phát hiện có Cúp trong Shulker Box (slot " + shulkerSlot + "), đang mở để lấy...");
+        shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+        shulkerStateTicks = 0;
+        shulkerConsecutiveNoTransfer = 0;
+        shulkerUntransferableSlots.clear();
+        shulkerTransferredCount = 0;
+        baritone.getPathingBehavior().cancelSegmentIfSafe();
+        baritone.getInputOverrideHandler().clearAllKeys();
+    }
+
+    private PathingCommand handleAutoTool(boolean isSafeToCancel) {
+        if (ctx.player() == null || ctx.player().containerMenu != ctx.player().inventoryMenu) {
+            return null;
+        }
+        if (eatingSlot != -1 || shulkerState != ShulkerStorageState.IDLE) {
+            return null;
+        }
+
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        boolean hasUsablePickaxeOnHotbar = false;
+        for (int i = 0; i < 9; i++) {
+            if (isUsableMiningTool(inv.get(i))) {
+                hasUsablePickaxeOnHotbar = true;
+                break;
+            }
+        }
+
+        if (!hasUsablePickaxeOnHotbar) {
+            // 1. Tìm cúp tốt nhất trong Balo (slots 9-35)
+            int bestBaloSlot = -1;
+            double bestSpeed = -1;
+            for (int i = 9; i < 36; i++) {
+                ItemStack stack = inv.get(i);
+                if (isUsableMiningTool(stack)) {
+                    double speed = ToolSet.calculateSpeedVsBlock(stack, Blocks.DEEPSLATE.defaultBlockState());
+                    if (speed > bestSpeed) {
+                        bestSpeed = speed;
+                        bestBaloSlot = i;
+                    }
+                }
+            }
+
+            if (bestBaloSlot != -1) {
+                ItemStack toolStack = inv.get(bestBaloSlot);
+                String toolName = toolStack.getHoverName().getString();
+                ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, bestBaloSlot, 0, ClickType.SWAP, ctx.player());
+                ctx.player().getInventory().setSelectedSlot(0);
+                logDirect("§a[AutoTool] Đã lấy Cúp " + toolName + " từ balo ra hotbar ô 1!");
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            // 2. Nếu cả Balo lẫn Hotbar đều hết Cúp: Tìm trong Shulker Box
+            int shulkerSlot = findShulkerBoxWithToolSlot();
+            if (shulkerSlot != -1) {
+                triggerShulkerRetrieveTool(shulkerSlot);
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            } else {
+                if (System.currentTimeMillis() - lastNoPickaxeWarningTime > 20000) {
+                    logDirect("§c[AutoTool] CẢNH BÁO: Không tìm thấy Cúp nào trong Balo hoặc Shulker Box!");
+                    lastNoPickaxeWarningTime = System.currentTimeMillis();
+                }
+            }
+        }
+
+        return null;
+    }
+
     private ItemEntity findNearbyDroppedShulker() {
         if (ctx.world() == null || ctx.player() == null) return null;
         ItemEntity best = null;
@@ -1598,10 +1785,25 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         switch (shulkerState) {
             case SWAP_TO_HOTBAR -> {
-                int slot = findBestShulkerBoxSlot();
+                int slot = -1;
+                if (shulkerMode == ShulkerMode.RETRIEVE_FOOD) {
+                    slot = findShulkerBoxWithFoodSlot();
+                } else if (shulkerMode == ShulkerMode.RETRIEVE_TOOL) {
+                    slot = findShulkerBoxWithToolSlot();
+                } else {
+                    slot = findBestShulkerBoxSlot();
+                }
+
                 if (slot == -1) {
-                    logDirect("§e[AutoShulker] Không tìm thấy Shulker Box còn chỗ trống trong balo! Hủy quy trình.");
+                    if (shulkerMode == ShulkerMode.RETRIEVE_FOOD) {
+                        logDirect("§e[AutoShulker] Không tìm thấy Shulker Box chứa đồ ăn trong balo! Hủy quy trình.");
+                    } else if (shulkerMode == ShulkerMode.RETRIEVE_TOOL) {
+                        logDirect("§e[AutoShulker] Không tìm thấy Shulker Box chứa Cúp trong balo! Hủy quy trình.");
+                    } else {
+                        logDirect("§e[AutoShulker] Không tìm thấy Shulker Box còn chỗ trống trong balo! Hủy quy trình.");
+                    }
                     shulkerState = ShulkerStorageState.IDLE;
+                    shulkerMode = ShulkerMode.DEPOSIT;
                     shulkerBoxCountBefore = 0;
                     shulkerUntransferableSlots.clear();
                     return null;
@@ -1715,6 +1917,69 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 }
 
                 int containerId = ctx.player().containerMenu.containerId;
+
+                // === CHẾ ĐỘ 1: LẤY ĐỒ ĂN TỪ TRONG SHULKER BOX RA BALO ===
+                if (shulkerMode == ShulkerMode.RETRIEVE_FOOD) {
+                    int foodSlot = -1;
+                    for (int b = 0; b < 27; b++) {
+                        ItemStack boxItem = ctx.player().containerMenu.getSlot(b).getItem();
+                        if (isGoodFood(boxItem)) {
+                            foodSlot = b;
+                            break;
+                        }
+                    }
+                    if (foodSlot != -1 && shulkerTransferredCount < 2) {
+                        ItemStack before = ctx.player().containerMenu.getSlot(foodSlot).getItem().copy();
+                        ctx.playerController().windowClick(containerId, foodSlot, 0, ClickType.QUICK_MOVE, ctx.player());
+                        ItemStack after = ctx.player().containerMenu.getSlot(foodSlot).getItem();
+                        if (before.getCount() == after.getCount()) {
+                            logDirect("§c[AutoShulker] Balo đã đầy, không thể lấy thêm đồ ăn từ Shulker Box!");
+                            shulkerState = ShulkerStorageState.CLOSE_CONTAINER;
+                            shulkerStateTicks = 0;
+                            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                        }
+                        shulkerTransferredCount++;
+                        int taken = before.getCount() - after.getCount();
+                        logDirect("§a[AutoShulker] Đã lấy " + before.getHoverName().getString() + " (x" + taken + ") từ Shulker Box vào balo!");
+                        shulkerTransferCooldown = 2;
+                        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                    }
+                    shulkerState = ShulkerStorageState.CLOSE_CONTAINER;
+                    shulkerStateTicks = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // === CHẾ ĐỘ 2: LẤY CÚP/TOOL TỪ TRONG SHULKER BOX RA BALO ===
+                if (shulkerMode == ShulkerMode.RETRIEVE_TOOL) {
+                    int toolSlot = -1;
+                    for (int b = 0; b < 27; b++) {
+                        ItemStack boxItem = ctx.player().containerMenu.getSlot(b).getItem();
+                        if (isUsableMiningTool(boxItem)) {
+                            toolSlot = b;
+                            break;
+                        }
+                    }
+                    if (toolSlot != -1 && shulkerTransferredCount < 2) {
+                        ItemStack before = ctx.player().containerMenu.getSlot(toolSlot).getItem().copy();
+                        ctx.playerController().windowClick(containerId, toolSlot, 0, ClickType.QUICK_MOVE, ctx.player());
+                        ItemStack after = ctx.player().containerMenu.getSlot(toolSlot).getItem();
+                        if (before.getCount() == after.getCount()) {
+                            logDirect("§c[AutoShulker] Balo đã đầy, không thể lấy thêm Cúp từ Shulker Box!");
+                            shulkerState = ShulkerStorageState.CLOSE_CONTAINER;
+                            shulkerStateTicks = 0;
+                            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                        }
+                        shulkerTransferredCount++;
+                        logDirect("§a[AutoShulker] Đã lấy Cúp " + before.getHoverName().getString() + " từ Shulker Box vào balo!");
+                        shulkerTransferCooldown = 2;
+                        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                    }
+                    shulkerState = ShulkerStorageState.CLOSE_CONTAINER;
+                    shulkerStateTicks = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // === CHẾ ĐỘ 3: MẶC ĐỊNH - CẤT QUẶNG & ĐỒ VÀO SHULKER BOX ===
                 int transferSlot = -1;
 
                 // Quét toàn bộ balo và hotbar người chơi trong ContainerMenu (slot 27 đến 62)
@@ -1840,6 +2105,15 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerBoxCountBefore = 0;
                     shulkerUntransferableSlots.clear();
 
+                    // Nếu vừa lấy thức ăn hoặc cúp: Hoàn tất quy trình, quay lại đào tiếp
+                    if (shulkerMode == ShulkerMode.RETRIEVE_FOOD || shulkerMode == ShulkerMode.RETRIEVE_TOOL) {
+                        shulkerClearingInProgress = false;
+                        shulkerState = ShulkerStorageState.IDLE;
+                        shulkerMode = ShulkerMode.DEPOSIT;
+                        pendingDropSlots.clear();
+                        return null;
+                    }
+
                     // Kiểm tra xem người chơi còn món nào cần cất vào Shulker Box tiếp theo không
                     int remainingTransferable = countTransferableSlots();
                     int nextShulkerSlot = findBestShulkerBoxSlot();
@@ -1851,6 +2125,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                     shulkerClearingInProgress = false;
                     shulkerState = ShulkerStorageState.IDLE;
+                    shulkerMode = ShulkerMode.DEPOSIT;
                     pendingDropSlots.clear();
                     logDirect("§a[AutoShulker] Đã cất toàn bộ vật phẩm vào Shulker Box (chỉ giữ Cúp, Totem, Xô nước & Đồ ăn)! Tiếp tục đào...");
                     return null;
@@ -1908,6 +2183,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerBoxCountBefore = 0;
                     shulkerUntransferableSlots.clear();
                     shulkerClearingInProgress = false;
+                    shulkerMode = ShulkerMode.DEPOSIT;
                 }
 
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -2055,14 +2331,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
-        // === PHÁT HIỆN KẸT HÀNH ĐỘNG QUÁ LÂU (>= 120 tick = 6s) HOẶC VÒNG LẶP ĐẶT/ĐÀO HOẶC PING-PONG ===
-        if (stuckTicks >= 120 || placeBreakOscillationCount >= 2 || pingPongDetected) {
+        // === PHÁT HIỆN KẸT HÀNH ĐỘNG QUÁ LÂU (>= 200 tick = 10s) HOẶC VÒNG LẶP ĐẶT/ĐÀO HOẶC PING-PONG ===
+        if (stuckTicks >= 200 || placeBreakOscillationCount >= 2 || pingPongDetected) {
             if (pingPongDetected) {
-                logDirect("§c[AntiStuck] Phát hiện dao động qua lại (ping-pong) trong phạm vi <= 2.5 block (> 120 ticks)! Giải kẹt ngay...");
+                logDirect("§c[AntiStuck] Phát hiện dao động qua lại (ping-pong) trong phạm vi <= 2.5 block (> 10s)! Giải kẹt ngay...");
             } else if (placeBreakOscillationCount >= 2) {
                 logDirect("§c[AntiStuck] Phát hiện vòng lặp đặt block rồi đào xuống! Đổi hướng ngay...");
             } else {
-                logDirect("§c[AntiStuck] Bị kẹt đứng yên quá 120 ticks! Giải kẹt ngay...");
+                logDirect("§c[AntiStuck] Bị kẹt đứng yên quá 10s (200 ticks)! Giải kẹt ngay...");
             }
             stuckTicks = 0;
             recentPosCount = 0;
@@ -2241,9 +2517,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         float health = ctx.player().getHealth();
         float maxHealth = ctx.player().getMaxHealth();
 
-        // 1. Dưới 5 cục thịt đói (foodLevel <= 10, vì mỗi cục thịt = 2 foodLevel)
+        // 1. Dưới 7 cục thịt đói (foodLevel <= 14)
         // 2. Mất máu / yếu máu (health < maxHealth && foodLevel < 20)
-        boolean lowHunger = foodLevel <= 10;
+        boolean lowHunger = foodLevel <= 14;
         boolean lowHealth = health < maxHealth && foodLevel < 20;
 
         if (lowHunger || lowHealth) {
@@ -2258,14 +2534,30 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 }
             }
 
-            // 2. If not in hotbar, search main inventory (slots 9 to 35) and swap to hotbar slot 1
-            if (targetHotbarSlot == -1) {
+            // 2. If not in hotbar, search main inventory (balo, slots 9 to 35) and swap to hotbar
+            if (targetHotbarSlot == -1 && ctx.player().containerMenu == ctx.player().inventoryMenu) {
+                int foodBaloSlot = -1;
                 for (int i = 9; i < 36; i++) {
                     if (isGoodFood(inv.get(i))) {
-                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, i, 1, ClickType.SWAP, ctx.player());
-                        targetHotbarSlot = 1;
+                        foodBaloSlot = i;
                         break;
                     }
+                }
+                if (foodBaloSlot != -1) {
+                    targetHotbarSlot = findBestHotbarSlotForFood();
+                    ItemStack foodStack = inv.get(foodBaloSlot);
+                    String foodName = foodStack.getHoverName().getString();
+                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, foodBaloSlot, targetHotbarSlot, ClickType.SWAP, ctx.player());
+                    logDirect("§a[AutoEat] Đã lấy " + foodName + " từ balo ra hotbar ô " + (targetHotbarSlot + 1) + " để ăn!");
+                }
+            }
+
+            // 3. If STILL not found (cả hotbar lẫn balo đều không còn đồ ăn): Tìm trong Shulker Box!
+            if (targetHotbarSlot == -1 && shulkerState == ShulkerStorageState.IDLE) {
+                int shulkerSlot = findShulkerBoxWithFoodSlot();
+                if (shulkerSlot != -1) {
+                    triggerShulkerRetrieveFood(shulkerSlot);
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
             }
 
@@ -2279,7 +2571,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 baritone.getInputOverrideHandler().clearAllKeys();
                 eatingSlot = targetHotbarSlot;
                 eatTicks = 0;
-                logDirect("§a[AutoEat] Bắt đầu ăn: " + inv.get(targetHotbarSlot).getHoverName().getString() + " (Máu: " + (int)health + "/" + (int)maxHealth + " | Đói: " + (foodLevel / 2) + " cục)");
+                String foodName = ctx.player().getInventory().getItem(targetHotbarSlot).getHoverName().getString();
+                logDirect("§a[AutoEat] Bắt đầu ăn: " + foodName + " (Máu: " + (int)health + "/" + (int)maxHealth + " | Đói: " + (foodLevel / 2) + " cục)");
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             }
         }
