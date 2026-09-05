@@ -258,8 +258,8 @@ public class MovementTraverse extends Movement {
         BlockPos feet = ctx.playerFeet();
         if (feet.getY() != dest.getY() && !ladder) {
             logDebug("Wrong Y coordinate");
+            MovementHelper.moveTowards(ctx, state, dest);
             if (feet.getY() < dest.getY()) {
-                System.out.println("In movement traverse");
                 return state.setInput(Input.JUMP, true);
             }
             return state;

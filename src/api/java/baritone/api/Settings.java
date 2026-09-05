@@ -96,6 +96,30 @@ public final class Settings {
     public final Setting<Boolean> hideSwingAnimation = new Setting<>(false);
 
     /**
+     * Chế độ ẩn thông tin Streamer (Streamer Mode / Privacy Mode).
+     * Khi bật, tự động kích hoạt cả ẩn bảng điểm bên phải (hideScoreboard)
+     * và ẩn/che tên người chơi (hidePlayerName) trên mọi thành phần giao diện.
+     */
+    public final Setting<Boolean> streamerMode = new Setting<>(false);
+
+    /**
+     * Ẩn hoàn toàn bảng điểm bên phải màn hình (Scoreboard Sidebar HUD).
+     * Giúp giao diện gọn gàng, thoáng mắt và bảo mật thông tin tài chính/stats của server.
+     */
+    public final Setting<Boolean> hideScoreboard = new Setting<>(false);
+
+    /**
+     * Ẩn / che tên của chính người chơi (Name Protect / Streamer Mode).
+     * Thay thế tên người chơi trong chat, bảng Tab list, nametag trên đầu bằng tên che bảo vệ.
+     */
+    public final Setting<Boolean> hidePlayerName = new Setting<>(false);
+
+    /**
+     * Tên hiển thị thay thế khi kích hoạt chế độ ẩn tên người chơi (mặc định: "Protected").
+     */
+    public final Setting<String> censoredPlayerName = new Setting<>("Protected");
+
+    /**
      * Allow Baritone to place blocks
      */
     public final Setting<Boolean> allowPlace = new Setting<>(true);

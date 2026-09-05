@@ -73,6 +73,9 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optFastPlace = true;
     public static boolean optOvershoot = true;
     public static boolean optWaterSprint = true;
+    public static boolean optStreamerMode = false;
+    public static boolean optHideScoreboard = false;
+    public static boolean optHidePlayerName = false;
     public static int optTargetY = -54;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
@@ -134,9 +137,13 @@ public class AutoMineScreen extends Screen implements Helper {
         // Mỗi cột Card chứa 2 nút con cân đối
         int btnPad = 6;
         btnW = (colW - 16 - btnPad) / 2;
-        btnH = 19;
-        gap = this.height < 320 ? 20 : 22;
-        startY = this.height < 320 ? 46 : 52;
+        btnH = this.height < 320 ? 17 : 19;
+        gap = this.height < 320 ? 19 : 21;
+        startY = this.height < 320 ? 42 : 48;
+
+        optStreamerMode = Baritone.settings().streamerMode.value;
+        optHideScoreboard = Baritone.settings().hideScoreboard.value;
+        optHidePlayerName = Baritone.settings().hidePlayerName.value;
 
         leftSub1 = leftCardX + 8;
         leftSub2 = leftSub1 + btnW + btnPad;
@@ -202,6 +209,24 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(leftSub1, startY + gap * 7, btnW, btnH, "Overshoot", optOvershoot, () -> optOvershoot = !optOvershoot));
         addRenderableWidget(createOptBtn(leftSub2, startY + gap * 7, btnW, btnH, "Water Sprint", optWaterSprint, () -> optWaterSprint = !optWaterSprint));
 
+        // Hàng 8 cột 1: Hide Scoreboard & Hide Player Name
+        addRenderableWidget(createOptBtn(leftSub1, startY + gap * 8, btnW, btnH, "Hide Board", optHideScoreboard, () -> {
+            optHideScoreboard = !optHideScoreboard;
+            Baritone.settings().hideScoreboard.value = optHideScoreboard;
+            if (!optHideScoreboard && optStreamerMode) {
+                optStreamerMode = false;
+                Baritone.settings().streamerMode.value = false;
+            }
+        }));
+        addRenderableWidget(createOptBtn(leftSub2, startY + gap * 8, btnW, btnH, "Hide Name", optHidePlayerName, () -> {
+            optHidePlayerName = !optHidePlayerName;
+            Baritone.settings().hidePlayerName.value = optHidePlayerName;
+            if (!optHidePlayerName && optStreamerMode) {
+                optStreamerMode = false;
+                Baritone.settings().streamerMode.value = false;
+            }
+        }));
+
 
         // CỘT 2: CÀI ĐẶT TỰ ĐỘNG & SINH TỒN (Bố cục đôi cân xứng)
         addRenderableWidget(createOptBtn(rightSub1, startY, btnW, btnH, "Auto-Tool", optAutoTool, () -> optAutoTool = !optAutoTool));
@@ -253,9 +278,20 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightSub1, startY + gap * 7, btnW, btnH, "No-Swing", optHideSwing, () -> optHideSwing = !optHideSwing));
         addRenderableWidget(createOptBtn(rightSub2, startY + gap * 7, btnW, btnH, "FastPlace", optFastPlace, () -> optFastPlace = !optFastPlace));
 
+        // Hàng 8 cột 2: Streamer Mode (Master Toggle: Ẩn cả Bảng Điểm + Tên Player)
+        int streamerBtnW = colW - 16;
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 8, streamerBtnW, btnH, "Streamer Mode (Hide All)", optStreamerMode, () -> {
+            optStreamerMode = !optStreamerMode;
+            optHideScoreboard = optStreamerMode;
+            optHidePlayerName = optStreamerMode;
+            Baritone.settings().streamerMode.value = optStreamerMode;
+            Baritone.settings().hideScoreboard.value = optHideScoreboard;
+            Baritone.settings().hidePlayerName.value = optHidePlayerName;
+        }));
+
 
         // HÀNG DƯỚI: NÚT THAO TÁC (Responsive Action Controls)
-        panelBottom = startY + gap * 8 + 4;
+        panelBottom = startY + gap * 9 + 4;
         bottomY = panelBottom + 8;
         actionGap = 6;
         actionBtnW = (panelTotalW - (actionGap * 3)) / 4;
@@ -457,6 +493,9 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoShulkerStorage.value = optShulkerStorage;
         Baritone.settings().autoDrop.value = optAutoDrop;
         Baritone.settings().avoidance.value = optMobAvoid;
+        Baritone.settings().streamerMode.value = optStreamerMode;
+        Baritone.settings().hideScoreboard.value = optHideScoreboard;
+        Baritone.settings().hidePlayerName.value = optHidePlayerName;
         Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
         Baritone.settings().mobAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;
         Baritone.settings().mobSpawnerAvoidanceRadius.value = optMobAvoid ? 16 : 0;

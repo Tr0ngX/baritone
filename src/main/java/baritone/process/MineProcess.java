@@ -213,6 +213,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int consecutiveCalcFailures = 0;
     private boolean isChopMode = false;
     private GoalChopTour activeChopTourGoal = null;
+    private final Map<BlockPos, Long> ignoredDrops = new HashMap<>();
+    private BlockPos dropAttemptPos = null;
+    private int dropAttemptTicks = 0;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
@@ -534,13 +537,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 .filter(pos -> pos.getY() <= ctx.playerFeet().getY() + 2) // Chỉ đào thẳng đứng nếu trong tầm đứng vững trên sàn
                 .filter(pos -> !(BlockStateInterface.get(ctx, pos).getBlock() instanceof AirBlock)) // after breaking a block, it takes mineGoalUpdateInterval ticks for it to actually update this list =(
                 .min(Comparator.comparingDouble(ctx.playerFeet().above()::distSqr));
-        baritone.getInputOverrideHandler().clearAllKeys();
         if (shaft.isPresent() && ctx.player().onGround()) {
             BlockPos pos = shaft.get();
             BlockState state = baritone.bsi.get0(pos);
             if (!MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), state)) {
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
                 if (rot.isPresent() && isSafeToCancel) {
+                    baritone.getInputOverrideHandler().clearAllKeys();
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos));
                     if (ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
@@ -682,6 +685,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             // Chunk KHÔNG LOAD hoặc CHƯA ĐẦY ĐỦ DATA: Tuyệt đối giữ nguyên trong oreMemory, không được xóa!
             return false;
         });
+
+        // 4. Nếu quặng nằm ngay sát chân/dưới sàn (distSqr <= 2.25) nhưng không thể với tới để đào (unreachable):
+        // Xóa khỏi oreMemory và blacklist để tránh loop "cách 0m"!
+        oreMemory.removeIf(pos -> {
+            if (ctx.playerFeet().distSqr(pos) <= 2.25 && pos.getY() < ctx.playerFeet().getY()) {
+                if (!RotationUtils.reachable(ctx, pos).isPresent()) {
+                    blacklist.add(pos);
+                    return true;
+                }
+            }
+            return false;
+        });
     }
 
     private PathingCommand updateGoal() {
@@ -693,17 +708,46 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // === ƯU TIÊN SỐ 1: BẮT BUỘC HÚT SẠCH 100% KIM CƯƠNG / QUẶNG RƠI TRÊN SÀN TRƯỚC KHI ĐI TIẾP ===
         // Trong chế độ chặt cây, nếu đang di chuyển trên tour thì không huỷ tour giữa chừng để nhặt gỗ
         if (!isChopMode || !baritone.getPathingBehavior().isPathing()) {
+            boolean isInvFull = ctx.player() != null && ctx.player().getInventory().getFreeSlot() == -1;
             List<BlockPos> droppedItems = droppedItemsScan();
-            if (!droppedItems.isEmpty()) {
-                Optional<BlockPos> closestDrop = droppedItems.stream()
-                        .min(Comparator.comparingDouble(ctx.playerFeet()::distSqr));
-                if (closestDrop.isPresent()) {
-                    BlockPos dropPos = closestDrop.get();
-                    // Nếu chưa đứng trúng vật phẩm rơi (cách quá 0.4 block) -> Bước thẳng tới nhặt ngay lập tức!
-                    if (ctx.playerFeet().distSqr(dropPos) > 0.16) {
-                        return new PathingCommand(new GoalBlock(dropPos), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            if (!droppedItems.isEmpty() && !isInvFull) {
+                // Lọc bỏ những item rơi nằm ngược hướng hầm đang đào nếu cách xa quá 2 block
+                List<BlockPos> validDrops = droppedItems.stream().filter(dropPos -> {
+                    if (tunnelDirection != null) {
+                        int dot = (dropPos.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (dropPos.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
+                        if (dot < 0 && ctx.playerFeet().distSqr(dropPos) > 4.0) {
+                            return false; // Nằm ngược hướng đào hầm -> không quay đầu chạy ngược lại!
+                        }
+                    }
+                    return true;
+                }).collect(Collectors.toList());
+
+                if (!validDrops.isEmpty()) {
+                    Optional<BlockPos> closestDrop = validDrops.stream()
+                            .min(Comparator.comparingDouble(ctx.playerFeet()::distSqr));
+                    if (closestDrop.isPresent()) {
+                        BlockPos dropPos = closestDrop.get();
+                        if (dropAttemptPos != null && dropAttemptPos.equals(dropPos)) {
+                            dropAttemptTicks++;
+                            if (dropAttemptTicks > 40) { // Đứng sát item 2 giây mà không hút được (bị kẹt/vướng)
+                                ignoredDrops.put(dropPos, System.currentTimeMillis() + 30000L);
+                                dropAttemptPos = null;
+                                dropAttemptTicks = 0;
+                            }
+                        } else {
+                            dropAttemptPos = dropPos;
+                            dropAttemptTicks = 0;
+                        }
+
+                        // Nếu chưa đứng trong bán kính hút đồ (1 block) -> Bước tới nhặt!
+                        if (ctx.playerFeet().distSqr(dropPos) > 1.0) {
+                            return new PathingCommand(new GoalTwoBlocks(dropPos), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                        }
                     }
                 }
+            } else {
+                dropAttemptPos = null;
+                dropAttemptTicks = 0;
             }
         }
 
@@ -734,6 +778,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             cleanOreMemory(context, filter);
             List<BlockPos> allCandidates = new ArrayList<>(oreMemory);
             allCandidates.addAll(droppedItemsScan());
+            // Loại bỏ các quặng nằm quá xa phía sau hướng hầm đang đào (tránh quay xe chạy ngược hầm cũ)
+            if (tunnelDirection != null && hasReachedTargetY) {
+                allCandidates.removeIf(p -> {
+                    int dot = (p.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (p.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
+                    return dot < -8; // Ngược hướng quá 8 block -> bỏ qua, đào tiếp về phía trước!
+                });
+            }
             locs = prune(context, allCandidates, filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
             if (!locs.isEmpty()) {
                 knownOreLocations = new CopyOnWriteArrayList<>(locs);
@@ -1105,6 +1156,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (!Baritone.settings().mineScanDroppedItems.value || ctx.world() == null) {
             return Collections.emptyList();
         }
+        long now = System.currentTimeMillis();
+        ignoredDrops.entrySet().removeIf(e -> e.getValue() < now);
         List<BlockPos> ret = new ArrayList<>();
         BetterBlockPos pf = ctx.playerFeet();
         for (Entity entity : ((ClientLevel) ctx.world()).entitiesForRendering()) {
@@ -1114,7 +1167,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 Item item = stack.getItem();
                 if (ORE_DROPS.contains(item) || (filter != null && filter.has(stack)) || item.getDescriptionId().contains("ore") || item.getDescriptionId().contains("raw")) {
                     BlockPos pos = entity.blockPosition();
-                    if (pos.distSqr(pf) <= 256) { // Trong bán kính 16 block
+                    if (!ignoredDrops.containsKey(pos) && pos.distSqr(pf) <= 256) { // Trong bán kính 16 block
                         ret.add(pos);
                     }
                 }

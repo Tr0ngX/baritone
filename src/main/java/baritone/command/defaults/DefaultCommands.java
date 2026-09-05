@@ -63,6 +63,7 @@ public final class DefaultCommands {
                 new MineCommand(baritone),
                 new AutoMineCommand(baritone),
                 new ChopCommand(baritone),
+                new StreamerCommand(baritone),
                 new ClickCommand(baritone),
                 new SurfaceCommand(baritone),
                 new ThisWayCommand(baritone),

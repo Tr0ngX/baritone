@@ -93,17 +93,19 @@ public class ChopTourPathFinder extends AbstractNodeCostSearch {
             long legPrimaryTimeout = Math.min(3500L, timeLeft);
             long legFailureTimeout = legPrimaryTimeout * 2;
 
-            Optional<IPath> legResult = legFinder.calculate0(legPrimaryTimeout, legFailureTimeout);
-            if (legResult.isPresent() && !legResult.get().movements().isEmpty()) {
-                IPath legPath = legResult.get();
-                List<IMovement> legMoves = legPath.movements();
-                List<BetterBlockPos> legPositions = legPath.positions();
+            baritone.api.utils.PathCalculationResult legCalc = legFinder.calculate(legPrimaryTimeout, legFailureTimeout);
+            if (legCalc.getPath().isPresent()) {
+                IPath legPath = legCalc.getPath().get();
+                if (!legPath.movements().isEmpty()) {
+                    List<IMovement> legMoves = legPath.movements();
+                    List<BetterBlockPos> legPositions = legPath.positions();
 
-                allMovements.addAll(legMoves);
-                allPositions.addAll(legPositions.subList(1, legPositions.size()));
-                totalNodesConsidered += legPath.getNumNodesConsidered();
-                currentPos = legPath.getDest();
-                connectedTrees++;
+                    allMovements.addAll(legMoves);
+                    allPositions.addAll(legPositions.subList(1, legPositions.size()));
+                    totalNodesConsidered += legPath.getNumNodesConsidered();
+                    currentPos = legPath.getDest();
+                    connectedTrees++;
+                }
             }
         }
 
