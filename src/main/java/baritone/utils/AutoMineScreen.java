@@ -441,6 +441,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
         Baritone.settings().autoShulkerStorage.value = optShulkerStorage;
+        Baritone.settings().autoDrop.value = optAutoDrop;
         Baritone.settings().avoidance.value = optMobAvoid;
         Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
         Baritone.settings().mobAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;

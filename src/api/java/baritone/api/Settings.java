@@ -1330,6 +1330,12 @@ public final class Settings {
     public final Setting<Boolean> autoShulkerStorage = new Setting<>(true);
 
     /**
+     * When inventory is full while mining, automatically drop junk items from inventory.
+     * Keeps tools, food, totem, shulker boxes, target ores, and 1 stack of building blocks, and drops all other items.
+     */
+    public final Setting<Boolean> autoDrop = new Setting<>(true);
+
+    /**
      * The actual GoalNear is set this distance away from the entity you're following
      * <p>
      * For example, set followOffsetDistance to 5 and followRadius to 0 to always stay precisely 5 blocks north of your follow target.

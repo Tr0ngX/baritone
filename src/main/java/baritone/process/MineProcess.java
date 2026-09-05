@@ -262,16 +262,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         updateLoucaSystem();
 
+        // Dọn rác balo trước: vứt sạch đồ rác (chỉ giữ Shulker, 1 stack block, Totem, Thức ăn & Cúp)
+        if (!pendingDropSlots.isEmpty() || tickCount % 20 == 0) {
+            cleanInventoryIfFull();
+        }
+
         if (Baritone.settings().autoShulkerStorage.value || shulkerState != ShulkerStorageState.IDLE) {
             PathingCommand shulkerCmd = handleShulkerStorage(isSafeToCancel);
             if (shulkerCmd != null) {
                 return shulkerCmd;
             }
-        }
-
-        // Gọi mỗi tick nếu đang có hàng đợi vứt rác, ngược lại quét mỗi 40 tick
-        if (!pendingDropSlots.isEmpty() || tickCount % 40 == 0) {
-            cleanInventoryIfFull();
         }
         int mineGoalUpdateInterval = Baritone.settings().mineGoalUpdateInterval.value;
         addNearbyQuick();
@@ -899,16 +899,86 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private final List<Integer> pendingDropSlots = new ArrayList<>();
     private int dropCooldown = 0;
 
+    public static boolean isBuildingBlock(ItemStack stack) {
+        if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem bi)) {
+            return false;
+        }
+        Block block = bi.getBlock();
+        if (block instanceof ShulkerBoxBlock || block instanceof TrapDoorBlock) {
+            return false;
+        }
+        return block == Blocks.COBBLESTONE
+                || block == Blocks.COBBLED_DEEPSLATE
+                || block == Blocks.DEEPSLATE
+                || block == Blocks.STONE
+                || block == Blocks.DIRT
+                || block == Blocks.TUFF
+                || block == Blocks.ANDESITE
+                || block == Blocks.DIORITE
+                || block == Blocks.GRANITE
+                || block == Blocks.NETHERRACK
+                || block == Blocks.BASALT
+                || block == Blocks.BLACKSTONE
+                || block == Blocks.CALCITE
+                || block == Blocks.SANDSTONE
+                || block == Blocks.END_STONE;
+    }
+
+    private boolean isValuableOreOrTarget(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        Item item = stack.getItem();
+        if (item == Items.DIAMOND
+                || item == Items.EMERALD
+                || item == Items.ANCIENT_DEBRIS
+                || item == Items.NETHERITE_INGOT
+                || item == Items.NETHERITE_SCRAP
+                || item == Items.LAPIS_LAZULI
+                || item == Items.REDSTONE
+                || item == Items.GOLD_INGOT
+                || item == Items.IRON_INGOT
+                || item == Items.RAW_GOLD
+                || item == Items.RAW_IRON
+                || item == Items.AMETHYST_SHARD) {
+            return true;
+        }
+        if (filter != null && filter.has(stack)) {
+            return true;
+        }
+        if (item instanceof BlockItem bi) {
+            Block block = bi.getBlock();
+            if (block == Blocks.DIAMOND_ORE || block == Blocks.DEEPSLATE_DIAMOND_ORE
+                    || block == Blocks.EMERALD_ORE || block == Blocks.DEEPSLATE_EMERALD_ORE
+                    || block == Blocks.ANCIENT_DEBRIS
+                    || block == Blocks.LAPIS_ORE || block == Blocks.DEEPSLATE_LAPIS_ORE
+                    || block == Blocks.REDSTONE_ORE || block == Blocks.DEEPSLATE_REDSTONE_ORE
+                    || block == Blocks.GOLD_ORE || block == Blocks.DEEPSLATE_GOLD_ORE
+                    || block == Blocks.IRON_ORE || block == Blocks.DEEPSLATE_IRON_ORE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isProtectedFromDrop(ItemStack stack) {
+        if (stack.isEmpty()) return true;
+        if (isShulkerBox(stack)) return true;
+        if (stack.is(Items.TOTEM_OF_UNDYING)) return true;
+        if (isGoodFood(stack) || stack.has(DataComponents.FOOD)) return true;
+        if (isToolOrEssential(stack)) return true;
+        if (isValuableOreOrTarget(stack)) return true;
+        return false;
+    }
+
     private void cleanInventoryIfFull() {
         if (ctx.player() == null || ctx.player().containerMenu != ctx.player().inventoryMenu) {
             return;
         }
 
-        if (Baritone.settings().autoShulkerStorage.value && findBestShulkerBoxSlot() != -1) {
-            return; // Đang bật chế độ Shulker Box và còn Shulker có thể chứa đồ trong người -> không vứt đồ ra ngoài!
+        if (!Baritone.settings().autoDrop.value) {
+            return;
         }
 
-        // Nếu đang có hàng đợi vứt rác → vứt 1 stack mỗi 5 tick (tránh bị server kick vì spam packet)
+        // Nếu đang có hàng đợi vứt rác → vứt 1 stack mỗi 4 tick (0.2s) để tránh kick packet
         if (!pendingDropSlots.isEmpty()) {
             if (dropCooldown > 0) {
                 dropCooldown--;
@@ -918,31 +988,23 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
             if (slotIndex >= 0 && slotIndex < inv.size()) {
                 ItemStack stack = inv.get(slotIndex);
-                if (!stack.isEmpty() && JUNK_BLOCKS.contains(stack.getItem())) {
-                    // Chuyển item vào hotbar slot 0 (nếu chưa ở đó) rồi vứt cả stack
-                    if (slotIndex >= 9) {
-                        // Item trong balo chính (slot 9-35): swap vào hotbar slot 0 trước
-                        int windowSlot = slotIndex; // slot 9-35 trong inventory = windowSlot 9-35
-                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 0, ClickType.SWAP, ctx.player());
-                        // Giờ item ở hotbar slot 0, vứt nó
-                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, 36, 1, ClickType.THROW, ctx.player());
-                        // Swap lại item cũ từ hotbar 0 về vị trí ban đầu
-                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 0, ClickType.SWAP, ctx.player());
-                    } else {
-                        // Item đã ở hotbar (slot 0-8): windowSlot = slot + 36
-                        int windowSlot = slotIndex + 36;
-                        ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 1, ClickType.THROW, ctx.player());
-                    }
+                // Kiểm tra an toàn trước khi ném: KHÔNG BAO GIỜ vứt Shulker Box, Totem, Food, Tools, Ores
+                if (!stack.isEmpty() && !isProtectedFromDrop(stack)) {
+                    // Trong InventoryMenu:
+                    // Hotbar (slotIndex 0-8) -> windowSlot 36-44
+                    // Balo chính (slotIndex 9-35) -> windowSlot 9-35
+                    int windowSlot = (slotIndex < 9) ? (slotIndex + 36) : slotIndex;
+                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 1, ClickType.THROW, ctx.player());
                 }
             }
-            dropCooldown = 4; // Chờ 4 tick trước khi vứt stack tiếp theo (≈ 0.2 giây)
+            dropCooldown = 4;
             if (pendingDropSlots.isEmpty()) {
                 logDirect("§a[AutoDrop] Đã dọn sạch toàn bộ rác trong balo!");
             }
             return;
         }
 
-        // Chỉ quét lại khi không có hàng đợi đang xử lý
+        // Đếm số ô trống trong balo
         NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
         int emptySlots = 0;
         for (int i = 0; i < 36; i++) {
@@ -956,18 +1018,38 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             int keptBuildingBlocks = 0;
             for (int i = 0; i < 36; i++) {
                 ItemStack stack = inv.get(i);
-                if (!stack.isEmpty() && JUNK_BLOCKS.contains(stack.getItem())) {
-                    // Giữ lại đúng 1 stack 64 block Cobblestone/Cobbled Deepslate để bắc cầu
-                    if (keptBuildingBlocks < 64 && (stack.is(Items.COBBLED_DEEPSLATE) || stack.is(Items.COBBLESTONE))) {
+                if (stack.isEmpty()) continue;
+
+                // 1. Shulker Box -> Luôn giữ (Yêu cầu người dùng: "trừ shuker box")
+                if (isShulkerBox(stack)) continue;
+
+                // 2. Totem of Undying -> Luôn giữ (Yêu cầu người dùng: "và cả totem")
+                if (stack.is(Items.TOTEM_OF_UNDYING)) continue;
+
+                // 3. Thức ăn -> Luôn giữ (Yêu cầu người dùng: "+ thức ăn")
+                if (isGoodFood(stack) || stack.has(DataComponents.FOOD)) continue;
+
+                // 4. Công cụ, vũ khí, giáp, xô nước, cửa sập -> Luôn giữ
+                if (isToolOrEssential(stack)) continue;
+
+                // 5. Quặng quý & Khoáng sản mục tiêu đào -> Luôn giữ
+                if (isValuableOreOrTarget(stack)) continue;
+
+                // 6. Block xây dựng -> Giữ đúng 1 stack (tối đa 64 block) để bắc cầu/kê chân (Yêu cầu người dùng: "+ 1 stack block")
+                if (isBuildingBlock(stack)) {
+                    if (keptBuildingBlocks < 64) {
                         keptBuildingBlocks += stack.getCount();
                         continue;
                     }
-                    pendingDropSlots.add(i);
                 }
+
+                // CÒN LẠI VỨT ALL: nạp slot vào hàng đợi vứt rác
+                pendingDropSlots.add(i);
             }
+
             if (!pendingDropSlots.isEmpty()) {
-                logDirect("§e[AutoDrop] Balo gần đầy! Đang dọn " + pendingDropSlots.size() + " stack rác...");
-                dropCooldown = 0; // Bắt đầu vứt ngay
+                logDirect("§e[AutoDrop] Balo gần đầy (" + emptySlots + " ô trống)! Đang vứt " + pendingDropSlots.size() + " stack rác (giữ Shulker, 1 stack block, Totem, Thức ăn & Cúp, vứt all còn lại)...");
+                dropCooldown = 0; // Vứt stack đầu tiên ngay
             }
         }
     }
@@ -1076,6 +1158,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         Item item = stack.getItem();
         if (item == Items.WATER_BUCKET
                 || item == Items.TOTEM_OF_UNDYING
+                || item == Items.SHIELD
+                || stack.is(ItemTags.ARMOR_ENCHANTABLE)
                 || (item instanceof BlockItem bi && bi.getBlock() instanceof TrapDoorBlock)
                 || isShulkerBox(stack)) {
             return true;
@@ -1147,8 +1231,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             for (int i = 0; i < 36; i++) {
                 if (inv.get(i).isEmpty()) emptySlots++;
             }
-            // Khi balo còn <= 4 ô trống:
-            if (emptySlots <= 4) {
+            // Khi balo còn <= 4 ô trống và đã dọn sạch rác rơi (không còn rác trong hàng đợi):
+            if (emptySlots <= 4 && pendingDropSlots.isEmpty()) {
                 int shulkerSlot = findBestShulkerBoxSlot();
                 if (shulkerSlot != -1) {
                     shulkerBoxCountBefore = countShulkerBoxesInInventory();
@@ -1308,7 +1392,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     if (stack.isEmpty()) continue;
                     if (isToolOrEssential(stack)) continue;
 
-                    if (stack.is(Items.COBBLESTONE) || stack.is(Items.COBBLED_DEEPSLATE)) {
+                    if (isBuildingBlock(stack)) {
                         if (keptBuildingBlocks < 64) {
                             keptBuildingBlocks += stack.getCount();
                             continue;
