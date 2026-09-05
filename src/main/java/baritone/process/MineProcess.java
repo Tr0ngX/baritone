@@ -194,6 +194,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private long lastShulkerFullWarningTime = 0;
     private final Set<Integer> shulkerUntransferableSlots = new HashSet<>();
     private int shulkerTransferredCount = 0;
+    private boolean shulkerClearingInProgress = false;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
@@ -522,6 +523,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             shulkerBoxCountBefore = 0;
             shulkerUntransferableSlots.clear();
             shulkerTransferredCount = 0;
+            shulkerClearingInProgress = false;
         }
         mine(0, (BlockOptionalMetaLookup) null);
     }
@@ -783,17 +785,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return new PathingCommand(new GoalTwoBlocks(dropPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                 }
             }
-
-            if (Baritone.settings().straightDownMine.value) {
-                if (shaftOriginPos == null || fr || shaftOriginPos.getX() != ctx.playerFeet().x || shaftOriginPos.getZ() != ctx.playerFeet().z) {
-                    shaftOriginPos = ctx.playerFeet();
-                } else if (shaftOriginPos.getY() - currentY >= 5) {
-                    shaftOriginPos = ctx.playerFeet();
-                }
-                forceReroute = false;
-                Goal shaftGoal = new GoalShaftDown(shaftOriginPos.getX(), shaftOriginPos.getY(), shaftOriginPos.getZ(), targetY);
-                return new PathingCommand(shaftGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
-            }
         }
 
         // CHUẨN GỐC BARITONE CÓ ĐỊNH HƯỚNG: GoalRunAway liên tục đào xuyên đá tiến về phía trước theo tầng targetY
@@ -837,8 +828,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return;
         }
         List<BlockPos> dropped = droppedItemsScan();
-        // Quét tìm quặng mới trong các chunk đang load của thế giới
-        List<BlockPos> freshlyScanned = searchWorld(context, filter, Baritone.settings().mineMaxOreLocationsCount.value, Collections.emptyList(), new ArrayList<>(blacklist), dropped);
+        List<BlockPos> freshlyScanned = Collections.emptyList();
+        try {
+            freshlyScanned = searchWorld(context, filter, Baritone.settings().mineMaxOreLocationsCount.value, already, new ArrayList<>(blacklist), dropped);
+        } catch (Exception e) {
+            logDebug("searchWorld encountered error: " + e.getMessage());
+        }
         oreMemory.addAll(freshlyScanned);
         cleanOreMemory(context, filter);
 
@@ -1062,6 +1057,42 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         return false;
     }
 
+    private int countDroppableTrashSlots() {
+        if (ctx.player() == null) return 0;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        int keptBuildingBlocks = 0;
+        int trashSlots = 0;
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = inv.get(i);
+            if (stack.isEmpty()) continue;
+            if (isProtectedFromDrop(stack)) continue;
+            if (isBuildingBlock(stack)) {
+                if (keptBuildingBlocks < 64) {
+                    keptBuildingBlocks += stack.getCount();
+                    continue;
+                }
+            }
+            trashSlots++;
+        }
+        return trashSlots;
+    }
+
+    private int countTransferableSlots() {
+        if (ctx.player() == null) return 0;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        int transferable = 0;
+        for (int i = 0; i < 36; i++) {
+            if (i == 0) continue; // Luôn bảo vệ ô hotbar slot 0 chứa cúp chính
+            ItemStack stack = inv.get(i);
+            if (stack.isEmpty()) continue;
+            if (shouldKeepInInventory(stack)) continue;
+            // Block xây dựng thông thường (đá, đất, v.v.) không phải là món cất vào Shulker Box
+            if (isBuildingBlock(stack) && !isTargetOre(stack)) continue;
+            transferable++;
+        }
+        return transferable;
+    }
+
     private void handleAutoDrop() {
         if (ctx.player() == null || ctx.player().containerMenu != ctx.player().inventoryMenu) {
             return;
@@ -1102,9 +1133,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return;
         }
 
-        // CHU KỲ TỰ ĐỘNG VỨT MỖI 10 GIÂY (200 ticks) - KHÔNG CẦN CHỜ ĐẦY MỚI VỨT:
+        // 1. CHU KỲ TỰ ĐỘNG VỨT MỖI 10 GIÂY (200 ticks) - KHÔNG CẦN CHỜ ĐẦY MỚI VỨT:
         if (tickCount % 200 == 0) {
             scanAndQueueTrashDrops();
+        } else {
+            // 2. KHI BALO GẦN ĐẦY (còn <= 3 ô trống): Quét và vứt rác NGAY LẬP TỨC để giải phóng chỗ trống
+            NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+            int emptyCount = 0;
+            for (int i = 0; i < 36; i++) {
+                if (inv.get(i).isEmpty()) emptyCount++;
+            }
+            if (emptyCount <= 3 && pendingDropSlots.isEmpty()) {
+                scanAndQueueTrashDrops();
+            }
         }
     }
 
@@ -1367,14 +1408,28 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             for (int i = 0; i < 36; i++) {
                 if (inv.get(i).isEmpty()) emptySlots++;
             }
-            // Balo thực sự đầy: còn <= 1 ô trống (35/36 hoặc 36/36 ô đã đầy)
-            if (emptySlots <= 1 && pendingDropSlots.isEmpty()) {
+
+            int trashSlots = Baritone.settings().autoDrop.value ? countDroppableTrashSlots() : 0;
+            // 1. Nếu có rác và balo gần đầy (<= 3 ô trống): Phải ưu tiên dọn rác trước, không được đặt Shulker Box!
+            if (trashSlots > 0 && emptySlots <= 3 && Baritone.settings().autoDrop.value) {
+                if (pendingDropSlots.isEmpty()) {
+                    scanAndQueueTrashDrops();
+                }
+                return null;
+            }
+
+            // 2. Phải có ít nhất 1 ô đồ thực sự cần cất (quặng, nguyên liệu quý)
+            int transferableSlots = countTransferableSlots();
+
+            // 3. Balo thực sự đầy: còn <= 1 ô trống, không còn rác chờ vứt, và có đồ cần cất
+            if (emptySlots <= 1 && pendingDropSlots.isEmpty() && trashSlots == 0 && transferableSlots > 0) {
                 int shulkerSlot = findBestShulkerBoxSlot();
                 if (shulkerSlot != -1) {
+                    shulkerClearingInProgress = true;
                     shulkerBoxCountBefore = countShulkerBoxesInInventory();
                     int occupied = getShulkerOccupiedSlots(inv.get(shulkerSlot));
                     String slotDesc = (occupied == 0) ? "trống 100%" : (occupied + "/27 ô đã dùng");
-                    logDirect("§a[AutoShulker] Balo đã đầy (" + emptySlots + " ô trống)! Chọn Shulker Box (" + slotDesc + ") tại slot " + shulkerSlot + " để cất đồ...");
+                    logDirect("§a[AutoShulker] Balo đã đầy (" + emptySlots + " ô trống, " + transferableSlots + " stack cần cất)! Chọn Shulker Box (" + slotDesc + ") tại slot " + shulkerSlot + " để cất đồ...");
                     shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
                     shulkerStateTicks = 0;
                     shulkerConsecutiveNoTransfer = 0;
@@ -1536,6 +1591,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     if (stack.isEmpty()) continue;
                     // BỎ QUA các món thiết yếu: Cúp, Totem, Xô nước, Đồ ăn (và Shulker Box)
                     if (shouldKeepInInventory(stack)) continue;
+                    // BỎ QUA block xây dựng thông thường (không nhét đá/đất vào Shulker Box trừ khi là mục tiêu đào)
+                    if (isBuildingBlock(stack) && !isTargetOre(stack)) continue;
                     // BỎ QUA ô đã thử mà không thể chuyển vào Shulker Box (shulker đã đầy hoặc từ chối)
                     if (shulkerUntransferableSlots.contains(slotId)) continue;
 
@@ -1548,9 +1605,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     ctx.playerController().windowClick(containerId, transferSlot, 0, ClickType.QUICK_MOVE, ctx.player());
                     ItemStack after = ctx.player().containerMenu.getSlot(transferSlot).getItem();
                     if (before.getCount() == after.getCount()) {
-                        // Không chuyển được (hộp Shulker không còn chỗ chứa món này)
-                        shulkerUntransferableSlots.add(transferSlot);
+                        shulkerConsecutiveNoTransfer++;
+                        if (shulkerConsecutiveNoTransfer >= 2) {
+                            // Không chuyển được (hộp Shulker không còn chỗ chứa món này)
+                            shulkerUntransferableSlots.add(transferSlot);
+                            shulkerConsecutiveNoTransfer = 0;
+                        }
                     } else {
+                        shulkerConsecutiveNoTransfer = 0;
                         shulkerTransferredCount++;
                     }
                     shulkerTransferCooldown = 2; // Nhịp 2 tick (0.1s) mượt mà chống kick packet
@@ -1625,6 +1687,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerState = ShulkerStorageState.IDLE;
                     shulkerBoxCountBefore = 0;
                     shulkerUntransferableSlots.clear();
+                    shulkerClearingInProgress = false;
                 }
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             }
@@ -1637,11 +1700,23 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 if (currentShulkerCount >= shulkerBoxCountBefore) {
                     baritone.getInputOverrideHandler().clearAllKeys();
                     logDirect("§a[AutoShulker] Đã thu hồi và nhặt Shulker Box vào balo an toàn (Tổng: " + currentShulkerCount + ")!");
-                    shulkerState = ShulkerStorageState.IDLE;
                     shulkerPlacedPos = null;
                     shulkerStateTicks = 0;
                     shulkerBoxCountBefore = 0;
                     shulkerUntransferableSlots.clear();
+
+                    // Kiểm tra xem người chơi còn món nào cần cất vào Shulker Box tiếp theo không
+                    int remainingTransferable = countTransferableSlots();
+                    int nextShulkerSlot = findBestShulkerBoxSlot();
+                    if (shulkerClearingInProgress && remainingTransferable > 0 && nextShulkerSlot != -1) {
+                        logDirect("§a[AutoShulker] Còn " + remainingTransferable + " ô vật phẩm cần cất! Tiếp tục mở Shulker Box tiếp theo...");
+                        shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                    }
+
+                    shulkerClearingInProgress = false;
+                    shulkerState = ShulkerStorageState.IDLE;
+                    logDirect("§a[AutoShulker] Đã cất toàn bộ vật phẩm vào Shulker Box (chỉ giữ Cúp, Totem, Xô nước & Đồ ăn)! Tiếp tục đào...");
                     return null;
                 }
 
@@ -1696,6 +1771,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerStateTicks = 0;
                     shulkerBoxCountBefore = 0;
                     shulkerUntransferableSlots.clear();
+                    shulkerClearingInProgress = false;
                 }
 
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -2554,6 +2630,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.shulkerBoxCountBefore = 0;
         this.shulkerUntransferableSlots.clear();
         this.shulkerTransferredCount = 0;
+        this.shulkerClearingInProgress = false;
         Baritone.settings().noPillar.value = false;
         if (filter != null) {
             rescan(new ArrayList<>(), new CalculationContext(baritone));
@@ -2687,54 +2764,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         @Override
         public String toString() {
             return "GoalStaircaseDescent{start=" + startX + "," + startY + "," + startZ + ", dir=" + dx + "," + dz + ", targetY=" + targetY + "}";
-        }
-    }
-
-    public static class GoalShaftDown implements Goal {
-        public final int x, z;
-        public final int startY;
-        public final int targetY;
-
-        public GoalShaftDown(int x, int startY, int z, int targetY) {
-            this.x = x;
-            this.startY = startY;
-            this.z = z;
-            this.targetY = targetY;
-        }
-
-        @Override
-        public boolean isInGoal(int x, int y, int z) {
-            return x == this.x && z == this.z && (y <= targetY || (startY - y) >= 6);
-        }
-
-        @Override
-        public double heuristic(int x, int y, int z) {
-            int horizDev = Math.abs(x - this.x) + Math.abs(z - this.z);
-            int remainingDrop = Math.max(0, y - targetY);
-            return remainingDrop * 100.0 + horizDev * 2000.0;
-        }
-
-        @Override
-        public double heuristic() {
-            return 0;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof GoalShaftDown)) return false;
-            GoalShaftDown that = (GoalShaftDown) o;
-            return x == that.x && z == that.z && startY == that.startY && targetY == that.targetY;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(x, startY, z, targetY);
-        }
-
-        @Override
-        public String toString() {
-            return "GoalShaftDown{x=" + x + ", startY=" + startY + ", z=" + z + ", targetY=" + targetY + "}";
         }
     }
 }
