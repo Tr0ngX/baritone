@@ -177,6 +177,12 @@ public final class Settings {
     public final Setting<Boolean> allowWaterBucketFall = new Setting<>(true);
 
     /**
+     * Prefer water bucket falls and natural drops over digging downwards.
+     * When enabled, heavily penalizes digging blocks downwards while discounting water bucket falls.
+     */
+    public final Setting<Boolean> preferWaterBucketOverDigging = new Setting<>(true);
+
+    /**
      * Allow Baritone to assume it can walk on still water just like any other block.
      * This functionality is assumed to be provided by a separate library that might have imported Baritone.
      * <p>

@@ -683,18 +683,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
             // KIỂM TRA ƯU TIÊN SỐ 1: DÙNG XÔ NƯỚC (WATER BUCKET) ĐỂ TỤT XUỐNG THAY VÌ ĐÀO XUỐNG
             int waterSlot = ctx.player().getInventory().findSlotMatchingItem(new ItemStack(Items.WATER_BUCKET));
-            boolean hasWaterBucket = waterSlot != -1
+            boolean hasWaterBucket = (waterSlot != -1 || ctx.player().getOffhandItem().is(Items.WATER_BUCKET))
                     && ctx.world().dimension() != net.minecraft.world.level.Level.NETHER
                     && Baritone.settings().allowWaterBucketFall.value;
 
-            if (hasWaterBucket) {
-                // Tự động chuyển xô nước lên hotbar nếu đang ở trong balo
+            if (hasWaterBucket && Baritone.settings().preferWaterBucketOverDigging.value) {
+                // Tự động chuyển xô nước lên hotbar nếu đang ở trong balo (dùng slot 8 hoặc 7 để không ghi đè slot 0 của cúp)
                 if (waterSlot >= 9) {
-                    ((Baritone) baritone).getInventoryBehavior().attemptToPutOnHotbar(waterSlot, s -> s == 0 || s == 8);
+                    ((Baritone) baritone).getInventoryBehavior().attemptToPutOnHotbar(waterSlot, s -> s == 8 || s == 7);
                 }
 
-                // 1. Quét tìm hố sâu / vách núi / hang động mở có độ tụt lớn gần đây để nhảy đáp nước
-                Optional<BlockPos> opening = findNearbyDescentOpening(16, 3);
+                // 1. Quét tìm hố sâu / vách núi / hang động mở có độ tụt lớn gần đây để nhảy đáp nước (quét bán kính rộng 32 block)
+                Optional<BlockPos> opening = findNearbyDescentOpening(32, 3);
                 if (opening.isPresent()) {
                     BlockPos dropPos = opening.get();
                     int dropAmount = currentY - dropPos.getY();
@@ -1836,8 +1836,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         BetterBlockPos feet = ctx.playerFeet();
         int targetY = Baritone.settings().legitMineYLevel.value;
+        if (feet.y <= targetY) {
+            return Optional.empty();
+        }
+
         BlockPos bestCandidate = null;
         int maxDropFound = 0;
+        int bestScore = -999999;
 
         for (int r = 0; r <= maxHorizontalRadius; r++) {
             for (int dx = -r; dx <= r; dx++) {
@@ -1848,35 +1853,60 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     int x = feet.x + dx;
                     int z = feet.z + dz;
 
-                    int airSpan = 0;
-                    int landingY = -1;
-                    int maxYScan = feet.y;
+                    int maxYScan = feet.y + 1;
                     int minYScan = Math.max(targetY, feet.y - Baritone.settings().maxFallHeightBucket.value);
+
+                    int currentAirSpan = 0;
+                    int airTopY = -1;
 
                     for (int y = maxYScan; y >= minYScan; y--) {
                         BlockPos pos = new BlockPos(x, y, z);
                         BlockState state = ctx.world().getBlockState(pos);
-                        boolean isPassable = state.isAir() || state.getBlock() instanceof AirBlock || state.getBlock() == Blocks.WATER || state.getFluidState().getType() instanceof net.minecraft.world.level.material.WaterFluid;
-                        if (isPassable) {
-                            airSpan++;
-                        } else {
-                            if (airSpan >= minDrop && MovementHelper.canWalkOn(ctx, pos) && state.getBlock() != Blocks.LAVA) {
-                                landingY = y + 1;
-                            }
-                            break;
-                        }
-                    }
+                        boolean isPassable = state.isAir()
+                                || state.getBlock() instanceof AirBlock
+                                || state.getBlock() == Blocks.WATER
+                                || state.getFluidState().getType() instanceof net.minecraft.world.level.material.WaterFluid;
 
-                    if (landingY != -1 && landingY < feet.y) {
-                        int drop = feet.y - landingY;
-                        if (drop > maxDropFound) {
-                            maxDropFound = drop;
-                            bestCandidate = new BlockPos(x, landingY, z);
+                        if (isPassable) {
+                            if (currentAirSpan == 0) {
+                                airTopY = y;
+                            }
+                            currentAirSpan++;
+                        } else {
+                            if (currentAirSpan >= minDrop && MovementHelper.canWalkOn(ctx, pos) && state.getBlock() != Blocks.LAVA) {
+                                int landingY = y + 1;
+                                int drop = feet.y - landingY;
+
+                                if (drop >= minDrop) {
+                                    boolean isOpenFromFeet = airTopY >= feet.y - 1;
+                                    int score = drop * 10;
+                                    if (isOpenFromFeet) {
+                                        score += 200;
+                                    } else {
+                                        int ceilingThickness = feet.y - airTopY;
+                                        if (ceilingThickness <= 2) {
+                                            score += 100;
+                                        } else {
+                                            score -= ceilingThickness * 15;
+                                        }
+                                    }
+                                    score -= (int) (Math.sqrt(dx * dx + dz * dz) * 3);
+
+                                    if (score > bestScore) {
+                                        bestScore = score;
+                                        maxDropFound = drop;
+                                        bestCandidate = new BlockPos(x, landingY, z);
+                                    }
+                                }
+                            }
+                            currentAirSpan = 0;
+                            airTopY = -1;
                         }
                     }
                 }
             }
-            if (bestCandidate != null && maxDropFound >= 8) {
+
+            if (bestCandidate != null && maxDropFound >= 15 && bestScore >= 300) {
                 break;
             }
         }

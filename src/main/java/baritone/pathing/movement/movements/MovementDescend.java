@@ -80,17 +80,22 @@ public class MovementDescend extends Movement {
     public static void cost(CalculationContext context, int x, int y, int z, int destX, int destZ, MutableMoveResult res) {
         double totalCost = 0;
         BlockState destDown = context.get(destX, y - 1, destZ);
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, y - 1, destZ, destDown, false);
-        if (totalCost >= COST_INF) {
+        double miningCost = 0;
+        miningCost += MovementHelper.getMiningDurationTicks(context, destX, y - 1, destZ, destDown, false);
+        if (miningCost >= COST_INF) {
             return;
         }
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, y, destZ, false);
-        if (totalCost >= COST_INF) {
+        miningCost += MovementHelper.getMiningDurationTicks(context, destX, y, destZ, false);
+        if (miningCost >= COST_INF) {
             return;
         }
-        totalCost += MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, true); // only the top block in the 3 we need to mine needs to consider the falling blocks above
-        if (totalCost >= COST_INF) {
+        miningCost += MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, true); // only the top block in the 3 we need to mine needs to consider the falling blocks above
+        if (miningCost >= COST_INF) {
             return;
+        }
+        totalCost += miningCost;
+        if (context.preferWaterBucketOverDigging && context.hasWaterBucket && miningCost > 0) {
+            totalCost += 50.0; // Phạt nặng hành vi đào dốc bậc thang khi có xô nước
         }
 
         Block fromDown = context.get(x, y - 1, z).getBlock();
@@ -215,7 +220,11 @@ public class MovementDescend extends Movement {
                 res.x = destX;
                 res.y = newY + 1;// this is the block we're falling onto, so dest is +1
                 res.z = destZ;
-                res.cost = tentativeCost + context.placeBucketCost();
+                double fallCost = tentativeCost + context.placeBucketCost();
+                if (context.preferWaterBucketOverDigging) {
+                    fallCost = Math.max(1.0, fallCost * 0.35); // Giảm mạnh 65% chi phí cho cú rơi xô nước
+                }
+                res.cost = fallCost;
                 return true;
             } else {
                 return false;

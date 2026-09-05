@@ -87,6 +87,7 @@ public class CalculationContext {
     public final double walkOnWaterOnePenalty;
     public final boolean allowWalkOnMagmaBlocks;
     public final BetterWorldBorder worldBorder;
+    public final boolean preferWaterBucketOverDigging;
 
     public final PrecomputedData precomputedData;
 
@@ -105,7 +106,11 @@ public class CalculationContext {
         this.toolSet = new ToolSet(player);
         this.hasThrowaway = Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
         int waterSlot = player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER);
-        this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value && (Inventory.isHotbarSlot(waterSlot) || (Baritone.settings().allowInventory.value && waterSlot != -1)) && world.dimension() != Level.NETHER;
+        boolean hasBucket = Inventory.isHotbarSlot(waterSlot)
+                || (Baritone.settings().allowInventory.value && waterSlot != -1)
+                || player.getOffhandItem().is(Items.WATER_BUCKET);
+        this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value && hasBucket && world.dimension() != Level.NETHER;
+        this.preferWaterBucketOverDigging = Baritone.settings().preferWaterBucketOverDigging.value;
         this.canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
         this.placeBlockCost = Baritone.settings().blockPlacementPenalty.value;
         this.allowBreak = Baritone.settings().allowBreak.value;
@@ -218,6 +223,9 @@ public class CalculationContext {
     }
 
     public double placeBucketCost() {
+        if (preferWaterBucketOverDigging && hasWaterBucket) {
+            return 0.5; // Chi phí cực rẻ cho xô nước để A* luôn ưu tiên nhảy đáp nước
+        }
         return placeBlockCost; // shrug
     }
 

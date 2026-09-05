@@ -59,6 +59,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().sprintInWater.value = true;
         Baritone.settings().assumeStep.value = false;
         Baritone.settings().allowWaterBucketFall.value = true;
+        Baritone.settings().preferWaterBucketOverDigging.value = true;
 
         Baritone.settings().legitMine.value = false;
         Baritone.settings().exploreForBlocks.value = true;

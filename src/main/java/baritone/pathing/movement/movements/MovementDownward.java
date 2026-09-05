@@ -67,7 +67,12 @@ public class MovementDownward extends Movement {
             return LADDER_DOWN_ONE_COST;
         } else {
             // we're standing on it, while it might be block falling, it'll be air by the time we get here in the movement
-            return FALL_N_BLOCKS_COST[1] + MovementHelper.getMiningDurationTicks(context, x, y - 1, z, down, false);
+            double cost = FALL_N_BLOCKS_COST[1] + MovementHelper.getMiningDurationTicks(context, x, y - 1, z, down, false);
+            if (context.preferWaterBucketOverDigging && context.hasWaterBucket && !down.isAir()) {
+                // Ưu tiên cực lớn cho xô nước: phạt nặng hành động đào thẳng đứng xuyên qua block đặc
+                cost += 80.0;
+            }
+            return cost;
         }
     }
 

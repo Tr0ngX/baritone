@@ -458,6 +458,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().tunnelSprintJump.value = optTunnelBhop;
         Baritone.settings().fastJump.value = true;
         Baritone.settings().straightDownMine.value = optShaftDown;
+        Baritone.settings().preferWaterBucketOverDigging.value = true;
         
         int targetY = optTargetY == 999 ? (playerCtx.player() != null ? playerCtx.playerFeet().y : -58) : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;
