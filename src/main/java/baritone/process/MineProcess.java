@@ -163,6 +163,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private BlockPos activeMiningBlock = null;
     private int activeMiningTicks = 0;
     private BlockPos lockedTargetOre = null;
+    private BlockPos lastStuckOrePos = null;
     private static final int RECENT_POS_BUFFER_SIZE = 120;
     private final BetterBlockPos[] recentPositions = new BetterBlockPos[RECENT_POS_BUFFER_SIZE];
     private int recentPosIndex = 0;
@@ -451,17 +452,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         if (command == null) {
             int y = Baritone.settings().legitMineYLevel.value;
-            Goal fallbackGoal = new GoalRunAway(1, y, ctx.playerFeet()) {
-                @Override
-                public boolean isInGoal(int x, int y, int z) {
-                    return false;
-                }
-
-                @Override
-                public double heuristic() {
-                    return Double.NEGATIVE_INFINITY;
-                }
-            };
+            Goal fallbackGoal = new GoalRunAway(20, y, ctx.playerFeet());
             return new PathingCommand(fallbackGoal, PathingCommandType.REVALIDATE_GOAL_AND_PATH);
         }
         return command;
@@ -1878,9 +1869,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             stuckTicks = 0;
             placeBreakOscillationCount = 0;
             placedThisCycle = false;
-            if (lastAntiStuckPos != null && currentFeet.distSqr(lastAntiStuckPos) > 16) {
+            if (lastAntiStuckPos != null && currentFeet.distSqr(lastAntiStuckPos) >= 4) {
                 stuckRetries = 0;
                 lastAntiStuckPos = null;
+                lastStuckOrePos = null;
             }
             // Đã thực sự di chuyển sang block khác → Cho phép nhảy+đặt block trở lại ngay lập tức
             if (Baritone.settings().noPillar.value) {
@@ -1952,11 +1944,15 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     // CHỈ xử lý theo quặng nếu quặng ở gần (<= 7 block, distSq <= 49).
                     // Nếu quặng ở xa (> 7 block), bot bị kẹt là do chướng ngại hầm trên đường đi, KHÔNG ĐƯỢC blacklist quặng!
                     if (distSq <= 49) {
+                        if (lastStuckOrePos == null || !lastStuckOrePos.equals(pos)) {
+                            lastStuckOrePos = pos;
+                            stuckRetries = 1;
+                        }
                         if (stuckRetries < 5) {
                             // Người dùng yêu cầu: Thay vì bỏ cuộc sau 2 lần thử, thử các cách tiếp cận khác nhau và chỉ bỏ sau 5 lần thử!
                             lockedTargetOre = null;
                             forceReroute = true;
-                            baritone.getPathingBehavior().forceCancel();
+                            baritone.getPathingBehavior().cancelSegmentIfSafe();
 
                             if (stuckRetries == 1) {
                                 // Lần 1: Tìm đường đào bậc thang (staircase) hoặc đi vòng
@@ -2615,6 +2611,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.recentPosCount = 0;
         this.lastAntiStuckPos = null;
         this.lastPillarFailPos = null;
+        this.lastStuckOrePos = null;
         this.shulkerState = ShulkerStorageState.IDLE;
         this.shulkerPlacedPos = null;
         this.shulkerStateTicks = 0;

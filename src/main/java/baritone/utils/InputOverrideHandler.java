@@ -121,8 +121,9 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         }
         try {
             long window = ctx.minecraft().getWindow().getWindow();
+            boolean altDown = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT);
             boolean f4Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F4);
-            if (f4Down && !f4WasDown) {
+            if (!altDown && f4Down && !f4WasDown) {
                 ctx.minecraft().setScreen(new AutoMineScreen(baritone));
             }
             f4WasDown = f4Down;
