@@ -799,7 +799,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         boolean legit = Baritone.settings().legitMine.value;
         int targetY = Baritone.settings().legitMineYLevel.value;
-        if (ctx.playerFeet().y <= targetY) {
+        if (ctx.playerFeet().y <= targetY + 1) {
             hasReachedTargetY = true;
         }
         List<BlockPos> locs = knownOreLocations;
@@ -1073,6 +1073,23 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
+        // === GIAI ĐOẠN 1: ĐÀO DỐC HẠ ĐỘ CAO XUỐNG TẦNG targetY (NẾU ĐANG Ở TRÊN CAO) ===
+        // Trong suốt quá trình này: Nếu phát hiện quặng mục tiêu (!locs2.isEmpty()) -> Đã được ưu tiên đào ở trên!
+        if (currentY > targetY + 1 && !hasReachedTargetY) {
+            if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                net.minecraft.core.Direction dir = ctx.player().getDirection();
+                tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+            }
+            if (tickCount % 60 == 0) {
+                logDirect("§a[AutoMine] Đang đào dốc hạ độ cao từ Y=" + currentY + " xuống Y=" + targetY + " theo hướng " + tunnelDirection.getName().toUpperCase() + "...");
+            }
+            wasTunneling = true;
+            boolean fr = forceReroute;
+            forceReroute = false;
+            Goal descentGoal = new GoalDirectionalDescent(ctx.playerFeet(), tunnelDirection, targetY, locs);
+            return new PathingCommand(descentGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        }
+
         // CHUẨN GỐC BARITONE CÓ ĐỊNH HƯỚNG: Đào xuyên đá tiến về phía trước theo tầng targetY
         int y = targetY;
         if (hasReachedTargetY && Baritone.settings().mineStrictOneDirection.value) {
@@ -1246,6 +1263,75 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     SettingsUtil.maybeCensor(y),
                     SettingsUtil.maybeCensor(z)
             );
+        }
+    }
+
+    public static class GoalDirectionalDescent implements Goal {
+        private final int startX;
+        private final int startY;
+        private final int startZ;
+        private final int dx;
+        private final int dz;
+        private final int targetY;
+        private final List<BlockPos> targetOres;
+
+        public GoalDirectionalDescent(BlockPos origin, net.minecraft.core.Direction direction, int targetY, List<BlockPos> targetOres) {
+            this.startX = origin.getX();
+            this.startY = origin.getY();
+            this.startZ = origin.getZ();
+            this.dx = direction.getStepX();
+            this.dz = direction.getStepZ();
+            this.targetY = targetY;
+            this.targetOres = targetOres;
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            if (y <= targetY) {
+                return true;
+            }
+            int forward = (x - startX) * dx + (z - startZ) * dz;
+            int lateral = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
+            int dropped = startY - y;
+            return forward >= 10 && dropped >= 5 && lateral <= 1;
+        }
+
+        @Override
+        public double heuristic(int x, int y, int z) {
+            double h = GoalYLevel.calculate(targetY, y) * 2.0;
+
+            int forward = (x - startX) * dx + (z - startZ) * dz;
+            int lateral = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
+
+            if (forward <= 0) {
+                h += 5000.0 - forward * 300.0;
+            } else {
+                h -= forward * 80.0;
+            }
+
+            h += lateral * 1000.0;
+
+            if (targetOres != null && !targetOres.isEmpty()) {
+                double minOreDistSq = Double.MAX_VALUE;
+                for (BlockPos ore : targetOres) {
+                    double d = (ore.getX() - x) * (ore.getX() - x)
+                            + (ore.getY() - y) * (ore.getY() - y)
+                            + (ore.getZ() - z) * (ore.getZ() - z);
+                    if (d < minOreDistSq) {
+                        minOreDistSq = d;
+                    }
+                }
+                if (minOreDistSq <= 25.0) {
+                    h -= 3500.0 / (Math.sqrt(minOreDistSq) + 0.5);
+                }
+            }
+
+            return h;
+        }
+
+        @Override
+        public double heuristic() {
+            return 0;
         }
     }
 
