@@ -423,8 +423,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, activeMiningBlock);
                 if (rot.isPresent()) {
                     activeMiningTicks++;
-                    if (activeMiningTicks > 60) {
-                        logDirect("§c[Mine] Quặng tại " + activeMiningBlock.toShortString() + " không thể đào vỡ sau 60 ticks! Đã thêm vào BLACKLIST vĩnh viễn!");
+                    boolean isHitting = ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock();
+                    if (!isHitting && activeMiningTicks > 60) {
+                        // Không thể bắt đầu đập từ vị trí/góc nhìn hiện tại sau 3s -> Nhả để A* tiếp tục dẫn đường
+                        activeMiningBlock = null;
+                        activeMiningTicks = 0;
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                    } else if (activeMiningTicks > 160) {
+                        logDirect("§c[Mine] Quặng tại " + activeMiningBlock.toShortString() + " không thể đào vỡ sau 8s (có thể do Claim)! Đã thêm vào BLACKLIST!");
                         BlockPos target = activeMiningBlock;
                         blacklist.add(target);
                         oreMemory.remove(target);
@@ -442,10 +448,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         if (!isChopMode) {
                             baritone.getPathingBehavior().cancelSegmentIfSafe();
                         }
-                        baritone.getInputOverrideHandler().clearAllKeys();
+                        clearMovementKeysKeepAttack();
                         baritone.getLookBehavior().updateTarget(rot.get(), true);
                         MovementHelper.switchToBestToolFor(ctx, state);
-                        if (ctx.isLookingAt(activeMiningBlock) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                        if (isAimedAtBlock(activeMiningBlock, rot.get())) {
                             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
                         }
                         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -487,10 +493,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     if (!isChopMode) {
                         baritone.getPathingBehavior().cancelSegmentIfSafe();
                     }
-                    baritone.getInputOverrideHandler().clearAllKeys();
+                    clearMovementKeysKeepAttack();
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     MovementHelper.switchToBestToolFor(ctx, state);
-                    if (ctx.isLookingAt(destroyingPos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                    if (isAimedAtBlock(destroyingPos, rot.get())) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -514,6 +520,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         BlockState s = ctx.world().getBlockState(pos);
                         return filter.has(s) && !MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), s);
                     })
+                    .filter(pos -> {
+                        if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null && !isChopMode) {
+                            int forward = (pos.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (pos.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
+                            if (forward < 0) return false;
+                            int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
+                                    ? Math.abs(pos.getX() - ctx.playerFeet().getX())
+                                    : Math.abs(pos.getZ() - ctx.playerFeet().getZ());
+                            if (perpDist > 2) return false;
+                        }
+                        return true;
+                    })
                     .filter(pos -> RotationUtils.reachable(ctx, pos).isPresent())
                     .min(Comparator.comparingDouble(ctx.playerFeet().above()::distSqr));
 
@@ -529,10 +546,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     if (!isChopMode) {
                         baritone.getPathingBehavior().cancelSegmentIfSafe();
                     }
-                    baritone.getInputOverrideHandler().clearAllKeys();
+                    clearMovementKeysKeepAttack();
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     MovementHelper.switchToBestToolFor(ctx, state);
-                    if (ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                    if (isAimedAtBlock(pos, rot.get())) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -552,10 +569,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (!MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), state)) {
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
                 if (rot.isPresent() && isSafeToCancel) {
-                    baritone.getInputOverrideHandler().clearAllKeys();
+                    clearMovementKeysKeepAttack();
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     MovementHelper.switchToBestToolFor(ctx, ctx.world().getBlockState(pos));
-                    if (ctx.isLookingAt(pos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                    if (isAimedAtBlock(pos, rot.get())) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -2472,7 +2489,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, shulkerPlacedPos);
                 if (rot.isPresent()) {
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
-                    if (ctx.isLookingAt(shulkerPlacedPos) || ctx.playerRotations().isReallyCloseTo(rot.get())) {
+                    if (isAimedAtBlock(shulkerPlacedPos, rot.get())) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
                     }
                 }
@@ -2667,7 +2684,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // Đang đào block hoặc client đang trực tiếp đập block thì KHÔNG tính là bị kẹt
         boolean isHitting = ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock();
         boolean isClickingLeft = baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT);
-        boolean isMining = (activeMiningBlock != null && activeMiningTicks <= 80) || isHitting || isClickingLeft;
+        boolean isMining = (activeMiningBlock != null && activeMiningTicks <= 160) || isHitting || isClickingLeft;
         if (isMining) {
             stuckTicks = 0;
             return;
@@ -3809,5 +3826,40 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             String name = b.getBlock().getDescriptionId().toLowerCase();
             return name.contains("log") || name.contains("wood") || name.contains("stem") || name.contains("hyphae");
         });
+    }
+
+    private boolean isAimedAtBlock(BlockPos pos, Rotation targetRot) {
+        if (pos == null) {
+            return false;
+        }
+        if (ctx.isLookingAt(pos)) {
+            return true;
+        }
+        if (Baritone.settings().f5FreeLook.value) {
+            return true;
+        }
+        if (targetRot != null) {
+            float curYaw = Rotation.normalizeYaw(ctx.playerRotations().getYaw());
+            float tarYaw = Rotation.normalizeYaw(targetRot.getYaw());
+            float yawDiff = Math.abs(curYaw - tarYaw);
+            if (yawDiff > 180.0F) {
+                yawDiff = 360.0F - yawDiff;
+            }
+            float pitchDiff = Math.abs(ctx.playerRotations().getPitch() - targetRot.getPitch());
+            if (yawDiff < 25.0F && pitchDiff < 25.0F) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void clearMovementKeysKeepAttack() {
+        baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_BACK, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_LEFT, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_RIGHT, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.JUMP, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.SPRINT, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.SNEAK, false);
     }
 }
