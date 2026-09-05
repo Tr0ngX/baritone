@@ -587,6 +587,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             command = updateGoal();
         }
         if (command == null) {
+            if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null) {
+                Goal fallbackGoal = new GoalStrictDirection(ctx.playerFeet(), tunnelDirection);
+                return new PathingCommand(fallbackGoal, PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            }
             int y = Baritone.settings().legitMineYLevel.value;
             Goal fallbackGoal = new GoalRunAway(20, y, ctx.playerFeet());
             return new PathingCommand(fallbackGoal, PathingCommandType.REVALIDATE_GOAL_AND_PATH);
@@ -998,11 +1002,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         bedrockEscapeActive = false;
                         bedrockEscapeOrigin = null;
                         bedrockEscapeTicks = 0;
-                        branchPoint = ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16);
-                        branchPointRunaway = new GoalRunAway(48, curY, branchPoint);
+                        // GoalStrictDirection: Đào thẳng phía trước, KHÔNG BAO GIỜ quay ngược!
+                        Goal tunnelGoal = new GoalStrictDirection(ctx.playerFeet(), tunnelDirection);
                         boolean fr = forceReroute;
                         forceReroute = false;
-                        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                        return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                     }
                     // Di chuyển cách xa điểm kẹt bedrock cũ ít nhất 20 block
                     int distAway = bedrockEscapeOrigin != null ? (int) Math.sqrt(ctx.playerFeet().distSqr(bedrockEscapeOrigin)) : 20;
@@ -1055,7 +1059,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
-        // CHUẨN GỐC BARITONE CÓ ĐỊNH HƯỚNG: GoalRunAway liên tục đào xuyên đá tiến về phía trước theo tầng targetY
+        // CHUẨN GỐC BARITONE CÓ ĐỊNH HƯỚNG: Đào xuyên đá tiến về phía trước theo tầng targetY
         int y = targetY;
         if (hasReachedTargetY && Baritone.settings().mineStrictOneDirection.value) {
             y = Math.min(-54, Math.max(targetY, ctx.playerFeet().y));
@@ -1076,19 +1080,27 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 forceReroute = true;
             }
         }
-        // Đặt branchPoint 16 block phía sau lưng người chơi theo tunnelDirection:
-        // Di chuyển về phía trước (tunnelDirection) làm tăng khoảng cách -> heuristic âm hơn (tốt hơn)
-        // Lùi lại phía sau làm giảm khoảng cách -> heuristic xấu đi -> triệt tiêu hoàn toàn ping-pong giật lùi!
+
+        boolean fr = forceReroute;
+        forceReroute = false;
+
+        // === CHẾ ĐỘ 1 HƯỚNG DUY NHẤT: Dùng GoalStrictDirection thay vì GoalRunAway ===
+        // GoalStrictDirection penalizes backward (-forward*100) và lateral (+perp*1000) movement cực mạnh
+        // → A* TUYỆT ĐỐI KHÔNG BAO GIỜ tìm được đường đi ngược lại hay rẽ ngang!
+        if (Baritone.settings().mineStrictOneDirection.value) {
+            Goal tunnelGoal = new GoalStrictDirection(ctx.playerFeet(), tunnelDirection);
+            return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        }
+
+        // Chế độ thường: GoalRunAway với branchPoint phía sau lưng
         BlockPos desiredBranchPoint = ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16);
-        if (branchPoint == null || ctx.playerFeet().distSqr(branchPoint) >= 2304) {
+        if (branchPoint == null || ctx.playerFeet().distSqr(branchPoint) >= 256) { // Update mỗi 16 block thay vì 48
             branchPoint = desiredBranchPoint;
             branchPointRunaway = null;
         }
         if (branchPointRunaway == null) {
             branchPointRunaway = new GoalRunAway(48, y, branchPoint);
         }
-        boolean fr = forceReroute;
-        forceReroute = false;
         return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
     }
 
