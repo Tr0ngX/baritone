@@ -222,7 +222,7 @@ public class MovementPillar extends Movement {
                 state.setTarget(new MovementState.MovementTarget(ctx.playerRotations().withPitch(90.0F), true));
                 if (flatMotion < 0.12) {
                     // Giữ phím nhảy trong suốt pha đi lên để đạt độ cao tối đa (+1.25 block), chỉ thả khi đã lên đỉnh
-                    state.setInput(Input.JUMP, ctx.player().position().y < dest.getY() + 0.15 && ctx.player().getDeltaMovement().y > -0.05);
+                    state.setInput(Input.JUMP, ctx.player().position().y < dest.getY() || ctx.player().onGround());
                 }
             }
 
@@ -242,17 +242,9 @@ public class MovementPillar extends Movement {
                     state.setInput(Input.JUMP, false); // breaking is like 5x slower when you're jumping
                     state.setInput(Input.CLICK_LEFT, true);
                     blockIsThere = false;
-                } else if (ctx.player().position().y >= dest.getY() + 0.08 && (ctx.isLookingAt(src.below()) || ctx.isLookingAt(src) || ctx.playerRotations().getPitch() >= 80.0F)) {
+                } else if (ctx.player().position().y >= dest.getY() && (ctx.isLookingAt(src.below()) || ctx.isLookingAt(src) || ctx.playerRotations().getPitch() >= 80.0F)) {
                     placeAttempts++;
                     state.setInput(Input.CLICK_RIGHT, true);
-                    // Đặt trực tiếp nếu crosshair đang nhắm vào sàn/block để triệt tiêu độ trễ timer trên client (anti-cheat compatible)
-                    HitResult mouseOver = ctx.objectMouseOver();
-                    if (mouseOver != null && mouseOver.getType() == HitResult.Type.BLOCK) {
-                        BlockHitResult bhr = (BlockHitResult) mouseOver;
-                        if (bhr.getBlockPos().equals(src.below()) || bhr.getBlockPos().equals(src)) {
-                            ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
-                        }
-                    }
                 }
             }
         }

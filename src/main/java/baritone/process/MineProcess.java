@@ -746,17 +746,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             branchPoint = ctx.playerFeet();
                         }
                         if (branchPointRunaway == null) {
-                            branchPointRunaway = new GoalRunAway(1, curY, branchPoint) {
-                                @Override
-                                public boolean isInGoal(int x, int y, int z) {
-                                    return false;
-                                }
-
-                                @Override
-                                public double heuristic() {
-                                    return Double.NEGATIVE_INFINITY;
-                                }
-                            };
+                            branchPointRunaway = new GoalRunAway(20, curY, branchPoint);
                         }
                         return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                     }
@@ -797,22 +787,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // Di chuyển về phía trước (tunnelDirection) làm tăng khoảng cách -> heuristic âm hơn (tốt hơn)
         // Lùi lại phía sau làm giảm khoảng cách -> heuristic xấu đi -> triệt tiêu hoàn toàn ping-pong giật lùi!
         BlockPos desiredBranchPoint = ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16);
-        if (branchPoint == null || ctx.playerFeet().distSqr(branchPoint) > 2304) {
+        if (branchPoint == null || ctx.playerFeet().distSqr(branchPoint) >= 2304) {
             branchPoint = desiredBranchPoint;
             branchPointRunaway = null;
         }
         if (branchPointRunaway == null) {
-            branchPointRunaway = new GoalRunAway(1, y, branchPoint) {
-                @Override
-                public boolean isInGoal(int x, int y, int z) {
-                    return false;
-                }
-
-                @Override
-                public double heuristic() {
-                    return Double.NEGATIVE_INFINITY;
-                }
-            };
+            branchPointRunaway = new GoalRunAway(48, y, branchPoint);
         }
         boolean fr = forceReroute;
         forceReroute = false;
@@ -1340,6 +1320,26 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (stack.is(Items.WATER_BUCKET)) return true;
         // 5. Thức ăn: Hồi phục thanh đói và máu
         if (isGoodFood(stack) || stack.has(DataComponents.FOOD)) return true;
+        // 6. Block xây dựng (kê chân/bắc cầu): Giữ lại ít nhất 1 stack (tối đa 64 block)
+        // để không bao giờ cạn throwaway blocks (hasThrowaway = false), khớp với handleAutoDrop
+        if (isBuildingBlock(stack)) {
+            if (ctx.player() == null) return true;
+            NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+            int kept = 0;
+            for (int i = 0; i < 36; i++) {
+                ItemStack s = inv.get(i);
+                if (isBuildingBlock(s)) {
+                    if (s == stack || (ItemStack.isSameItemSameComponents(s, stack) && s.getCount() == stack.getCount())) {
+                        return kept < 64;
+                    }
+                    kept += s.getCount();
+                    if (kept >= 64) {
+                        break;
+                    }
+                }
+            }
+            return kept < 64;
+        }
 
         return false;
     }
@@ -1885,14 +1885,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 stuckRetries = 0;
                 lastAntiStuckPos = null;
             }
-            // Đã thực sự di chuyển → Cho phép nhảy+đặt block trở lại khi đã cách xa điểm kẹt cũ >= 6 block (distSqr > 36)
+            // Đã thực sự di chuyển sang block khác → Cho phép nhảy+đặt block trở lại ngay lập tức
             if (Baritone.settings().noPillar.value) {
-                if (lastPillarFailPos == null || currentFeet.distSqr(lastPillarFailPos) > 36) {
-                    pillarFailCount = 0;
-                    lastPillarFailPos = null;
-                    Baritone.settings().noPillar.value = false;
-                    logDirect("§a[AntiPillarLoop] Đã di chuyển xa khỏi điểm kẹt, cho phép nhảy+đặt block trở lại.");
-                }
+                pillarFailCount = 0;
+                lastPillarFailPos = null;
+                Baritone.settings().noPillar.value = false;
+                logDirect("§a[AntiPillarLoop] Đã di chuyển sang block khác, cho phép nhảy+đặt block trở lại.");
             }
         }
 
@@ -1964,14 +1962,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             baritone.getPathingBehavior().forceCancel();
 
                             if (stuckRetries == 1) {
-                                // Lần 1: Tạm tắt pillar nhảy kê chân, ép A* tìm đường đào bậc thang (staircase) hoặc đi vòng
-                                Baritone.settings().noPillar.value = true;
-                                lastPillarFailPos = currentFeet;
-                                logDirect("§e[AntiStuck] Thử cách tiếp cận 1/5 tới quặng tại " + pos.toShortString() + ": Tắt nhảy kê chân, tìm đường đào bậc thang/đi vòng...");
+                                // Lần 1: Tìm đường đào bậc thang (staircase) hoặc đi vòng
+                                logDirect("§e[AntiStuck] Thử cách tiếp cận 1/5 tới quặng tại " + pos.toShortString() + ": Tìm đường đào bậc thang/đi vòng...");
                             } else if (stuckRetries == 2) {
                                 // Lần 2: Tiếp tục tránh điểm kẹt hiện tại, thử tiếp cận các khối khác trong vỉa quặng
-                                Baritone.settings().noPillar.value = true;
-                                lastPillarFailPos = currentFeet;
                                 logDirect("§e[AntiStuck] Thử cách tiếp cận 2/5 tới quặng tại " + pos.toShortString() + ": Đổi góc tiếp cận sang hướng khác...");
                             } else if (stuckRetries == 3) {
                                 // Lần 3: Xoay hướng đào hầm 90 độ để mở rộng không gian đào tới quặng
