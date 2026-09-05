@@ -62,6 +62,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static baritone.api.pathing.movement.ActionCosts.COST_INF;
@@ -130,6 +131,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private Map<BlockPos, Long> anticipatedDrops;
     private BlockPos branchPoint;
     private GoalRunAway branchPointRunaway;
+    private final AtomicBoolean rescanInProgress = new AtomicBoolean(false);
     private boolean bedrockEscapeActive = false;
     private BetterBlockPos bedrockEscapeOrigin = null;
     private int bedrockEscapeTargetY = -54;
@@ -288,8 +290,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         addNearbyQuick();
         List<BlockPos> curr = new ArrayList<>(knownOreLocations);
         if (mineGoalUpdateInterval != 0 && tickCount % mineGoalUpdateInterval == 0) { // big brain
-            CalculationContext context = new CalculationContext(baritone, true);
-            Baritone.getExecutor().execute(() -> rescan(curr, context));
+            if (rescanInProgress.compareAndSet(false, true)) {
+                CalculationContext context = new CalculationContext(baritone, true);
+                Baritone.getExecutor().execute(() -> {
+                    try {
+                        rescan(curr, context);
+                    } finally {
+                        rescanInProgress.set(false);
+                    }
+                });
+            }
         }
         if (Baritone.settings().legitMine.value) {
             if (!addNearby()) {
@@ -429,9 +439,24 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         PathingCommand command = updateGoal();
         if (command == null) {
-            // none in range
-            cancel();
-            return null;
+            branchPoint = ctx.playerFeet();
+            branchPointRunaway = null;
+            command = updateGoal();
+        }
+        if (command == null) {
+            int y = Baritone.settings().legitMineYLevel.value;
+            Goal fallbackGoal = new GoalRunAway(1, y, ctx.playerFeet()) {
+                @Override
+                public boolean isInGoal(int x, int y, int z) {
+                    return false;
+                }
+
+                @Override
+                public double heuristic() {
+                    return Double.NEGATIVE_INFINITY;
+                }
+            };
+            return new PathingCommand(fallbackGoal, PathingCommandType.REVALIDATE_GOAL_AND_PATH);
         }
         return command;
     }
@@ -679,6 +704,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 bedrockEscapeActive = false;
                 bedrockEscapeOrigin = null;
                 bedrockEscapeTicks = 0;
+                branchPoint = ctx.playerFeet();
+                branchPointRunaway = null;
                 forceReroute = true;
             } else {
                 int curY = ctx.playerFeet().y;
@@ -692,112 +719,104 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return new PathingCommand(new GoalYLevel(bedrockEscapeTargetY), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                 } else {
                     // Giai đoạn 2: Đã đạt độ cao an toàn (curY >= bedrockEscapeTargetY)!
-                    // Đào ngang tại tầng an toàn để di chuyển cách xa điểm kẹt bedrock cũ ít nhất 20 block
+                    // Di chuyển cách xa điểm kẹt bedrock cũ ít nhất 20 block
                     int distAway = bedrockEscapeOrigin != null ? (int) Math.sqrt(ctx.playerFeet().distSqr(bedrockEscapeOrigin)) : 20;
                     if (distAway >= 20) {
                         logDirect("§a[AntiStuck] Đã thoát xa vùng kẹt Bedrock " + distAway + "m! Trở lại trạng thái đào bình thường.");
                         bedrockEscapeActive = false;
                         bedrockEscapeOrigin = null;
                         bedrockEscapeTicks = 0;
-                        tunnelOriginPos = ctx.playerFeet();
+                        branchPoint = ctx.playerFeet();
+                        branchPointRunaway = null;
                         forceReroute = true;
                     } else {
                         if (tickCount % 20 == 0) {
                             logDirect("§a[AntiStuck] Đang đào ngang tại tầng an toàn Y=" + curY + " để rời khỏi vùng Bedrock (" + distAway + "/20m)...");
                         }
-                        if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-                            net.minecraft.core.Direction dir = ctx.player().getDirection();
-                            tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
-                        }
                         boolean fr = forceReroute;
                         forceReroute = false;
-                        Goal tunnelGoal = new GoalDirectionalTunnel(ctx.playerFeet(), tunnelDirection, curY);
-                        return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                        if (branchPoint == null) {
+                            branchPoint = ctx.playerFeet();
+                        }
+                        if (branchPointRunaway == null) {
+                            branchPointRunaway = new GoalRunAway(1, curY, branchPoint) {
+                                @Override
+                                public boolean isInGoal(int x, int y, int z) {
+                                    return false;
+                                }
+
+                                @Override
+                                public double heuristic() {
+                                    return Double.NEGATIVE_INFINITY;
+                                }
+                            };
+                        }
+                        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                     }
                 }
             }
         }
 
-        // KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y=-58 từ mặt đất):
-        // CHỈ kích hoạt đào thẳng đứng / đào dốc khi:
-        // 1. Chưa từng chạm tới tầng đào (hasReachedTargetY == false) VÀ currentY > targetY
-        // 2. HOẶC người chơi bị văng lên quá xa khỏi tầng đào (currentY > targetY + 3)
-        // Tuyệt đối KHÔNG kích hoạt khi đang đào hầm ngang mà chỉ bước lên 1-2 block chướng ngại vật!
-        if (!hasReachedTargetY || currentY > targetY + 3) {
+        // ƯU TIÊN SỐ 1 KHI Ở TRÊN CAO: DÙNG XÔ NƯỚC (WATER BUCKET) ĐỂ TỤT XUỐNG THAY VÌ ĐÀO XUỐNG
+        if (currentY > targetY + 3) {
             boolean fr = forceReroute;
-            forceReroute = false;
-
-            // KIỂM TRA ƯU TIÊN SỐ 1: DÙNG XÔ NƯỚC (WATER BUCKET) ĐỂ TỤT XUỐNG THAY VÌ ĐÀO XUỐNG
             int waterSlot = ctx.player().getInventory().findSlotMatchingItem(new ItemStack(Items.WATER_BUCKET));
             boolean hasWaterBucket = (waterSlot != -1 || ctx.player().getOffhandItem().is(Items.WATER_BUCKET))
                     && ctx.world().dimension() != net.minecraft.world.level.Level.NETHER
                     && Baritone.settings().allowWaterBucketFall.value;
 
             if (hasWaterBucket && Baritone.settings().preferWaterBucketOverDigging.value) {
-                // Tự động chuyển xô nước lên hotbar nếu đang ở trong balo (dùng slot 8 hoặc 7 để không ghi đè slot 0 của cúp)
                 if (waterSlot >= 9) {
                     ((Baritone) baritone).getInventoryBehavior().attemptToPutOnHotbar(waterSlot, s -> s == 8 || s == 7);
                 }
-
-                // Quét tìm hố sâu / vách núi / hang động mở có độ tụt lớn gần đây để nhảy đáp nước (quét bán kính rộng 32 block)
                 Optional<BlockPos> opening = findNearbyDescentOpening(32, 3);
                 if (opening.isPresent()) {
                     BlockPos dropPos = opening.get();
                     int dropAmount = currentY - dropPos.getY();
                     logDirect("§a[WaterDescent] Phát hiện hố/hang mở tụt " + dropAmount + " block! Ưu tiên nhảy đáp nước (MLG Bucket) thay vì đào xuống.");
+                    forceReroute = false;
                     return new PathingCommand(new GoalTwoBlocks(dropPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                 }
             }
 
-            if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-                net.minecraft.core.Direction dir = ctx.player().getDirection();
-                tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
-            }
-
-            // CHỈ KHI KHÔNG TÌM ĐƯỢC HỐ/HANG MỞ MỚI TIẾN HÀNH ĐÀO XUỐNG:
             if (Baritone.settings().straightDownMine.value) {
-                // CHẾ ĐỘ 1: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI (SHAFT DOWN) SIÊU TỐC
                 if (shaftOriginPos == null || fr || shaftOriginPos.getX() != ctx.playerFeet().x || shaftOriginPos.getZ() != ctx.playerFeet().z) {
                     shaftOriginPos = ctx.playerFeet();
                 } else if (shaftOriginPos.getY() - currentY >= 5) {
                     shaftOriginPos = ctx.playerFeet();
                 }
+                forceReroute = false;
                 Goal shaftGoal = new GoalShaftDown(shaftOriginPos.getX(), shaftOriginPos.getY(), shaftOriginPos.getZ(), targetY);
                 return new PathingCommand(shaftGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
-            } else {
-                // CHẾ ĐỘ 2: ĐÀO CẦU THANG DỐC 1:1 (STAIRCASE DESCENT) SIÊU TỐC
-                if (stairOriginPos == null || fr) {
-                    stairOriginPos = ctx.playerFeet();
-                } else {
-                    int distFwd = (ctx.playerFeet().x - stairOriginPos.getX()) * tunnelDirection.getStepX()
-                            + (ctx.playerFeet().z - stairOriginPos.getZ()) * tunnelDirection.getStepZ();
-                    if (distFwd >= 10) {
-                        stairOriginPos = ctx.playerFeet();
-                    }
-                }
-                Goal stairGoal = new GoalStaircaseDescent(stairOriginPos, tunnelDirection, targetY);
-                return new PathingCommand(stairGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             }
         }
 
-        // Lúc này mới bắt đầu đào ngang thẳng tiến trong hầm theo tunnelDirection:
-        if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-            net.minecraft.core.Direction dir = ctx.player().getDirection();
-            tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+        // CHUẨN GỐC BARITONE: GoalRunAway liên tục đào xuyên đá tiến về phía trước theo tầng targetY
+        int y = targetY;
+        if (branchPoint == null) {
+            branchPoint = ctx.playerFeet();
         }
-        if (tunnelOriginPos == null || forceReroute) {
-            tunnelOriginPos = ctx.playerFeet();
-        } else {
-            int distFwd = (ctx.playerFeet().x - tunnelOriginPos.getX()) * tunnelDirection.getStepX()
-                    + (ctx.playerFeet().z - tunnelOriginPos.getZ()) * tunnelDirection.getStepZ();
-            if (distFwd >= 14) {
-                tunnelOriginPos = ctx.playerFeet();
-            }
+        // Khi người chơi đã đi xa hơn 48 block (khoảng 3 chunk), reset branchPoint để liên tục đẩy hầm về phía trước
+        if (ctx.playerFeet().distSqr(branchPoint) > 2304) {
+            branchPoint = ctx.playerFeet();
+            branchPointRunaway = null;
+        }
+        if (branchPointRunaway == null) {
+            branchPointRunaway = new GoalRunAway(1, y, branchPoint) {
+                @Override
+                public boolean isInGoal(int x, int y, int z) {
+                    return false;
+                }
+
+                @Override
+                public double heuristic() {
+                    return Double.NEGATIVE_INFINITY;
+                }
+            };
         }
         boolean fr = forceReroute;
         forceReroute = false;
-        Goal tunnelGoal = new GoalDirectionalTunnel(tunnelOriginPos, tunnelDirection, targetY);
-        return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
     }
 
     private void rescan(List<BlockPos> already, CalculationContext context) {
@@ -1932,6 +1951,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                     stairOriginPos = null;
                     tunnelOriginPos = null;
+                    branchPoint = null;
+                    branchPointRunaway = null;
                     forceReroute = true;
                     return;
                 }
@@ -1940,6 +1961,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 stairOriginPos = null;
                 shaftOriginPos = null;
                 tunnelOriginPos = null;
+                branchPoint = null;
+                branchPointRunaway = null;
                 logDirect("§6[AntiStuck] Gặp vật cản khi đào dốc xuống (thử " + stuckRetries + "/4)! Tự động đổi hướng đào sang " + newDir.getName().toUpperCase() + "...");
                 forceReroute = true;
                 return;
@@ -1961,6 +1984,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 stairOriginPos = null;
                 shaftOriginPos = null;
                 tunnelOriginPos = null;
+                branchPoint = null;
+                branchPointRunaway = null;
                 stuckRetries = 0;
                 Baritone.settings().noPillar.value = false;
                 pillarFailCount = 0;
@@ -1975,6 +2000,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             tunnelOriginPos = null;
             stairOriginPos = null;
             shaftOriginPos = null;
+            branchPoint = null;
+            branchPointRunaway = null;
             currentTunnelTarget = null;
             logDirect("§6[AntiStuck] Bị kẹt hầm/gặp Bedrock tại tầng đáy! Tự động chuyển hướng đào hầm sang " + newDir.getName().toUpperCase() + "!");
             forceReroute = true;
@@ -2293,8 +2320,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     ctx.getBaritone().getPlayerContext(),
                     filter,
                     max,
-                    384, // Quét toàn bộ chiều cao thế giới (-64 đến 320), kim cương ở mọi tầng Y đều được phát hiện!
-                    32
+                    10,
+                    16
             )); // maxSearchRadius is NOT sq
         }
 
@@ -2391,6 +2418,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 // remove any that are within loaded chunks that aren't actually what we want
                 .filter(pos -> !ctx.bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ()) || filter.has(ctx.get(pos.getX(), pos.getY(), pos.getZ())) || dropped.contains(pos))
+
+                // Không nhắm vào quặng ở chunk chưa load nếu ở xa hơn 48 block (distSqr > 2304) để tránh nghẽn pathfinding
+                .filter(pos -> ctx.bsi.worldContainsLoadedChunk(pos.getX(), pos.getZ()) || pos.distSqr(ctx.getBaritone().getPlayerContext().playerFeet()) <= 2304)
 
                 // remove any that are implausible to mine (encased in bedrock, or touching lava)
                 .filter(pos -> MineProcess.plausibleToBreak(ctx, pos))
