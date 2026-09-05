@@ -873,6 +873,12 @@ public final class Settings {
     public final Setting<Boolean> elytraFreeLook = new Setting<>(true);
 
     /**
+     * When in third-person view (F5), do not force/lock client camera angles,
+     * but silently send Baritone's desired look angles to the server.
+     */
+    public final Setting<Boolean> f5FreeLook = new Setting<>(true);
+
+    /**
      * Forces the client-sided yaw rotation to an average of the last {@link #smoothLookTicks} of server-sided rotations.
      */
     public final Setting<Boolean> smoothLook = new Setting<>(false);

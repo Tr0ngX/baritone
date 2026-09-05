@@ -19,6 +19,7 @@ package baritone.process;
 
 import baritone.Baritone;
 import baritone.api.BaritoneAPI;
+import baritone.behavior.LookBehavior;
 import baritone.api.pathing.goals.*;
 import baritone.api.process.IMineProcess;
 import baritone.api.process.PathingCommand;
@@ -1194,8 +1195,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     Rotation dropRot = findBestDropRotation();
                     if (dropRot != null) {
                         baritone.getLookBehavior().updateTarget(dropRot, true);
-                        ctx.player().setYRot(dropRot.getYaw());
-                        ctx.player().setXRot(dropRot.getPitch());
+                        if (!LookBehavior.isF5(ctx)) {
+                            ctx.player().setYRot(dropRot.getYaw());
+                            ctx.player().setXRot(dropRot.getPitch());
+                        }
                         if (ctx.player().connection != null) {
                             ctx.player().connection.send(new ServerboundMovePlayerPacket.Rot(
                                     dropRot.getYaw(),
@@ -1292,7 +1295,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (tunnelDirection != null && tunnelDirection.getAxis().isHorizontal()) {
             behindYaw = tunnelDirection.getOpposite().toYRot();
         } else {
-            behindYaw = ctx.player().getYRot() + 180.0F;
+            behindYaw = ctx.playerRotations().getYaw() + 180.0F;
         }
         // Góc cúi nhẹ 20 độ để item văng ra sàn phía sau lưng
         return new Rotation(behindYaw, 20.0F);
@@ -1760,43 +1763,116 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private Optional<ShulkerPlacementTarget> findShulkerPlacePos() {
         if (ctx.player() == null || ctx.world() == null) return Optional.empty();
         BetterBlockPos feet = ctx.playerFeet();
-        net.minecraft.core.Direction playerFacing = ctx.player().getDirection();
-        List<net.minecraft.core.Direction> dirs = new ArrayList<>();
-        if (playerFacing.getAxis().isHorizontal()) {
-            dirs.add(playerFacing);
-        }
-        for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
-            if (d.getAxis().isHorizontal() && !dirs.contains(d)) {
-                dirs.add(d);
+        Vec3 head = ctx.playerHead();
+        AABB playerBox = ctx.player().getBoundingBox();
+        float currentYaw = ctx.playerRotations().getYaw();
+
+        class Candidate {
+            final ShulkerPlacementTarget target;
+            final double score;
+
+            Candidate(ShulkerPlacementTarget target, double score) {
+                this.target = target;
+                this.score = score;
             }
         }
 
-        AABB playerBox = ctx.player().getBoundingBox();
+        List<Candidate> candidates = new ArrayList<>();
+        int[] dyLevels = new int[]{0, 1, -1};
+        net.minecraft.core.Direction[] horizontalDirs = new net.minecraft.core.Direction[]{
+                net.minecraft.core.Direction.NORTH,
+                net.minecraft.core.Direction.SOUTH,
+                net.minecraft.core.Direction.EAST,
+                net.minecraft.core.Direction.WEST
+        };
 
-        for (net.minecraft.core.Direction dir : dirs) {
-            BlockPos target = new BlockPos(feet.x + dir.getStepX(), feet.y + dir.getStepY(), feet.z + dir.getStepZ());
-            BlockState targetState = ctx.world().getBlockState(target);
-            boolean targetPassable = targetState.isAir() || targetState.canBeReplaced();
-            if (!targetPassable) continue;
+        // Quét toàn diện 360 độ quanh người chơi trong bán kính 1 - 3 block
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                for (int dy : dyLevels) {
+                    BlockPos target = feet.offset(dx, dy, dz);
+                    BlockState targetState = ctx.world().getBlockState(target);
+                    if (!targetState.isAir() && !targetState.canBeReplaced()) continue;
 
-            // Block phía trên target phải là Air để nắp Shulker bung lên được
-            BlockPos above = new BlockPos(target.getX(), target.getY() + 1, target.getZ());
-            BlockState aboveState = ctx.world().getBlockState(above);
-            if (!aboveState.isAir()) continue;
+                    // Không được đè lên người chơi
+                    AABB targetBox = new AABB(target);
+                    if (targetBox.intersects(playerBox)) continue;
 
-            // Block dưới target phải là solid để làm sàn đặt
-            BlockPos floor = new BlockPos(target.getX(), target.getY() - 1, target.getZ());
-            BlockState floorState = ctx.world().getBlockState(floor);
-            if (floorState.isAir() || !floorState.isSolid()) continue;
+                    // 1. Ưu tiên đặt trên sàn (Floor placement with face = UP)
+                    BlockPos floor = target.below();
+                    BlockState floorState = ctx.world().getBlockState(floor);
+                    BlockPos above = target.above();
+                    BlockState aboveState = ctx.world().getBlockState(above);
 
-            // Không được đè lên người chơi
-            AABB targetBox = new AABB(target);
-            if (targetBox.intersects(playerBox)) continue;
+                    if (!floorState.isAir() && floorState.isSolid()
+                            && !(floorState.getBlock() instanceof ShulkerBoxBlock)
+                            && (aboveState.isAir() || aboveState.canBeReplaced())
+                            && !new AABB(above).intersects(playerBox)) {
 
-            return Optional.of(new ShulkerPlacementTarget(target, floor, net.minecraft.core.Direction.UP));
+                        Vec3 hitVec = new Vec3(floor.getX() + 0.5, floor.getY() + 1.0, floor.getZ() + 0.5);
+                        double dist = head.distanceTo(hitVec);
+                        if (dist >= 1.1 && dist <= 3.8) {
+                            ClipContext rayCtx = new ClipContext(head, hitVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, ctx.player());
+                            HitResult hit = ctx.world().clip(rayCtx);
+                            if (hit.getType() == HitResult.Type.MISS || (hit instanceof BlockHitResult bhr && (bhr.getBlockPos().equals(floor) || bhr.getBlockPos().equals(target)))) {
+                                Rotation rot = RotationUtils.calcRotationFromVec3d(head, hitVec, ctx.playerRotations());
+                                float yawDiff = Math.abs(rot.getYaw() - currentYaw) % 360.0F;
+                                if (yawDiff > 180.0F) yawDiff = 360.0F - yawDiff;
+
+                                double distPenalty = Math.abs(dist - 1.8) * 15.0;
+                                double heightPenalty = (dy == 0) ? 0.0 : 25.0;
+                                double score = yawDiff * 1.0 + distPenalty + heightPenalty;
+
+                                candidates.add(new Candidate(new ShulkerPlacementTarget(target, floor, net.minecraft.core.Direction.UP), score));
+                            }
+                        }
+                    }
+
+                    // 2. Dự phòng: Đặt áp vào vách tường (Wall placement) nếu không có sàn
+                    for (net.minecraft.core.Direction wallDir : horizontalDirs) {
+                        BlockPos wall = target.relative(wallDir);
+                        BlockState wallState = ctx.world().getBlockState(wall);
+                        BlockPos openDirPos = target.relative(wallDir.getOpposite());
+                        BlockState openDirState = ctx.world().getBlockState(openDirPos);
+
+                        if (!wallState.isAir() && wallState.isSolid()
+                                && !(wallState.getBlock() instanceof ShulkerBoxBlock)
+                                && (openDirState.isAir() || openDirState.canBeReplaced())
+                                && !new AABB(openDirPos).intersects(playerBox)) {
+
+                            Vec3 hitVec = new Vec3(
+                                    wall.getX() + 0.5 + wallDir.getOpposite().getStepX() * 0.5,
+                                    wall.getY() + 0.5,
+                                    wall.getZ() + 0.5 + wallDir.getOpposite().getStepZ() * 0.5
+                            );
+                            double dist = head.distanceTo(hitVec);
+                            if (dist >= 1.1 && dist <= 3.8) {
+                                ClipContext rayCtx = new ClipContext(head, hitVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, ctx.player());
+                                HitResult hit = ctx.world().clip(rayCtx);
+                                if (hit.getType() == HitResult.Type.MISS || (hit instanceof BlockHitResult bhr && (bhr.getBlockPos().equals(wall) || bhr.getBlockPos().equals(target)))) {
+                                    Rotation rot = RotationUtils.calcRotationFromVec3d(head, hitVec, ctx.playerRotations());
+                                    float yawDiff = Math.abs(rot.getYaw() - currentYaw) % 360.0F;
+                                    if (yawDiff > 180.0F) yawDiff = 360.0F - yawDiff;
+
+                                    double distPenalty = Math.abs(dist - 1.8) * 15.0;
+                                    double score = yawDiff * 1.0 + distPenalty + 50.0;
+
+                                    candidates.add(new Candidate(new ShulkerPlacementTarget(target, wall, wallDir.getOpposite()), score));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        return Optional.empty();
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+
+        candidates.sort(Comparator.comparingDouble(c -> c.score));
+        return Optional.of(candidates.get(0).target);
     }
 
     private PathingCommand handleShulkerStorage(boolean isSafeToCancel) {
@@ -1903,15 +1979,37 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             case SELECT_SLOT -> {
                 ctx.player().getInventory().setSelectedSlot(shulkerHotbarSlot);
                 ctx.playerController().syncHeldItem();
+
                 Optional<ShulkerPlacementTarget> targetOpt = findShulkerPlacePos();
                 if (targetOpt.isEmpty()) {
-                    if (shulkerStateTicks > 20) {
-                        logDirect("§c[AutoShulker] Không tìm thấy vị trí thích hợp để đặt Shulker Box! Hủy quy trình...");
+                    // Tự động xoay quanh 360 độ để quét tìm vị trí đặt Shulker Box
+                    float sweepYaw = (ctx.playerRotations().getYaw() + 30.0F) % 360.0F;
+                    Rotation sweepRot = new Rotation(sweepYaw, 25.0F);
+                    baritone.getLookBehavior().updateTarget(sweepRot, true);
+                    if (!LookBehavior.isF5(ctx)) {
+                        ctx.player().setYRot(sweepYaw);
+                        ctx.player().setXRot(25.0F);
+                    }
+
+                    if (shulkerStateTicks > 24) { // Đã xoay hơn 1 vòng 360 độ (24 ticks = 720 độ) mà vẫn không có chỗ
+                        logDirect("§c[AutoShulker] Đã xoay 360 độ nhưng không tìm thấy vị trí thích hợp để đặt Shulker Box! Hủy quy trình...");
                         shulkerState = ShulkerStorageState.IDLE;
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
-                shulkerPlacedPos = new BlockPos(targetOpt.get().placePos.getX(), targetOpt.get().placePos.getY(), targetOpt.get().placePos.getZ());
+
+                ShulkerPlacementTarget pt = targetOpt.get();
+                Vec3 hitVec = pt.face == net.minecraft.core.Direction.UP
+                        ? new Vec3(pt.againstPos.getX() + 0.5, pt.againstPos.getY() + 1.0, pt.againstPos.getZ() + 0.5)
+                        : new Vec3(pt.againstPos.getX() + 0.5 + pt.face.getStepX() * 0.5, pt.againstPos.getY() + 0.5, pt.againstPos.getZ() + 0.5 + pt.face.getStepZ() * 0.5);
+                Rotation aimRot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), hitVec, ctx.playerRotations());
+                baritone.getLookBehavior().updateTarget(aimRot, true);
+                if (!LookBehavior.isF5(ctx)) {
+                    ctx.player().setYRot(aimRot.getYaw());
+                    ctx.player().setXRot(aimRot.getPitch());
+                }
+
+                shulkerPlacedPos = new BlockPos(pt.placePos.getX(), pt.placePos.getY(), pt.placePos.getZ());
                 shulkerState = ShulkerStorageState.PLACE_BOX;
                 shulkerStateTicks = 0;
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -1926,10 +2024,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 ShulkerPlacementTarget pt = targetOpt.get();
                 shulkerPlacedPos = new BlockPos(pt.placePos.getX(), pt.placePos.getY(), pt.placePos.getZ());
                 BlockPos againstPure = new BlockPos(pt.againstPos.getX(), pt.againstPos.getY(), pt.againstPos.getZ());
-                Vec3 hitVec = new Vec3(againstPure.getX() + 0.5, againstPure.getY() + 1.0, againstPure.getZ() + 0.5);
+                Vec3 hitVec = pt.face == net.minecraft.core.Direction.UP
+                        ? new Vec3(againstPure.getX() + 0.5, againstPure.getY() + 1.0, againstPure.getZ() + 0.5)
+                        : new Vec3(againstPure.getX() + 0.5 + pt.face.getStepX() * 0.5, againstPure.getY() + 0.5, againstPure.getZ() + 0.5 + pt.face.getStepZ() * 0.5);
                 BlockHitResult bhr = new BlockHitResult(hitVec, pt.face, againstPure, false);
                 Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), hitVec, ctx.playerRotations());
                 baritone.getLookBehavior().updateTarget(rot, true);
+                if (!LookBehavior.isF5(ctx)) {
+                    ctx.player().setYRot(rot.getYaw());
+                    ctx.player().setXRot(rot.getPitch());
+                }
+                ctx.player().getInventory().setSelectedSlot(shulkerHotbarSlot);
+                ctx.playerController().syncHeldItem();
                 ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
                 shulkerState = ShulkerStorageState.WAIT_FOR_BLOCK;
                 shulkerStateTicks = 0;
