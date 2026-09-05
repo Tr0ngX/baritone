@@ -346,7 +346,7 @@ public class MovementTraverse extends Movement {
                             // but only if our attempted place is straight ahead
                             return state.setInput(Input.MOVE_FORWARD, true);
                         }
-                    } else if (ctx.playerRotations().isReallyCloseTo(state.getTarget().rotation)) {
+                    } else if (ctx.playerRotations().isCloseTo(state.getTarget().rotation, 20.0F) || Baritone.settings().f5FreeLook.value) {
                         // well i guess theres something in the way
                         return state.setInput(Input.CLICK_LEFT, true);
                     }
@@ -378,7 +378,7 @@ public class MovementTraverse extends Movement {
                     return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
                 }
                 // Out.log("Trying to look at " + goalLook + ", actually looking at" + Baritone.whatAreYouLookingAt());
-                if (ctx.playerRotations().isReallyCloseTo(state.getTarget().rotation)) {
+                if (ctx.playerRotations().isCloseTo(state.getTarget().rotation, 20.0F) || Baritone.settings().f5FreeLook.value) {
                     state.setInput(Input.CLICK_LEFT, true);
                 }
                 return state;

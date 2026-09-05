@@ -219,7 +219,15 @@ public class CalculationContext {
         if (isPossiblyProtected(x, y, z)) {
             return COST_INF;
         }
-        return 1;
+        // HỆ THỐNG TƯ DUY THƯỞNG / PHẠT CHI PHÍ ĐÀO BLOCK (COST REWARD & PENALTY):
+        // 1. Quặng mục tiêu (Ore, Ancient Debris): Chi phí đào được chiết khấu cực rẻ (0.2x) -> A* khao khát đào quặng
+        // 2. Block thông thường (Đá, Deepslate, Đất, Sỏi): Chi phí bình thường (1.0x) + breakBlockAdditionalCost (phạt nhẹ)
+        // -> Buộc A* phải tư duy: ưu tiên đi qua hang động / khoảng trống có sẵn (cost 0), không phá đá bừa bãi!
+        String descId = current.getBlock().getDescriptionId().toLowerCase();
+        if (descId.contains("ore") || descId.contains("ancient_debris")) {
+            return 0.2;
+        }
+        return 1.0;
     }
 
     public double placeBucketCost() {

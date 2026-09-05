@@ -121,15 +121,33 @@ public class Rotation {
      * Is really close to
      *
      * @param other another rotation
-     * @return are they really close
+     * @return are they close enough for interaction (15 degrees tolerance for smooth look / anti-cheat)
      */
     public boolean isReallyCloseTo(Rotation other) {
-        return yawIsReallyClose(other) && Math.abs(this.pitch - other.pitch) < 0.01;
+        return isCloseTo(other, 15.0F);
+    }
+
+    public boolean isCloseTo(Rotation other, float maxDegrees) {
+        if (other == null) {
+            return false;
+        }
+        float yawDiff = Math.abs(normalizeYaw(this.yaw) - normalizeYaw(other.yaw));
+        if (yawDiff > 180.0F) {
+            yawDiff = 360.0F - yawDiff;
+        }
+        float pitchDiff = Math.abs(this.pitch - other.pitch);
+        return yawDiff <= maxDegrees && pitchDiff <= maxDegrees;
     }
 
     public boolean yawIsReallyClose(Rotation other) {
-        float yawDiff = Math.abs(normalizeYaw(yaw) - normalizeYaw(other.yaw)); // you cant fool me
-        return (yawDiff < 0.01 || yawDiff > 359.99);
+        if (other == null) {
+            return false;
+        }
+        float yawDiff = Math.abs(normalizeYaw(this.yaw) - normalizeYaw(other.yaw));
+        if (yawDiff > 180.0F) {
+            yawDiff = 360.0F - yawDiff;
+        }
+        return yawDiff <= 15.0F;
     }
 
     /**
