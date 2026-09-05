@@ -73,7 +73,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optFastPlace = true;
     public static boolean optOvershoot = true;
     public static boolean optWaterSprint = true;
-    public static int optTargetY = -58;
+    public static int optTargetY = -54;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
 
@@ -219,10 +219,10 @@ public class AutoMineScreen extends Screen implements Helper {
         // Hàng 4 cột 2: Tầng Y và FPS Limit
         String yLabel = optTargetY == 999 ? "Y-Level: Current" : "Y-Level: " + optTargetY;
         addRenderableWidget(Button.builder(Component.literal(yLabel), b -> {
-            if (optTargetY == -58) optTargetY = -54;
-            else if (optTargetY == -54) optTargetY = 11;
+            if (optTargetY == -54) optTargetY = -58;
+            else if (optTargetY == -58) optTargetY = 11;
             else if (optTargetY == 11) optTargetY = 999;
-            else optTargetY = -58;
+            else optTargetY = -54;
             this.rebuildWidgets();
         }).bounds(rightSub1, startY + gap * 4, btnW, btnH).build());
 
@@ -461,7 +461,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().straightDownMine.value = optShaftDown;
         Baritone.settings().preferWaterBucketOverDigging.value = true;
         
-        int targetY = optTargetY == 999 ? -58 : optTargetY;
+        int targetY = optTargetY == 999 ? -54 : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;
         Baritone.settings().exploreMaintainY.value = targetY;
 
