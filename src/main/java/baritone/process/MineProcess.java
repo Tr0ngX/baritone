@@ -523,6 +523,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     }
 
     @Override
+    public void cancel() {
+        onLostControl();
+        baritone.getPathingBehavior().forceCancel();
+        baritone.getInputOverrideHandler().clearAllKeys();
+        baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+        if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
+            ctx.player().closeContainer();
+        }
+    }
+
+    @Override
     public void onLostControl() {
         if (eatingSlot != -1) {
             try {
@@ -551,6 +562,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         recentPosCount = 0;
         lastAntiStuckPos = null;
         lastPillarFailPos = null;
+        pendingDropSlots.clear();
+        dropCooldown = 0;
         if (shulkerState != ShulkerStorageState.IDLE) {
             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
@@ -563,6 +576,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             shulkerClearingInProgress = false;
             shulkerMode = ShulkerMode.DEPOSIT;
         }
+        if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
+            ctx.player().closeContainer();
+        }
+        baritone.getInputOverrideHandler().clearAllKeys();
+        baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
         mine(0, (BlockOptionalMetaLookup) null);
     }
 
@@ -1394,7 +1412,20 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     public static boolean isUsableMiningTool(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        if (!stack.is(ItemTags.PICKAXES)) return false;
+        boolean isPick = stack.is(ItemTags.PICKAXES);
+        if (!isPick) {
+            String desc = stack.getItem().getDescriptionId();
+            if (desc != null && desc.toLowerCase(Locale.ROOT).contains("pickaxe")) {
+                isPick = true;
+            }
+        }
+        if (!isPick && stack.has(DataComponents.CUSTOM_NAME)) {
+            String custom = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
+            if (custom.contains("cúp") || custom.contains("cup") || custom.contains("pickaxe")) {
+                isPick = true;
+            }
+        }
+        if (!isPick) return false;
         if (Baritone.settings().itemSaver.value && (stack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) >= stack.getMaxDamage() && stack.getMaxDamage() > 1) {
             return false;
         }
@@ -1468,7 +1499,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         for (int i = 1; i < 9; i++) {
             ItemStack s = inv.get(i);
-            if (!s.is(ItemTags.PICKAXES) && !s.is(ItemTags.SWORDS) && !s.is(Items.TOTEM_OF_UNDYING) && !s.is(Items.WATER_BUCKET)) {
+            if (!isToolOrEssential(s)) {
                 return i;
             }
         }
@@ -1580,27 +1611,72 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         return best;
     }
 
-    private boolean isToolOrEssential(ItemStack stack) {
-        if (stack.isEmpty()) return false;
+    public static boolean isToolOrEssential(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+
+        // 1. Shulker Box (cấm nhét Shulker vào trong Shulker Box khác)
+        if (isShulkerBox(stack)) return true;
+
+        // 2. DataComponents: Mọi công cụ (Tool), vật phẩm có độ bền (Durability/Max Damage), hoặc vũ khí
         if (stack.has(DataComponents.TOOL) || stack.has(DataComponents.MAX_DAMAGE) || stack.isDamageableItem()) {
             return true;
         }
-        if (stack.is(ItemTags.SWORDS) || stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES)
-                || stack.is(ItemTags.SHOVELS) || stack.is(ItemTags.HOES)) {
+
+        // 3. ItemTags chuẩn vanilla: Cúp, Rìu, Xẻng, Kiếm, Cuốc, Giáp
+        if (stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES) || stack.is(ItemTags.SHOVELS)
+                || stack.is(ItemTags.SWORDS) || stack.is(ItemTags.HOES)
+                || stack.is(ItemTags.ARMOR_ENCHANTABLE)) {
             return true;
         }
-        if (isGoodFood(stack)) {
-            return true;
-        }
+
+        // 4. Các vật phẩm sinh tồn & phòng hộ thiết yếu
         Item item = stack.getItem();
         if (item == Items.WATER_BUCKET
+                || item == Items.BUCKET
                 || item == Items.TOTEM_OF_UNDYING
                 || item == Items.SHIELD
-                || stack.is(ItemTags.ARMOR_ENCHANTABLE)
-                || (item instanceof BlockItem bi && bi.getBlock() instanceof TrapDoorBlock)
-                || isShulkerBox(stack)) {
+                || item == Items.SHEARS
+                || item == Items.BOW
+                || item == Items.CROSSBOW
+                || item == Items.TRIDENT
+                || item == Items.FISHING_ROD
+                || item == Items.FLINT_AND_STEEL
+                || (item instanceof BlockItem bi && bi.getBlock() instanceof TrapDoorBlock)) {
             return true;
         }
+
+        // 5. Thức ăn
+        if (isGoodFood(stack) || stack.has(DataComponents.FOOD)) {
+            return true;
+        }
+
+        // 6. Nhận diện an toàn qua Description ID (hỗ trợ server custom KingMC)
+        String desc = item.getDescriptionId();
+        if (desc != null) {
+            String lower = desc.toLowerCase(Locale.ROOT);
+            if (lower.contains("pickaxe") || lower.contains("shovel") || lower.contains("sword")
+                    || lower.contains("hoe") || lower.contains("shears") || lower.contains("shield")
+                    || lower.contains("helmet") || lower.contains("chestplate") || lower.contains("leggings")
+                    || lower.contains("boots") || lower.contains("bow") || lower.contains("totem")
+                    || lower.endsWith("_axe") || lower.contains("_axe_") || lower.contains("axe.") || lower.contains(".axe")) {
+                return true;
+            }
+        }
+
+        // 7. Nhận diện an toàn qua Custom Name (tên vật phẩm hiển thị trên KingMC)
+        if (stack.has(DataComponents.CUSTOM_NAME)) {
+            String customName = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
+            if (customName.contains("cúp") || customName.contains("cup")
+                    || customName.contains("rìu") || customName.contains("riu")
+                    || customName.contains("xẻng") || customName.contains("xeng")
+                    || customName.contains("kiếm") || customName.contains("kiem")
+                    || customName.contains("pickaxe") || customName.contains("axe")
+                    || customName.contains("shovel") || customName.contains("sword")
+                    || customName.contains("totem") || customName.contains("giáp") || customName.contains("armor")) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -1616,39 +1692,39 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         for (int h = 1; h < 9; h++) {
             if (inv.get(h).isEmpty()) return h;
         }
-        // 2. Ưu tiên ô hotbar chứa đồ không thiết yếu (đá, quặng, rác)
+        // 2. Ưu tiên ô hotbar chứa đồ không thiết yếu (quặng, đá thừa, rác)
         for (int h = 1; h < 9; h++) {
             if (!shouldKeepInInventory(inv.get(h))) return h;
         }
-        // 3. Fallback: slot 1
+        // 3. Ưu tiên ô hotbar chứa block xây dựng (đá/đất)
+        for (int h = 1; h < 9; h++) {
+            if (isBuildingBlock(inv.get(h)) && !isTargetOre(inv.get(h))) return h;
+        }
+        // 4. Ưu tiên ô không phải công cụ (Cúp, Rìu, Xẻng, Kiếm, Totem, Xô nước)
+        for (int h = 1; h < 9; h++) {
+            if (!isToolOrEssential(inv.get(h))) return h;
+        }
+        // 5. Fallback: slot 1
         return 1;
     }
 
     /**
      * Kiểm tra xem vật phẩm có thuộc diện BẮT BUỘC GIỮ LẠI trong balo khi cất đồ vào Shulker Box hay không.
-     * Quy tắc chuẩn xác từ người dùng:
-     * "phải để MỌI thứ vào shulker box trừ kiểu cúp totem xô nước và đồ ăn thì mới đào đi"
-     * -> CHỈ GIỮ LẠI:
-     * 1. Cúp đào (Pickaxe)
-     * 2. Totem of Undying
-     * 3. Xô nước (Water Bucket)
-     * 4. Thức ăn (Food)
-     * (và Shulker Box, vì vanilla cấm nhét Shulker vào Shulker)
-     * MỌI THỨ KHÁC (kim cương, vàng, sắt, than, redstone, ngọc lục bảo, đá, đất, sỏi, block, loot quái...) đều PHẢI cất hết vào Shulker Box!
+     * Quy tắc:
+     * - BẢO VỆ TUYỆT ĐỐI TOÀN BỘ CÔNG CỤ & TRANG BỊ: Cúp, Rìu, Xẻng, Kiếm, Cuốc, Giáp, Khiên, Cung, Nỏ.
+     * - BẢO VỆ TUYỆT ĐỐI VẬT PHẨM SINH TỒN: Totem of Undying, Xô nước, Thức ăn, Trapdoor, Shulker Box.
+     * - Block xây dựng (đá, đất...): Giữ lại 1 stack (tối đa 64) để kê chân / bắc cầu.
+     * MỌI THỨ KHÁC (kim cương, vàng, sắt, than, redstone, ngọc lục bảo, đá thừa, rác...) đều CẤT HẾT vào Shulker Box!
      */
     private boolean shouldKeepInInventory(ItemStack stack) {
-        if (stack.isEmpty()) return true;
-        // 1. Shulker Box: Minecraft cấm nhét Shulker Box vào trong Shulker Box khác
-        if (isShulkerBox(stack)) return true;
-        // 2. Cúp đào: Bắt buộc để tiếp tục đào quặng
-        if (stack.is(ItemTags.PICKAXES)) return true;
-        // 3. Totem of Undying: Cứu mạng khi nguy hiểm
-        if (stack.is(Items.TOTEM_OF_UNDYING)) return true;
-        // 4. Xô nước: Cực kỳ quan trọng để MLG, hạ tầng, dập dung nham
-        if (stack.is(Items.WATER_BUCKET)) return true;
-        // 5. Thức ăn: Hồi phục thanh đói và máu
-        if (isGoodFood(stack) || stack.has(DataComponents.FOOD)) return true;
-        // 6. Block xây dựng (kê chân/bắc cầu): Giữ lại ít nhất 1 stack (tối đa 64 block)
+        if (stack == null || stack.isEmpty()) return true;
+
+        // 1. Tuyệt đối giữ lại mọi công cụ (Cúp, Rìu, Xẻng, Kiếm...), đồ thiết yếu (Totem, Xô nước), đồ ăn và Shulker Box
+        if (isToolOrEssential(stack)) {
+            return true;
+        }
+
+        // 2. Block xây dựng (kê chân/bắc cầu): Giữ lại đúng 1 stack (tối đa 64 block)
         // để không bao giờ cạn throwaway blocks (hasThrowaway = false), khớp với handleAutoDrop
         if (isBuildingBlock(stack)) {
             if (ctx.player() == null) return true;
@@ -1737,12 +1813,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             int transferableSlots = countTransferableSlots();
 
             // ĐIỀU KIỆN KÍCH HOẠT AUTO SHULKER:
-            // 1. Phải có ít nhất 1 ô đồ thực sự cần cất (quặng, nguyên liệu quý)
-            // 2. Kích hoạt khi:
-            //    - Balo gần đầy: emptySlots <= 4, HOẶC
-            //    - Đã gom được nhiều quặng cần cất: transferableSlots >= 4, HOẶC
-            //    - Balo cực đầy: emptySlots <= 2
-            boolean shouldStore = transferableSlots > 0 && (emptySlots <= 4 || transferableSlots >= 4);
+            // CHỈ kích hoạt khi:
+            // 1. Phải có ít nhất 1 stack quặng cần cất (transferableSlots > 0)
+            // 2. Balo thực sự ĐÃ ĐẦY: chỉ còn tối đa 1 ô trống (emptySlots <= 1)
+            // Tuyệt đối KHÔNG cất khi balo còn nhiều ô trống!
+            boolean shouldStore = transferableSlots > 0 && emptySlots <= 1;
             if (shouldStore) {
                 int shulkerSlot = findBestShulkerBoxSlot();
                 if (shulkerSlot != -1) {
@@ -1751,7 +1826,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerBoxCountBefore = countShulkerBoxesInInventory();
                     int occupied = getShulkerOccupiedSlots(inv.get(shulkerSlot));
                     String slotDesc = (occupied == 0) ? "trống 100%" : (occupied + "/27 ô đã dùng");
-                    logDirect("§a[AutoShulker] Tự động cất quặng vào Shulker Box (" + slotDesc + " tại slot " + shulkerSlot + ")! Balo còn " + emptySlots + " ô trống, " + transferableSlots + " stack quặng cần cất.");
+                    logDirect("§a[AutoShulker] Balo đã đầy (còn " + emptySlots + " ô trống)! Tự động cất " + transferableSlots + " stack quặng vào Shulker Box (" + slotDesc + " tại slot " + shulkerSlot + ")...");
                     shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
                     shulkerStateTicks = 0;
                     shulkerConsecutiveNoTransfer = 0;
@@ -2032,7 +2107,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 if (isBoxFull) {
                     logDirect("§6[AutoShulker] Shulker Box đã đầy (27/27 ô)! Đã cất " + shulkerTransferredCount + " stack.");
                 } else {
-                    logDirect("§a[AutoShulker] Đã cất gọn " + shulkerTransferredCount + " stack vào Shulker Box (chỉ giữ Cúp, Totem, Xô nước & Đồ ăn)!");
+                    logDirect("§a[AutoShulker] Đã cất gọn " + shulkerTransferredCount + " stack vào Shulker Box (giữ nguyên Công cụ, Cúp, Rìu, Xẻng, Totem, Xô nước & Đồ ăn)!");
                 }
                 shulkerState = ShulkerStorageState.CLOSE_CONTAINER;
                 shulkerStateTicks = 0;
@@ -2127,7 +2202,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerState = ShulkerStorageState.IDLE;
                     shulkerMode = ShulkerMode.DEPOSIT;
                     pendingDropSlots.clear();
-                    logDirect("§a[AutoShulker] Đã cất toàn bộ vật phẩm vào Shulker Box (chỉ giữ Cúp, Totem, Xô nước & Đồ ăn)! Tiếp tục đào...");
+                    logDirect("§a[AutoShulker] Đã cất toàn bộ vật phẩm vào Shulker Box (giữ nguyên Công cụ, Cúp, Rìu, Xẻng, Totem, Xô nước & Đồ ăn)! Tiếp tục đào...");
                     return null;
                 }
 

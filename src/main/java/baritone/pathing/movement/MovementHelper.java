@@ -699,7 +699,7 @@ public interface MovementHelper extends ActionCosts, Helper {
                 }
                 if (bestBaloSlot != -1) {
                     int targetHotbar = bestHotbar;
-                    if (inv.get(bestBaloSlot).is(ItemTags.PICKAXES)) {
+                    if (baritone.process.MineProcess.isUsableMiningTool(inv.get(bestBaloSlot))) {
                         targetHotbar = 0;
                     } else if (targetHotbar == 0) {
                         targetHotbar = 1;

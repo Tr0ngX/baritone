@@ -298,8 +298,15 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private void stopAutoMine() {
+        baritone.getPathingBehavior().forceCancel();
+        baritone.getMineProcess().cancel();
+        baritone.getInputOverrideHandler().clearAllKeys();
+        baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+        if (baritone.getPlayerContext().player() != null && baritone.getPlayerContext().player().containerMenu != baritone.getPlayerContext().player().inventoryMenu) {
+            baritone.getPlayerContext().player().closeContainer();
+        }
         baritone.getCommandManager().execute("stop");
-        Helper.HELPER.logDirect("[AutoMine] Process stopped.");
+        Helper.HELPER.logDirect("§c[AutoMine] Đã dừng toàn bộ quá trình đào!");
     }
 
     private void startAutoChop() {
