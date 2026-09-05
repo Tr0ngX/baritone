@@ -314,6 +314,10 @@ public final class PathRenderer implements IRenderer {
             if (batch) {
                 IRenderer.endLines(buf, settings.renderGoalIgnoreDepth.value);
             }
+        } else if (goal instanceof GoalChopTour) {
+            for (BlockPos base : ((GoalChopTour) goal).getTreeBases()) {
+                drawGoal(bufferBuilder, stack, ctx, new GoalGetToBlock(base), partialTicks, color, setupRender);
+            }
         } else if (goal instanceof GoalInverted) {
             drawGoal(stack, ctx, ((GoalInverted) goal).origin, partialTicks, settings.colorInvertedGoalBox.value);
         } else if (goal instanceof GoalYLevel) {

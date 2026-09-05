@@ -22,6 +22,7 @@ import baritone.api.behavior.IPathingBehavior;
 import baritone.api.event.events.*;
 import baritone.api.pathing.calc.IPath;
 import baritone.api.pathing.goals.Goal;
+import baritone.api.pathing.goals.GoalChopTour;
 import baritone.api.pathing.goals.GoalXZ;
 import baritone.api.process.PathingCommand;
 import baritone.api.utils.BetterBlockPos;
@@ -31,6 +32,7 @@ import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.pathing.calc.AStarPathFinder;
 import baritone.pathing.calc.ARAStarPathFinder;
 import baritone.pathing.calc.AbstractNodeCostSearch;
+import baritone.pathing.calc.ChopTourPathFinder;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.path.PathExecutor;
@@ -557,6 +559,15 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     }
 
     private AbstractNodeCostSearch createPathfinder(BlockPos start, Goal goal, IPath previous, CalculationContext context) {
+        if (goal instanceof GoalChopTour) {
+            BetterBlockPos feet = ctx.playerFeet();
+            var realStart = new BetterBlockPos(start);
+            var sub = feet.subtract(realStart);
+            if (feet.getY() == realStart.getY() && Math.abs(sub.getX()) <= 1 && Math.abs(sub.getZ()) <= 1) {
+                realStart = feet;
+            }
+            return new ChopTourPathFinder(realStart, start.getX(), start.getY(), start.getZ(), (GoalChopTour) goal, context);
+        }
         Goal transformed = goal;
         if (Baritone.settings().simplifyUnloadedYCoord.value && goal instanceof IGoalRenderPos) {
             BlockPos pos = ((IGoalRenderPos) goal).getGoalPos();

@@ -114,6 +114,10 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                     if (this.target.mode == Target.Mode.SERVER) {
                         ctx.player().setYRot(this.prevRotation.getYaw());
                         ctx.player().setXRot(this.prevRotation.getPitch());
+                        final Rotation actual = this.processor.peekRotation(this.target.rotation);
+                        ctx.player().setYHeadRot(actual.getYaw());
+                        ctx.player().yHeadRotO = actual.getYaw();
+                        ctx.player().setYBodyRot(actual.getYaw());
                     } else if (ctx.player().isFallFlying() ? Baritone.settings().elytraSmoothLook.value : Baritone.settings().smoothLook.value) {
                         ctx.player().setYRot((float) this.smoothYawBuffer.stream().mapToDouble(d -> d).average().orElse(this.prevRotation.getYaw()));
                         if (ctx.player().isFallFlying()) {

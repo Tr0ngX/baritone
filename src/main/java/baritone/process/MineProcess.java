@@ -211,9 +211,21 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int shulkerTransferredCount = 0;
     private boolean shulkerClearingInProgress = false;
     private int consecutiveCalcFailures = 0;
+    private boolean isChopMode = false;
+    private GoalChopTour activeChopTourGoal = null;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
+    }
+
+    @Override
+    public boolean isChopMode() {
+        return isChopMode;
+    }
+
+    @Override
+    public void setChopMode(boolean chopMode) {
+        this.isChopMode = chopMode;
     }
 
     @Override
@@ -244,6 +256,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     || baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
                     || ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock();
             if (!isMining) {
+                if (isChopMode) {
+                    // CHẾ ĐỘ CHOP WOOD: TUYỆT ĐỐI KHÔNG DÙNG CẢNH BÁO, KHÔNG CANCEL VÀ KHÔNG STOP!
+                    activeChopTourGoal = null;
+                    if (lockedTargetOre != null) {
+                        blacklist.add(lockedTargetOre);
+                        oreMemory.remove(lockedTargetOre);
+                        knownOreLocations.remove(lockedTargetOre);
+                        lockedTargetOre = null;
+                    }
+                    forceReroute = true;
+                    consecutiveCalcFailures = 0;
+                    return new PathingCommand(new GoalRunAway(25, ctx.playerFeet()), PathingCommandType.CANCEL_AND_SET_GOAL);
+                }
                 consecutiveCalcFailures++;
                 if (!knownOreLocations.isEmpty() && Baritone.settings().blacklistClosestOnFailure.value) {
                     logDirect("Unable to find any path to " + filter + ", retrying...");
@@ -376,7 +401,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             BlockState state = ctx.world().getBlockState(activeMiningBlock);
             // NGUYÊN TẮC: Khi quặng ở trên cao (> feet.getY() + 2) hoặc bot đang ở trên không (không onGround):
             // TUYỆT ĐỐI KHÔNG nhảy lên đập dở! Nhả activeMiningBlock để A* thực hiện xong bước nhảy/kê chân vững vàng trước!
-            if (activeMiningBlock.getY() > ctx.playerFeet().getY() + 2 || (!ctx.player().onGround() && !ctx.player().isInWater())) {
+            // Riêng khi chặt cây (Chop Mode), cho phép với tới độ cao +4 block để chặt sạch thân cây khi đứng trên đất!
+            int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 2);
+            if (activeMiningBlock.getY() > maxReachY || (!ctx.player().onGround() && !ctx.player().isInWater())) {
                 activeMiningBlock = null;
                 activeMiningTicks = 0;
                 baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
@@ -400,7 +427,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         forceReroute = true;
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
                     } else {
-                        baritone.getPathingBehavior().cancelSegmentIfSafe();
+                        if (!isChopMode) {
+                            baritone.getPathingBehavior().cancelSegmentIfSafe();
+                        }
                         baritone.getInputOverrideHandler().clearAllKeys();
                         baritone.getLookBehavior().updateTarget(rot.get(), true);
                         MovementHelper.switchToBestToolFor(ctx, state);
@@ -443,7 +472,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 }
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, destroyingPos);
                 if (rot.isPresent()) {
-                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    if (!isChopMode) {
+                        baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    }
                     baritone.getInputOverrideHandler().clearAllKeys();
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     MovementHelper.switchToBestToolFor(ctx, state);
@@ -461,11 +492,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         boolean canDirectMine = (ctx.player().onGround() || ctx.player().isInWater())
                 && !baritone.getInputOverrideHandler().isInputForcedDown(Input.JUMP);
         if (canDirectMine) {
+            int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 2);
             Optional<BlockPos> reachableOre = curr.stream()
                     .filter(pos -> ctx.playerFeet().distSqr(pos) <= 25)
-                    // QUY TẮC BẮT BUỘC: Khi quặng ở trên cao (> feet.getY() + 2),
-                    // TUYỆT ĐỐI KHÔNG nhảy lên đập dở! Phải để A* dẫn đường leo lên / kê chân đứng vững rồi mới đào!
-                    .filter(pos -> pos.getY() <= ctx.playerFeet().getY() + 2)
+                    // QUY TẮC: Đứng vững trên sàn và đào các block trong tầm với trực tiếp
+                    .filter(pos -> pos.getY() <= maxReachY)
                     .filter(pos -> !ctx.world().getBlockState(pos).isAir())
                     .filter(pos -> {
                         BlockState s = ctx.world().getBlockState(pos);
@@ -483,7 +514,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 BlockState state = ctx.world().getBlockState(pos);
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, pos);
                 if (rot.isPresent()) {
-                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    if (!isChopMode) {
+                        baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    }
                     baritone.getInputOverrideHandler().clearAllKeys();
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     MovementHelper.switchToBestToolFor(ctx, state);
@@ -552,6 +585,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     @Override
     public void cancel() {
+        activeChopTourGoal = null;
+        isChopMode = false;
         onLostControl();
         baritone.getPathingBehavior().forceCancel();
         baritone.getInputOverrideHandler().clearAllKeys();
@@ -563,6 +598,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     @Override
     public void onLostControl() {
+        activeChopTourGoal = null;
         if (eatingSlot != -1) {
             try {
                 ctx.minecraft().options.keyUse.setDown(false);
@@ -655,15 +691,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         // === ƯU TIÊN SỐ 1: BẮT BUỘC HÚT SẠCH 100% KIM CƯƠNG / QUẶNG RƠI TRÊN SÀN TRƯỚC KHI ĐI TIẾP ===
-        List<BlockPos> droppedItems = droppedItemsScan();
-        if (!droppedItems.isEmpty()) {
-            Optional<BlockPos> closestDrop = droppedItems.stream()
-                    .min(Comparator.comparingDouble(ctx.playerFeet()::distSqr));
-            if (closestDrop.isPresent()) {
-                BlockPos dropPos = closestDrop.get();
-                // Nếu chưa đứng trúng vật phẩm rơi (cách quá 0.4 block) -> Bước thẳng tới nhặt ngay lập tức!
-                if (ctx.playerFeet().distSqr(dropPos) > 0.16) {
-                    return new PathingCommand(new GoalBlock(dropPos), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        // Trong chế độ chặt cây, nếu đang di chuyển trên tour thì không huỷ tour giữa chừng để nhặt gỗ
+        if (!isChopMode || !baritone.getPathingBehavior().isPathing()) {
+            List<BlockPos> droppedItems = droppedItemsScan();
+            if (!droppedItems.isEmpty()) {
+                Optional<BlockPos> closestDrop = droppedItems.stream()
+                        .min(Comparator.comparingDouble(ctx.playerFeet()::distSqr));
+                if (closestDrop.isPresent()) {
+                    BlockPos dropPos = closestDrop.get();
+                    // Nếu chưa đứng trúng vật phẩm rơi (cách quá 0.4 block) -> Bước thẳng tới nhặt ngay lập tức!
+                    if (ctx.playerFeet().distSqr(dropPos) > 0.16) {
+                        return new PathingCommand(new GoalBlock(dropPos), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                    }
                 }
             }
         }
@@ -706,6 +745,35 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             List<BlockPos> locs2 = prune(context, new ArrayList<>(locs), filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
             if (!locs2.isEmpty()) {
                 currentTunnelTarget = null;
+
+                // CHẾ ĐỘ TỰ ĐỘNG CHẶT CÂY (LUMBERJACK) - 1 ĐƯỜNG TÍNH DUY NHẤT & 1 LẦN TÍNH TOÁN SIÊU DÀI:
+                if (isChopMode) {
+                    boolean isPathing = baritone.getPathingBehavior().isPathing();
+                    boolean hasInProgress = baritone.getPathingBehavior().getInProgress().isPresent();
+
+                    // Nếu tour hiện tại vẫn đang chạy và không bị buộc reroute (AntiStuck):
+                    if (activeChopTourGoal != null && (isPathing || hasInProgress) && !forceReroute) {
+                        knownOreLocations = new CopyOnWriteArrayList<>(locs2);
+                        return new PathingCommand(activeChopTourGoal, PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                    }
+
+                    // Tạo tour mới nối các cây thành 1 đường duy nhất:
+                    List<TreeInfo> trees = clusterTrees(ctx, locs2);
+                    if (!trees.isEmpty()) {
+                        List<TreeInfo> tourTrees = planTreeTour(trees, ctx.playerFeet(), 25);
+                        if (!tourTrees.isEmpty()) {
+                            List<BlockPos> bases = tourTrees.stream().map(t -> t.baseLog).collect(Collectors.toList());
+                            GoalChopTour tourGoal = new GoalChopTour(bases);
+                            this.activeChopTourGoal = tourGoal;
+                            this.forceReroute = false;
+                            this.consecutiveCalcFailures = 0;
+                            knownOreLocations = new CopyOnWriteArrayList<>(locs2);
+                            logDirect("§a[AutoChop] Khởi động 1 LẦN TÍNH TOÁN SIÊU DÀI cho 1 ĐƯỜNG TÍNH DUY NHẤT nối " + tourTrees.size() + " cây...");
+                            return new PathingCommand(tourGoal, PathingCommandType.CANCEL_AND_SET_GOAL);
+                        }
+                    }
+                    this.activeChopTourGoal = null;
+                }
                 // TARGET LOCK / HYSTERESIS:
                 // Tránh GoalComposite bị dao động qua lại giữa cụm gần và cụm xa khi bot di chuyển ở ngưỡng ranh giới (8 block).
                 // Duy trì lockedTargetOre cố định cho đến khi quặng này bị đào vỡ hoặc bị blacklist.
@@ -781,6 +849,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         // we don't know any ore locations at the moment
+        if (isChopMode) {
+            // Trong chop wood, không dừng lại, tiếp tục di chuyển khám phá các khu rừng xung quanh
+            return new PathingCommand(new GoalRunAway(30, ctx.playerFeet()), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        }
         if (!legit && !Baritone.settings().exploreForBlocks.value) {
             return null;
         }
@@ -922,6 +994,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         List<BlockPos> locs = prune(context, allCandidates, filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, dropped);
 
         if (locs.isEmpty() && !Baritone.settings().exploreForBlocks.value) {
+            if (isChopMode) {
+                return;
+            }
             logDirect("No locations for " + filter + " known, cancelling");
             if (Baritone.settings().notificationOnMineFail.value) {
                 logNotification("No locations for " + filter + " known, cancelling", true);
@@ -3284,6 +3359,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (this.filterFilter() == null) {
             this.filter = null;
         }
+        if (isWoodFilter(filter)) {
+            this.isChopMode = true;
+        }
+        this.activeChopTourGoal = null;
         this.desiredQuantity = quantity;
         this.knownOreLocations = new CopyOnWriteArrayList<>();
         this.blacklist.clear();
@@ -3455,5 +3534,128 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         public String toString() {
             return "GoalStaircaseDescent{start=" + startX + "," + startY + "," + startZ + ", dir=" + dx + "," + dz + ", targetY=" + targetY + "}";
         }
+    }
+
+    public static class TreeInfo {
+        public final List<BlockPos> logs = new ArrayList<>();
+        public BlockPos baseLog;
+        public BetterBlockPos standPos;
+
+        public TreeInfo(BlockPos firstLog) {
+            logs.add(firstLog);
+            baseLog = firstLog;
+        }
+    }
+
+    public static List<TreeInfo> clusterTrees(IPlayerContext ctx, List<BlockPos> logPositions) {
+        if (logPositions == null || logPositions.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<TreeInfo> trees = new ArrayList<>();
+        List<BlockPos> sorted = new ArrayList<>(logPositions);
+        sorted.sort(Comparator.comparingInt(BlockPos::getY));
+
+        for (BlockPos pos : sorted) {
+            TreeInfo matchingTree = null;
+            for (TreeInfo tree : trees) {
+                for (BlockPos existing : tree.logs) {
+                    int dx = Math.abs(pos.getX() - existing.getX());
+                    int dz = Math.abs(pos.getZ() - existing.getZ());
+                    int dy = Math.abs(pos.getY() - existing.getY());
+                    if (dx <= 2 && dz <= 2 && dy <= 6) {
+                        matchingTree = tree;
+                        break;
+                    }
+                }
+                if (matchingTree != null) break;
+            }
+
+            if (matchingTree != null) {
+                matchingTree.logs.add(pos);
+                if (pos.getY() < matchingTree.baseLog.getY()) {
+                    matchingTree.baseLog = pos;
+                }
+            } else {
+                trees.add(new TreeInfo(pos));
+            }
+        }
+
+        for (TreeInfo tree : trees) {
+            BlockPos base = tree.baseLog;
+            BetterBlockPos bestStand = null;
+            double bestDist = Double.MAX_VALUE;
+
+            BlockPos[] neighbors = new BlockPos[] {
+                    base.east(), base.west(), base.south(), base.north(),
+                    base.east().below(), base.west().below(), base.south().below(), base.north().below()
+            };
+
+            for (BlockPos n : neighbors) {
+                try {
+                    BlockState feetState = ctx.world().getBlockState(n);
+                    BlockState headState = ctx.world().getBlockState(n.above());
+                    BlockState floorState = ctx.world().getBlockState(n.below());
+
+                    boolean feetPassable = feetState.isAir() || feetState.canBeReplaced() || feetState.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock;
+                    boolean headPassable = headState.isAir() || headState.canBeReplaced() || headState.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock;
+                    boolean floorSolid = !floorState.isAir() && floorState.isSolid();
+
+                    if (feetPassable && headPassable && floorSolid) {
+                        double d = ctx.playerFeet().distSqr(n);
+                        if (d < bestDist) {
+                            bestDist = d;
+                            bestStand = new BetterBlockPos(n);
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            if (bestStand == null) {
+                bestStand = new BetterBlockPos(base);
+            }
+            tree.standPos = bestStand;
+        }
+
+        return trees;
+    }
+
+    public static List<TreeInfo> planTreeTour(List<TreeInfo> trees, BetterBlockPos startPos, int maxTrees) {
+        if (trees == null || trees.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<TreeInfo> unvisited = new ArrayList<>(trees);
+        List<TreeInfo> tour = new ArrayList<>();
+        BetterBlockPos current = startPos;
+
+        int limit = Math.min(unvisited.size(), maxTrees);
+        while (!unvisited.isEmpty() && tour.size() < limit) {
+            TreeInfo bestTree = null;
+            double bestDist = Double.MAX_VALUE;
+
+            for (TreeInfo tree : unvisited) {
+                double d = current.distSqr(tree.standPos);
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestTree = tree;
+                }
+            }
+
+            if (bestTree == null) break;
+            tour.add(bestTree);
+            unvisited.remove(bestTree);
+            current = bestTree.standPos;
+        }
+
+        return tour;
+    }
+
+    private boolean isWoodFilter(BlockOptionalMetaLookup f) {
+        if (f == null || f.blocks().isEmpty()) return false;
+        return f.blocks().stream().allMatch(b -> {
+            String name = b.getBlock().getDescriptionId().toLowerCase();
+            return name.contains("log") || name.contains("wood") || name.contains("stem") || name.contains("hyphae");
+        });
     }
 }

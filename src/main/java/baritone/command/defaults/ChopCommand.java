@@ -57,6 +57,12 @@ public class ChopCommand extends Command {
         Baritone.settings().maxCachedWorldScanCount.value = 1000;
         Baritone.settings().extendCacheOnThreshold.value = true;
 
+        // CẤU HÌNH TIMEOUT CHO 1 LẦN TÍNH TOÁN SIÊU DÀI QUA NHIỀU CÂY:
+        Baritone.settings().primaryTimeoutMS.value = 20000L;
+        Baritone.settings().failureTimeoutMS.value = 30000L;
+        Baritone.settings().planAheadPrimaryTimeoutMS.value = 10000L;
+        Baritone.settings().planAheadFailureTimeoutMS.value = 15000L;
+
         Baritone.settings().autoEat.value = true;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = true;
@@ -107,6 +113,7 @@ public class ChopCommand extends Command {
         logDirect("§a[AutoChop] Đã bắt đầu chế độ TỰ ĐỘNG CHẶT CÂY (Lumberjack)!");
         logDirect("§a  ✔ Mục tiêu: Sồi, Bạch Dương, Thông, Sồi Sẫm, Keo, Rừng, Anh Đào, Đước...");
         logDirect("§a  ✔ Tự đổi Rìu (Auto-Tool) & tự động gom gỗ rơi rớt!");
+        baritone.getMineProcess().setChopMode(true);
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }
 
