@@ -131,6 +131,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private BlockPos branchPoint;
     private GoalRunAway branchPointRunaway;
     private BlockPos tunnelOrigin;
+    private int tunnelEscapeTicks = 0;
+    private BlockPos tunnelOriginPos = null;
+    private BlockPos stairOriginPos = null;
+    private BlockPos shaftOriginPos = null;
     private net.minecraft.core.Direction tunnelDirection;
     private int eatingSlot = -1;
     private int eatTicks = 0;
@@ -454,6 +458,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             eatTicks = 0;
         }
         tunnelOrigin = null;
+        tunnelEscapeTicks = 0;
+        tunnelOriginPos = null;
+        stairOriginPos = null;
+        shaftOriginPos = null;
         tunnelDirection = null;
         branchPoint = null;
         branchPointRunaway = null;
@@ -648,28 +656,38 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         int currentY = ctx.playerFeet().y;
 
         // Đánh dấu đã chạm tới độ sâu targetY (hoặc xuất phát ngay tại tầng đào)
-        if (currentY <= targetY) {
+        if (currentY <= targetY + 1) {
             hasReachedTargetY = true;
         }
 
         // Kiểm tra xem AntiStuck có yêu cầu đào ngược lên không (thoát bedrock / chướng ngại vật):
         if (tunnelOrigin != null && tunnelOrigin.getY() > currentY) {
-            if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-                net.minecraft.core.Direction dir = ctx.player().getDirection();
-                tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+            tunnelEscapeTicks++;
+            if (tunnelEscapeTicks > 80) { // 4s timeout thoát kẹt, tránh loop vô hạn
+                tunnelOrigin = null;
+                tunnelEscapeTicks = 0;
+                forceReroute = true;
+            } else {
+                if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                    net.minecraft.core.Direction dir = ctx.player().getDirection();
+                    tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                }
+                int rise = 1;
+                BlockPos escapePos = new BlockPos(
+                        ctx.playerFeet().x + tunnelDirection.getStepX() * rise,
+                        currentY + rise,
+                        ctx.playerFeet().z + tunnelDirection.getStepZ() * rise
+                );
+                if (tickCount % 20 == 0) {
+                    logDirect("§b[AntiStuck] Đang đào ngược lên Y=" + (currentY + rise) + " để thoát kẹt...");
+                }
+                boolean fr = forceReroute;
+                forceReroute = false;
+                return new PathingCommand(new GoalTwoBlocks(escapePos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             }
-            int rise = 1;
-            BlockPos escapePos = new BlockPos(
-                    ctx.playerFeet().x + tunnelDirection.getStepX() * rise,
-                    currentY + rise,
-                    ctx.playerFeet().z + tunnelDirection.getStepZ() * rise
-            );
-            logDirect("§b[AntiStuck] Đang đào ngược lên Y=" + (currentY + rise) + " để thoát kẹt...");
-            boolean fr = forceReroute;
-            forceReroute = false;
-            return new PathingCommand(new GoalTwoBlocks(escapePos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
         } else if (tunnelOrigin != null && currentY >= tunnelOrigin.getY()) {
             tunnelOrigin = null;
+            tunnelEscapeTicks = 0;
         }
 
         // KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y=-58 từ mặt đất):
@@ -703,47 +721,55 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 }
             }
 
+            if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                net.minecraft.core.Direction dir = ctx.player().getDirection();
+                tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+            }
+
             // CHỈ KHI KHÔNG TÌM ĐƯỢC HỐ/HANG MỞ MỚI TIẾN HÀNH ĐÀO XUỐNG:
             if (Baritone.settings().straightDownMine.value) {
                 // CHẾ ĐỘ 1: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI (SHAFT DOWN) SIÊU TỐC
-                // Giữ nguyên tọa độ X, Z hiện tại, đào từng chặng 2 block xuống dưới để A* tính toán 0ms!
-                int drop = Math.min(2, currentY - targetY);
-                BlockPos shaftTarget = new BlockPos(ctx.playerFeet().x, currentY - drop, ctx.playerFeet().z);
-                return new PathingCommand(new GoalTwoBlocks(shaftTarget), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
-            } else {
-                // CHẾ ĐỘ 2: ĐÀO CẦU THANG DỐC 1:1 (STAIRCASE DESCENT)
-                if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-                    net.minecraft.core.Direction dir = ctx.player().getDirection();
-                    tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                if (shaftOriginPos == null || fr || shaftOriginPos.getX() != ctx.playerFeet().x || shaftOriginPos.getZ() != ctx.playerFeet().z) {
+                    shaftOriginPos = ctx.playerFeet();
+                } else if (shaftOriginPos.getY() - currentY >= 5) {
+                    shaftOriginPos = ctx.playerFeet();
                 }
-                int drop = Math.min(4, currentY - targetY);
-                BlockPos stairPos = new BlockPos(
-                        ctx.playerFeet().x + tunnelDirection.getStepX() * drop,
-                        currentY - drop,
-                        ctx.playerFeet().z + tunnelDirection.getStepZ() * drop
-                );
-                return new PathingCommand(new GoalTwoBlocks(stairPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                Goal shaftGoal = new GoalShaftDown(shaftOriginPos.getX(), shaftOriginPos.getY(), shaftOriginPos.getZ(), targetY);
+                return new PathingCommand(shaftGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            } else {
+                // CHẾ ĐỘ 2: ĐÀO CẦU THANG DỐC 1:1 (STAIRCASE DESCENT) SIÊU TỐC
+                if (stairOriginPos == null || fr) {
+                    stairOriginPos = ctx.playerFeet();
+                } else {
+                    int distFwd = (ctx.playerFeet().x - stairOriginPos.getX()) * tunnelDirection.getStepX()
+                            + (ctx.playerFeet().z - stairOriginPos.getZ()) * tunnelDirection.getStepZ();
+                    if (distFwd >= 10) {
+                        stairOriginPos = ctx.playerFeet();
+                    }
+                }
+                Goal stairGoal = new GoalStaircaseDescent(stairOriginPos, tunnelDirection, targetY);
+                return new PathingCommand(stairGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             }
         }
 
-        // Lúc này mới bắt đầu đào ngang thẳng tiến 16 block phía trước!
+        // Lúc này mới bắt đầu đào ngang thẳng tiến trong hầm theo tunnelDirection:
         if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
             net.minecraft.core.Direction dir = ctx.player().getDirection();
             tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
         }
-        // Điểm waypoint ổn định: neo ở targetY (ví dụ -58), không reset chỉ vì bot vừa bước lên 1 bậc block!
-        if (currentTunnelTarget == null || ctx.playerFeet().distSqr(currentTunnelTarget) <= 9 || forceReroute) {
-            currentTunnelTarget = new BlockPos(
-                    ctx.playerFeet().x + tunnelDirection.getStepX() * 16,
-                    targetY,
-                    ctx.playerFeet().z + tunnelDirection.getStepZ() * 16
-            );
+        if (tunnelOriginPos == null || forceReroute) {
+            tunnelOriginPos = ctx.playerFeet();
+        } else {
+            int distFwd = (ctx.playerFeet().x - tunnelOriginPos.getX()) * tunnelDirection.getStepX()
+                    + (ctx.playerFeet().z - tunnelOriginPos.getZ()) * tunnelDirection.getStepZ();
+            if (distFwd >= 14) {
+                tunnelOriginPos = ctx.playerFeet();
+            }
         }
-        if (forceReroute) {
-            forceReroute = false;
-            return new PathingCommand(new GoalTwoBlocks(currentTunnelTarget), PathingCommandType.CANCEL_AND_SET_GOAL);
-        }
-        return new PathingCommand(new GoalTwoBlocks(currentTunnelTarget), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        boolean fr = forceReroute;
+        forceReroute = false;
+        Goal tunnelGoal = new GoalDirectionalTunnel(tunnelOriginPos, tunnelDirection, targetY);
+        return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
     }
 
     private void rescan(List<BlockPos> already, CalculationContext context) {
@@ -1749,16 +1775,23 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     if (drop > 1) {
                         logDirect("§c[AntiStuck] Kẹt đào dốc cả 4 hướng! Chuyển sang đào thẳng đứng (Shaft Down) để vượt qua vật cản...");
                         Baritone.settings().straightDownMine.value = true;
+                        shaftOriginPos = null;
                     } else {
                         int escapeY = currentFeet.y + 2;
                         logDirect("§c[AntiStuck] Kẹt đào dốc cả 4 hướng! Bước ngược lên Y=" + escapeY + " để tìm lối khác...");
                         tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
+                        tunnelEscapeTicks = 0;
                     }
+                    stairOriginPos = null;
+                    tunnelOriginPos = null;
                     forceReroute = true;
                     return;
                 }
                 net.minecraft.core.Direction newDir = tunnelDirection.getClockWise();
                 tunnelDirection = newDir;
+                stairOriginPos = null;
+                shaftOriginPos = null;
+                tunnelOriginPos = null;
                 logDirect("§6[AntiStuck] Gặp vật cản khi đào dốc xuống (thử " + stuckRetries + "/4)! Tự động đổi hướng đào sang " + newDir.getName().toUpperCase() + "...");
                 forceReroute = true;
                 return;
@@ -1774,13 +1807,21 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 int escapeY = Math.min(currentFeet.y + 2, targetY + 5);
                 logDirect("§c[AntiStuck] Bị kẹt bedrock cả 4 hướng! Đào ngược lên Y=" + escapeY + " để thoát...");
                 tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
+                tunnelEscapeTicks = 0;
+                stairOriginPos = null;
+                shaftOriginPos = null;
+                tunnelOriginPos = null;
                 stuckRetries = 0;
                 forceReroute = true;
                 return;
             }
             net.minecraft.core.Direction newDir = tunnelDirection.getClockWise();
             tunnelDirection = newDir;
-            tunnelOrigin = new BlockPos(currentFeet.x, targetY, currentFeet.z);
+            tunnelOrigin = null;
+            tunnelEscapeTicks = 0;
+            tunnelOriginPos = null;
+            stairOriginPos = null;
+            shaftOriginPos = null;
             currentTunnelTarget = null;
             logDirect("§6[AntiStuck] Bị kẹt hầm/gặp Bedrock tại tầng đáy! Tự động chuyển hướng đào hầm sang " + newDir.getName().toUpperCase() + "!");
             forceReroute = true;
@@ -2296,8 +2337,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.branchPointRunaway = null;
         this.anticipatedDrops = new HashMap<>();
         this.currentTunnelTarget = null;
+        this.tunnelOrigin = null;
+        this.tunnelEscapeTicks = 0;
+        this.tunnelOriginPos = null;
+        this.stairOriginPos = null;
+        this.shaftOriginPos = null;
         this.pillarFailCount = 0;
-        this.hasReachedTargetY = false;
+        this.hasReachedTargetY = ctx.player() != null && ctx.playerFeet().y <= Baritone.settings().legitMineYLevel.value + 1;
         this.activeMiningBlock = null;
         this.activeMiningTicks = 0;
         this.lockedTargetOre = null;
@@ -2330,5 +2376,165 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return f;
         }
         return filter;
+    }
+
+    public static class GoalDirectionalTunnel implements Goal {
+        public final int startX, startZ;
+        public final int targetY;
+        public final int dx, dz;
+
+        public GoalDirectionalTunnel(BlockPos origin, net.minecraft.core.Direction dir, int targetY) {
+            this.startX = origin.getX();
+            this.startZ = origin.getZ();
+            this.targetY = targetY;
+            this.dx = dir.getStepX();
+            this.dz = dir.getStepZ();
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            int distFwd = (x - startX) * dx + (z - startZ) * dz;
+            int distSide = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
+            return distFwd >= 16 && distSide == 0 && Math.abs(y - targetY) <= 1;
+        }
+
+        @Override
+        public double heuristic(int x, int y, int z) {
+            int distFwd = (x - startX) * dx + (z - startZ) * dz;
+            int remainingFwd = Math.max(0, 16 - distFwd);
+            int distSide = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
+            int vertDev = Math.abs(y - targetY);
+
+            return remainingFwd * 100.0 + distSide * 1000.0 + vertDev * 1000.0;
+        }
+
+        @Override
+        public double heuristic() {
+            return 0;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GoalDirectionalTunnel)) return false;
+            GoalDirectionalTunnel that = (GoalDirectionalTunnel) o;
+            return startX == that.startX && startZ == that.startZ && targetY == that.targetY && dx == that.dx && dz == that.dz;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(startX, startZ, targetY, dx, dz);
+        }
+
+        @Override
+        public String toString() {
+            return "GoalDirectionalTunnel{start=" + startX + "," + startZ + ", dir=" + dx + "," + dz + ", targetY=" + targetY + "}";
+        }
+    }
+
+    public static class GoalStaircaseDescent implements Goal {
+        public final int startX, startY, startZ;
+        public final int targetY;
+        public final int dx, dz;
+
+        public GoalStaircaseDescent(BlockPos origin, net.minecraft.core.Direction dir, int targetY) {
+            this.startX = origin.getX();
+            this.startY = origin.getY();
+            this.startZ = origin.getZ();
+            this.targetY = targetY;
+            this.dx = dir.getStepX();
+            this.dz = dir.getStepZ();
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            int distFwd = (x - startX) * dx + (z - startZ) * dz;
+            int distSide = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
+            return distSide == 0 && (y <= targetY || distFwd >= 12);
+        }
+
+        @Override
+        public double heuristic(int x, int y, int z) {
+            int distFwd = (x - startX) * dx + (z - startZ) * dz;
+            int distSide = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
+            int idealY = Math.max(targetY, startY - distFwd);
+            int vertDev = Math.abs(y - idealY);
+
+            int remainingY = Math.max(0, y - targetY);
+            int remainingFwd = Math.max(0, (startY - targetY) - distFwd);
+
+            return remainingY * 100.0 + remainingFwd * 50.0 + distSide * 1000.0 + vertDev * 500.0;
+        }
+
+        @Override
+        public double heuristic() {
+            return 0;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GoalStaircaseDescent)) return false;
+            GoalStaircaseDescent that = (GoalStaircaseDescent) o;
+            return startX == that.startX && startY == that.startY && startZ == that.startZ && targetY == that.targetY && dx == that.dx && dz == that.dz;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(startX, startY, startZ, targetY, dx, dz);
+        }
+
+        @Override
+        public String toString() {
+            return "GoalStaircaseDescent{start=" + startX + "," + startY + "," + startZ + ", dir=" + dx + "," + dz + ", targetY=" + targetY + "}";
+        }
+    }
+
+    public static class GoalShaftDown implements Goal {
+        public final int x, z;
+        public final int startY;
+        public final int targetY;
+
+        public GoalShaftDown(int x, int startY, int z, int targetY) {
+            this.x = x;
+            this.startY = startY;
+            this.z = z;
+            this.targetY = targetY;
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            return x == this.x && z == this.z && (y <= targetY || (startY - y) >= 6);
+        }
+
+        @Override
+        public double heuristic(int x, int y, int z) {
+            int horizDev = Math.abs(x - this.x) + Math.abs(z - this.z);
+            int remainingDrop = Math.max(0, y - targetY);
+            return remainingDrop * 100.0 + horizDev * 2000.0;
+        }
+
+        @Override
+        public double heuristic() {
+            return 0;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GoalShaftDown)) return false;
+            GoalShaftDown that = (GoalShaftDown) o;
+            return x == that.x && z == that.z && startY == that.startY && targetY == that.targetY;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, startY, z, targetY);
+        }
+
+        @Override
+        public String toString() {
+            return "GoalShaftDown{x=" + x + ", startY=" + startY + ", z=" + z + ", targetY=" + targetY + "}";
+        }
     }
 }
