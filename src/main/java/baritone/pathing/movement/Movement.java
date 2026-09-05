@@ -195,7 +195,7 @@ public abstract class Movement implements IMovement, MovementHelper {
     @Override
     public boolean safeToCancel() {
         if (baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
-                || ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock()) {
+                || (ctx.minecraft().gameMode != null && ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock())) {
             return false;
         }
         return safeToCancel(currentState);

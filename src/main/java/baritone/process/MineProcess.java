@@ -1329,13 +1329,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             for (int i = 0; i < 36; i++) {
                 ItemStack s = inv.get(i);
                 if (isBuildingBlock(s)) {
-                    if (s == stack || (ItemStack.isSameItemSameComponents(s, stack) && s.getCount() == stack.getCount())) {
+                    if (s == stack) {
                         return kept < 64;
                     }
                     kept += s.getCount();
-                    if (kept >= 64) {
-                        break;
-                    }
                 }
             }
             return kept < 64;
