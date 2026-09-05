@@ -307,16 +307,25 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                     knownOreLocations.clear();
                     lockedTargetOre = null;
-                    branchPoint = ctx.playerFeet();
+                    if (tunnelDirection == null && ctx.player() != null) {
+                        net.minecraft.core.Direction dir = ctx.player().getDirection();
+                        tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                    }
+                    branchPoint = (tunnelDirection != null)
+                            ? ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16)
+                            : ctx.playerFeet();
                     branchPointRunaway = null;
                     forceReroute = true;
                     consecutiveCalcFailures = 0;
                 } else if (Baritone.settings().exploreForBlocks.value || Baritone.settings().legitMine.value) {
                     // When exploring/tunneling, never cancel! Just reset origin and continue tunnel
-                    if (tunnelDirection == null) {
-                        tunnelDirection = ctx.player().getDirection().getAxis().isHorizontal() ? ctx.player().getDirection() : net.minecraft.core.Direction.NORTH;
+                    if (tunnelDirection == null && ctx.player() != null) {
+                        net.minecraft.core.Direction dir = ctx.player().getDirection();
+                        tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
                     }
-                    branchPoint = ctx.playerFeet();
+                    branchPoint = (tunnelDirection != null)
+                            ? ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16)
+                            : ctx.playerFeet();
                     branchPointRunaway = null;
                 } else {
                     logDirect("Unable to find any path to " + filter + ", canceling mine");
@@ -715,7 +724,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 List<BlockPos> validDrops = droppedItems.stream().filter(dropPos -> {
                     if (tunnelDirection != null) {
                         int dot = (dropPos.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (dropPos.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
-                        if (dot < 0 && ctx.playerFeet().distSqr(dropPos) > 4.0) {
+                        if (Baritone.settings().mineStrictOneDirection.value) {
+                            if (dot < 0) return false; // Tuyệt đối không quay xe nhặt đồ phía sau!
+                            int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
+                                    ? Math.abs(dropPos.getX() - ctx.playerFeet().getX())
+                                    : Math.abs(dropPos.getZ() - ctx.playerFeet().getZ());
+                            if (perpDist > 3) return false; // Lệch ngang quá 3 block -> không rẽ ngang nhặt!
+                        } else if (dot < 0 && ctx.playerFeet().distSqr(dropPos) > 4.0) {
                             return false; // Nằm ngược hướng đào hầm -> không quay đầu chạy ngược lại!
                         }
                     }
@@ -779,9 +794,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             List<BlockPos> allCandidates = new ArrayList<>(oreMemory);
             allCandidates.addAll(droppedItemsScan());
             // Loại bỏ các quặng nằm quá xa phía sau hướng hầm đang đào (tránh quay xe chạy ngược hầm cũ)
-            if (tunnelDirection != null && hasReachedTargetY) {
+            if (tunnelDirection != null && (hasReachedTargetY || Baritone.settings().mineStrictOneDirection.value)) {
                 allCandidates.removeIf(p -> {
                     int dot = (p.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (p.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
+                    if (Baritone.settings().mineStrictOneDirection.value) {
+                        if (dot < 0) return true; // Bỏ qua 100% quặng phía sau lưng!
+                        int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
+                                ? Math.abs(p.getX() - ctx.playerFeet().getX())
+                                : Math.abs(p.getZ() - ctx.playerFeet().getZ());
+                        return perpDist > 3; // Bỏ qua quặng lệch quá 3 block sang 2 bên!
+                    }
                     return dot < -8; // Ngược hướng quá 8 block -> bỏ qua, đào tiếp về phía trước!
                 });
             }
@@ -794,6 +816,21 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (!locs.isEmpty()) {
             CalculationContext context = new CalculationContext(baritone);
             List<BlockPos> locs2 = prune(context, new ArrayList<>(locs), filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
+            
+            // CHẾ ĐỘ ĐÀO 1 HƯỚNG DUY NHẤT (STRICT ONE-DIRECTION MINING):
+            // Lọc sạch 100% quặng nằm phía sau lưng hoặc lệch sâu sang 2 bên hông (> 3 block)
+            if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null && !isChopMode) {
+                locs2.removeIf(p -> {
+                    int forward = (p.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (p.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
+                    if (forward < 0) {
+                        return true; // Quặng phía sau lưng -> BỎ QUA 100%!
+                    }
+                    int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
+                            ? Math.abs(p.getX() - ctx.playerFeet().getX())
+                            : Math.abs(p.getZ() - ctx.playerFeet().getZ());
+                    return perpDist > 3; // Lệch ngang quá 3 block -> BỎ QUA!
+                });
+            }
             if (!locs2.isEmpty()) {
                 currentTunnelTarget = null;
 
@@ -939,6 +976,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return new PathingCommand(new GoalYLevel(bedrockEscapeTargetY), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                 } else {
                     // Giai đoạn 2: Đã đạt độ cao an toàn (curY >= bedrockEscapeTargetY)!
+                    if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null) {
+                        logDirect("§a[AntiStuck (1-Dir)] Đã nâng lên tầng an toàn Y=" + curY + "! Tiếp tục đào thẳng theo hướng " + tunnelDirection.getName().toUpperCase() + "...");
+                        bedrockEscapeActive = false;
+                        bedrockEscapeOrigin = null;
+                        bedrockEscapeTicks = 0;
+                        branchPoint = ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16);
+                        branchPointRunaway = new GoalRunAway(48, curY, branchPoint);
+                        boolean fr = forceReroute;
+                        forceReroute = false;
+                        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                    }
                     // Di chuyển cách xa điểm kẹt bedrock cũ ít nhất 20 block
                     int distAway = bedrockEscapeOrigin != null ? (int) Math.sqrt(ctx.playerFeet().distSqr(bedrockEscapeOrigin)) : 20;
                     if (distAway >= 20) {
@@ -946,7 +994,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         bedrockEscapeActive = false;
                         bedrockEscapeOrigin = null;
                         bedrockEscapeTicks = 0;
-                        branchPoint = ctx.playerFeet();
+                        branchPoint = (tunnelDirection != null) ? ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16) : ctx.playerFeet();
                         branchPointRunaway = null;
                         forceReroute = true;
                     } else {
@@ -956,7 +1004,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         boolean fr = forceReroute;
                         forceReroute = false;
                         if (branchPoint == null) {
-                            branchPoint = ctx.playerFeet();
+                            branchPoint = (tunnelDirection != null) ? ctx.playerFeet().relative(tunnelDirection.getOpposite(), 16) : ctx.playerFeet();
                         }
                         if (branchPointRunaway == null) {
                             branchPointRunaway = new GoalRunAway(20, curY, branchPoint);
@@ -992,19 +1040,24 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         // CHUẨN GỐC BARITONE CÓ ĐỊNH HƯỚNG: GoalRunAway liên tục đào xuyên đá tiến về phía trước theo tầng targetY
         int y = targetY;
+        if (hasReachedTargetY && Baritone.settings().mineStrictOneDirection.value) {
+            y = Math.min(-54, Math.max(targetY, ctx.playerFeet().y));
+        }
         if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
             net.minecraft.core.Direction dir = ctx.player().getDirection();
             tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
         }
-        // Kiểm tra an toàn: Nếu phía trước đường hầm có lồng Spawner trong vòng 16 block -> Tự động chuyển hướng hầm để tránh xa nguy hiểm!
-        CalculationContext spawnerCheckCtx = new CalculationContext(baritone);
-        BlockPos tunnelAhead = ctx.playerFeet().relative(tunnelDirection, 8);
-        if (isNearSpawner(spawnerCheckCtx, tunnelAhead, 12)) {
-            tunnelDirection = tunnelDirection.getClockWise();
-            logDirect("§c[Mine] Phát hiện lồng Spawner phía trước! Tự động chuyển hướng hầm sang " + tunnelDirection + " để tránh xa nguy hiểm!");
-            branchPoint = ctx.playerFeet();
-            branchPointRunaway = null;
-            forceReroute = true;
+        // Kiểm tra an toàn: Nếu phía trước đường hầm có lồng Spawner trong vòng 16 block -> Tự động chuyển hướng hầm để tránh xa nguy hiểm (chỉ khi không bật Strict 1-Dir)!
+        if (!Baritone.settings().mineStrictOneDirection.value) {
+            CalculationContext spawnerCheckCtx = new CalculationContext(baritone);
+            BlockPos tunnelAhead = ctx.playerFeet().relative(tunnelDirection, 8);
+            if (isNearSpawner(spawnerCheckCtx, tunnelAhead, 12)) {
+                tunnelDirection = tunnelDirection.getClockWise();
+                logDirect("§c[Mine] Phát hiện lồng Spawner phía trước! Tự động chuyển hướng hầm sang " + tunnelDirection + " để tránh xa nguy hiểm!");
+                branchPoint = ctx.playerFeet();
+                branchPointRunaway = null;
+                forceReroute = true;
+            }
         }
         // Đặt branchPoint 16 block phía sau lưng người chơi theo tunnelDirection:
         // Di chuyển về phía trước (tunnelDirection) làm tăng khoảng cách -> heuristic âm hơn (tốt hơn)
@@ -2713,14 +2766,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             lastStuckOrePos = pos;
                             stuckRetries = 1;
                         }
-                        if (stuckRetries < 2) {
-                            lockedTargetOre = null;
-                            forceReroute = true;
-                            baritone.getPathingBehavior().cancelSegmentIfSafe();
-                            logDirect("§e[AntiStuck] Thử đổi hướng tiếp cận quặng tại " + pos.toShortString() + " (lần 1)...");
-                            return;
-                        } else {
-                            // Đã thử nhưng vẫn kẹt: Thêm NGAY LẬP TỨC toàn bộ vỉa quặng vào BLACKLIST để không bao giờ đào lại!
+                        if (Baritone.settings().mineStrictOneDirection.value || stuckRetries >= 2) {
+                            // Đã thử nhưng vẫn kẹt (hoặc đang ở chế độ 1 hướng): Thêm NGAY LẬP TỨC toàn bộ vỉa quặng vào BLACKLIST để không bao giờ đào lại!
                             List<BlockPos> veinOres = candidates.stream()
                                     .filter(p -> p.equals(pos) || p.distSqr(pos) <= 9)
                                     .collect(Collectors.toList());
@@ -2731,11 +2778,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             if (knownOreLocations != null) {
                                 knownOreLocations.removeIf(blacklist::contains);
                             }
-                            logDirect("§c[AntiStuck] Quặng tại " + pos.toShortString() + " (" + veinOres.size() + " block) không thể tiếp cận/đào được! ĐÃ THÊM VÀO BLACKLIST VĨNH VIỄN!");
+                            logDirect("§c[AntiStuck (1-Dir)] Quặng tại " + pos.toShortString() + " (" + veinOres.size() + " block) không thể đào thẳng tới được! ĐÃ BLACKLIST để tiếp tục tiến lên!");
                             lockedTargetOre = null;
                             forceReroute = true;
                             stuckRetries = 0;
                             lastStuckOrePos = null;
+                            return;
+                        } else {
+                            lockedTargetOre = null;
+                            forceReroute = true;
+                            baritone.getPathingBehavior().cancelSegmentIfSafe();
+                            logDirect("§e[AntiStuck] Thử đổi hướng tiếp cận quặng tại " + pos.toShortString() + " (lần 1)...");
                             return;
                         }
                     }
@@ -2748,6 +2801,24 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
                     net.minecraft.core.Direction dir = ctx.player().getDirection();
                     tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                }
+                if (Baritone.settings().mineStrictOneDirection.value) {
+                    // CHẾ ĐỘ 1 HƯỚNG: TUYỆT ĐỐI KHÔNG XOAY CHIỀU KIM ĐỒNG HỒ!
+                    stairOriginPos = null;
+                    shaftOriginPos = null;
+                    tunnelOriginPos = null;
+                    branchPoint = null;
+                    branchPointRunaway = null;
+                    currentTunnelTarget = null;
+                    if (stuckRetries >= 3) {
+                        stuckRetries = 0;
+                        logDirect("§c[AntiStuck (1-Dir)] Kẹt đào dốc! Tạm chuyển sang đào thẳng đứng (Shaft Down) để vượt qua vật cản...");
+                        Baritone.settings().straightDownMine.value = true;
+                    } else {
+                        logDirect("§6[AntiStuck (1-Dir)] Đang cố đào thông dốc phía trước theo hướng " + tunnelDirection.getName().toUpperCase() + "...");
+                    }
+                    forceReroute = true;
+                    return;
                 }
                 if (stuckRetries >= 4) {
                     stuckRetries = 0;
@@ -2794,6 +2865,28 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
                 net.minecraft.core.Direction dir = ctx.player().getDirection();
                 tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+            }
+            if (Baritone.settings().mineStrictOneDirection.value) {
+                // CHẾ ĐỘ 1 HƯỚNG: TUYỆT ĐỐI KHÔNG XOAY CHIỀU KIM ĐỒNG HỒ!
+                tunnelOriginPos = null;
+                stairOriginPos = null;
+                shaftOriginPos = null;
+                branchPoint = null;
+                branchPointRunaway = null;
+                currentTunnelTarget = null;
+                if (stuckRetries >= 2) {
+                    int safeY = Math.min(-54, currentFeet.y + 1);
+                    logDirect("§6[AntiStuck (1-Dir)] Gặp Bedrock chắn đường! Giữ nguyên hướng " + tunnelDirection.getName().toUpperCase() + ", nâng độ cao lên Y=" + safeY + " để tiếp tục đào thẳng...");
+                    bedrockEscapeActive = true;
+                    bedrockEscapeOrigin = currentFeet;
+                    bedrockEscapeTargetY = safeY;
+                    bedrockEscapeTicks = 0;
+                    stuckRetries = 0;
+                } else {
+                    logDirect("§6[AntiStuck (1-Dir)] Đang đào thông vật cản/Bedrock theo hướng " + tunnelDirection.getName().toUpperCase() + " (thử " + stuckRetries + "/2)...");
+                }
+                forceReroute = true;
+                return;
             }
             // Sau 4 lần thử (đã xoay cả 4 hướng) mà vẫn kẹt = toàn Bedrock -> Kích hoạt cơ chế thoát Bedrock lên tầng an toàn (safeY >= -54)
             if (stuckRetries >= 4) {
@@ -3429,6 +3522,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.bedrockEscapeTargetY = -54;
         this.bedrockEscapeTicks = 0;
         this.tunnelOriginPos = null;
+        if (ctx.player() != null) {
+            net.minecraft.core.Direction dir = ctx.player().getDirection();
+            this.tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+        } else {
+            this.tunnelDirection = null;
+        }
         this.stairOriginPos = null;
         this.shaftOriginPos = null;
         this.pillarFailCount = 0;

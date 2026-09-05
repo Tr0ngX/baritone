@@ -76,6 +76,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optStreamerMode = false;
     public static boolean optHideScoreboard = false;
     public static boolean optHidePlayerName = false;
+    public static boolean optStrictOneDirection = true;
     public static int optTargetY = -54;
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
@@ -278,15 +279,18 @@ public class AutoMineScreen extends Screen implements Helper {
         addRenderableWidget(createOptBtn(rightSub1, startY + gap * 7, btnW, btnH, "No-Swing", optHideSwing, () -> optHideSwing = !optHideSwing));
         addRenderableWidget(createOptBtn(rightSub2, startY + gap * 7, btnW, btnH, "FastPlace", optFastPlace, () -> optFastPlace = !optFastPlace));
 
-        // Hàng 8 cột 2: Streamer Mode (Master Toggle: Ẩn cả Bảng Điểm + Tên Player)
-        int streamerBtnW = colW - 16;
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 8, streamerBtnW, btnH, "Streamer Mode (Hide All)", optStreamerMode, () -> {
+        // Hàng 8 cột 2: Streamer Mode & Strict 1-Dir (Chỉ đào 1 hướng thẳng tiến)
+        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 8, btnW, btnH, "Streamer Mode", optStreamerMode, () -> {
             optStreamerMode = !optStreamerMode;
             optHideScoreboard = optStreamerMode;
             optHidePlayerName = optStreamerMode;
             Baritone.settings().streamerMode.value = optStreamerMode;
             Baritone.settings().hideScoreboard.value = optHideScoreboard;
             Baritone.settings().hidePlayerName.value = optHidePlayerName;
+        }));
+        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 8, btnW, btnH, "Strict 1-Dir", optStrictOneDirection, () -> {
+            optStrictOneDirection = !optStrictOneDirection;
+            Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
         }));
 
 
@@ -513,6 +517,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().fastJump.value = true;
         Baritone.settings().straightDownMine.value = optShaftDown;
         Baritone.settings().preferWaterBucketOverDigging.value = true;
+        Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
         
         int targetY = optTargetY == 999 ? -54 : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;

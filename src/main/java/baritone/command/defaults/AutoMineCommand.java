@@ -107,6 +107,7 @@ public class AutoMineCommand extends Command {
 
         Baritone.settings().legitMineYLevel.value = -58;
         Baritone.settings().exploreMaintainY.value = -58;
+        Baritone.settings().mineStrictOneDirection.value = true;
 
         List<BlockOptionalMeta> boms = new ArrayList<>();
         if (args.hasAny()) {

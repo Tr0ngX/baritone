@@ -120,6 +120,13 @@ public final class Settings {
     public final Setting<String> censoredPlayerName = new Setting<>("Protected");
 
     /**
+     * Chế độ chỉ đào duy nhất một hướng thẳng tiến (Strict One-Direction Mining).
+     * Khi bật, bot tuyệt đối KHÔNG xoay 90 độ, KHÔNG quay đầu chạy ngược lại,
+     * chỉ tập trung đào thẳng về phía trước theo đúng 1 hướng đã khóa và bỏ qua mọi quặng phía sau.
+     */
+    public final Setting<Boolean> mineStrictOneDirection = new Setting<>(true);
+
+    /**
      * Allow Baritone to place blocks
      */
     public final Setting<Boolean> allowPlace = new Setting<>(true);

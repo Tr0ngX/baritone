@@ -91,6 +91,7 @@ public class MineCommand extends Command {
             Baritone.settings().movementTimeoutTicks.value = 140;
             Baritone.settings().legitMineYLevel.value = -58;
             Baritone.settings().exploreMaintainY.value = -58;
+            Baritone.settings().mineStrictOneDirection.value = true;
         }
         BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
         logDirect(String.format("Mining %s", boms.toString()));
