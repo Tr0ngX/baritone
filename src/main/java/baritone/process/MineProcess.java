@@ -318,8 +318,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     branchPointRunaway = null;
                     forceReroute = true;
                     consecutiveCalcFailures = 0;
-                } else if (Baritone.settings().exploreForBlocks.value || Baritone.settings().legitMine.value) {
-                    // When exploring/tunneling, never cancel! Just reset origin and continue tunnel
+                } else if (Baritone.settings().exploreForBlocks.value || Baritone.settings().legitMine.value || Baritone.settings().mineStrictOneDirection.value) {
+                    // When exploring/tunneling/strict 1-dir, never cancel! Just reset origin and continue tunnel
                     if (tunnelDirection == null && ctx.player() != null) {
                         net.minecraft.core.Direction dir = ctx.player().getDirection();
                         tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
@@ -1290,10 +1290,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (y <= targetY) {
                 return true;
             }
+            int dropped = startY - y;
             int forward = (x - startX) * dx + (z - startZ) * dz;
             int lateral = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
-            int dropped = startY - y;
-            return forward >= 10 && dropped >= 5 && lateral <= 1;
+            return (dropped >= 2 && forward >= 1 && lateral <= 2) || (dropped >= 4 && forward >= 0 && lateral <= 2);
         }
 
         @Override
@@ -1302,14 +1302,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
             int forward = (x - startX) * dx + (z - startZ) * dz;
             int lateral = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
+            int dropped = startY - y;
 
-            if (forward <= 0) {
-                h += 5000.0 - forward * 300.0;
-            } else {
-                h -= forward * 80.0;
+            if (dropped > 0) {
+                h -= dropped * 80.0;
             }
 
-            h += lateral * 1000.0;
+            if (forward < 0) {
+                h += 3000.0 - forward * 200.0;
+            } else {
+                h -= forward * 60.0;
+            }
+
+            h += lateral * 500.0;
 
             if (targetOres != null && !targetOres.isEmpty()) {
                 double minOreDistSq = Double.MAX_VALUE;
