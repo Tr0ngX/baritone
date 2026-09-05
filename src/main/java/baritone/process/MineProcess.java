@@ -210,6 +210,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private final Set<Integer> shulkerUntransferableSlots = new HashSet<>();
     private int shulkerTransferredCount = 0;
     private boolean shulkerClearingInProgress = false;
+    private int consecutiveCalcFailures = 0;
 
     public MineProcess(Baritone baritone) {
         super(baritone);
@@ -243,23 +244,45 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     || baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
                     || ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock();
             if (!isMining) {
+                consecutiveCalcFailures++;
                 if (!knownOreLocations.isEmpty() && Baritone.settings().blacklistClosestOnFailure.value) {
                     logDirect("Unable to find any path to " + filter + ", retrying...");
-                    knownOreLocations.stream().min(Comparator.comparingDouble(ctx.playerFeet()::distSqr)).ifPresent(pos -> {
+                    BlockPos targetToBlacklist = lockedTargetOre != null
+                            ? lockedTargetOre
+                            : knownOreLocations.stream().min(Comparator.comparingDouble(ctx.playerFeet()::distSqr)).orElse(null);
+
+                    if (targetToBlacklist != null) {
                         // Blacklist TOÀN BỘ cụm vỉa quặng (distSqr <= 9) để không bao giờ đào lại nữa!
+                        final BlockPos posToBlacklist = targetToBlacklist;
                         List<BlockPos> veinOres = knownOreLocations.stream()
-                                .filter(p -> p.equals(pos) || p.distSqr(pos) <= 9)
+                                .filter(p -> p.equals(posToBlacklist) || p.distSqr(posToBlacklist) <= 9)
                                 .collect(Collectors.toList());
                         for (BlockPos p : veinOres) {
                             blacklist.add(p);
                             oreMemory.remove(p);
                         }
                         knownOreLocations.removeIf(blacklist::contains);
-                        if (lockedTargetOre != null && (lockedTargetOre.equals(pos) || lockedTargetOre.distSqr(pos) <= 9)) {
+                        if (lockedTargetOre != null && (lockedTargetOre.equals(posToBlacklist) || lockedTargetOre.distSqr(posToBlacklist) <= 9)) {
                             lockedTargetOre = null;
                         }
-                        logDirect("§c[Blacklist] Đã blacklist vỉa quặng không thể tìm đường tại " + pos.toShortString() + " (" + veinOres.size() + " block)!");
-                    });
+                        logDirect("§c[Blacklist] Đã blacklist vỉa quặng không thể tìm đường tại " + posToBlacklist.toShortString() + " (" + veinOres.size() + " block)!");
+                    }
+                }
+
+                // Nếu thất bại liên tiếp >= 3 lần (bị kẹt quanh các quặng không thể tới):
+                // Lập tức giải phóng toàn bộ quặng đang kẹt, buộc bot đào hầm tiến lên phía trước!
+                if (consecutiveCalcFailures >= 3) {
+                    logDirect("§e[Mine] Không thể tìm đường tới các quặng xung quanh sau " + consecutiveCalcFailures + " lần thử! Tạm bỏ qua và tiếp tục đào hầm tiến lên phía trước...");
+                    for (BlockPos p : knownOreLocations) {
+                        blacklist.add(p);
+                        oreMemory.remove(p);
+                    }
+                    knownOreLocations.clear();
+                    lockedTargetOre = null;
+                    branchPoint = ctx.playerFeet();
+                    branchPointRunaway = null;
+                    forceReroute = true;
+                    consecutiveCalcFailures = 0;
                 } else if (Baritone.settings().exploreForBlocks.value || Baritone.settings().legitMine.value) {
                     // When exploring/tunneling, never cancel! Just reset origin and continue tunnel
                     if (tunnelDirection == null) {
@@ -275,6 +298,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     cancel();
                     return null;
                 }
+            }
+        } else {
+            if (baritone.getPathingBehavior().isPathing()) {
+                consecutiveCalcFailures = 0;
             }
         }
 
@@ -597,7 +624,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // 1. Loại bỏ các vị trí đã bị blacklist
         oreMemory.removeIf(blacklist::contains);
 
-        // 2. Kiểm tra các vị trí trong chunk ĐANG LOAD mà không còn là quặng (đã đào) hoặc không thể đào (bedrock)
+        // 2. Loại bỏ các vị trí quặng quá cao so với tầng đào hiện tại (tránh nghẽn bộ nhớ)
+        int targetY = Baritone.settings().legitMineYLevel.value;
+        if (hasReachedTargetY || ctx.playerFeet().y <= targetY + 3) {
+            oreMemory.removeIf(pos -> pos.getY() > targetY + 6);
+        }
+
+        // 3. Kiểm tra các vị trí trong chunk ĐANG LOAD mà không còn là quặng (đã đào) hoặc không thể đào (bedrock)
         oreMemory.removeIf(pos -> {
             net.minecraft.world.level.chunk.LevelChunk chunk = ctx.world().getChunkSource().getChunk(pos.getX() >> 4, pos.getZ() >> 4, false);
             if (chunk != null && !chunk.isEmpty()) {
@@ -3114,14 +3147,28 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 .filter(pos -> !blacklist.contains(pos))
 
+                // LỌC TẦNG CAO: Không nhắm vào quặng quá cao so với tầng đào hầm thực tế
+                .filter(pos -> {
+                    int targetY = Baritone.settings().legitMineYLevel.value;
+                    int playerY = ctx.getBaritone().getPlayerContext().playerFeet().y;
+                    if (playerY <= targetY + 3) {
+                        // Đã ở tầng đào hầm đáy (targetY, ví dụ Y=-58): Chỉ đào quặng trong tầm với của hầm (Y <= targetY + 6)
+                        return pos.getY() <= targetY + 6;
+                    } else {
+                        // Đang trên đường đào dốc đi xuống: Không bao giờ quay ngược lên đào quặng cao hơn vị trí hiện tại
+                        return pos.getY() <= playerY + 3;
+                    }
+                })
+
                 // Né xa toàn bộ quặng nằm trong vùng nguy hiểm của lồng Spawner (mặc định 16 block)
                 .filter(pos -> !isNearSpawner(ctx, pos, Baritone.settings().mobSpawnerAvoidanceRadius.value))
 
                 .sorted((a, b) -> {
                     BlockPos p = ctx.getBaritone().getPlayerContext().player().blockPosition();
-                    double dyA = (a.getY() - p.getY()) * 3.0;
+                    // Phạt nặng chênh lệch độ cao Y (* 5.0) để ưu tiên quặng ngang tầng đào hiện tại
+                    double dyA = (a.getY() - p.getY()) * 5.0;
                     double distA = Math.pow(a.getX() - p.getX(), 2) + Math.pow(dyA, 2) + Math.pow(a.getZ() - p.getZ(), 2);
-                    double dyB = (b.getY() - p.getY()) * 3.0;
+                    double dyB = (b.getY() - p.getY()) * 5.0;
                     double distB = Math.pow(b.getX() - p.getX(), 2) + Math.pow(dyB, 2) + Math.pow(b.getZ() - p.getZ(), 2);
                     return Double.compare(distA, distB);
                 })
