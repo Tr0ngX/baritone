@@ -130,8 +130,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private Map<BlockPos, Long> anticipatedDrops;
     private BlockPos branchPoint;
     private GoalRunAway branchPointRunaway;
-    private BlockPos tunnelOrigin;
-    private int tunnelEscapeTicks = 0;
+    private boolean bedrockEscapeActive = false;
+    private BetterBlockPos bedrockEscapeOrigin = null;
+    private int bedrockEscapeTargetY = -54;
+    private int bedrockEscapeTicks = 0;
     private BlockPos tunnelOriginPos = null;
     private BlockPos stairOriginPos = null;
     private BlockPos shaftOriginPos = null;
@@ -462,8 +464,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             eatingSlot = -1;
             eatTicks = 0;
         }
-        tunnelOrigin = null;
-        tunnelEscapeTicks = 0;
+        bedrockEscapeActive = false;
+        bedrockEscapeOrigin = null;
+        bedrockEscapeTicks = 0;
         tunnelOriginPos = null;
         stairOriginPos = null;
         shaftOriginPos = null;
@@ -668,34 +671,51 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             hasReachedTargetY = true;
         }
 
-        // Kiểm tra xem AntiStuck có yêu cầu đào ngược lên không (thoát bedrock / chướng ngại vật):
-        if (tunnelOrigin != null && tunnelOrigin.getY() > currentY) {
-            tunnelEscapeTicks++;
-            if (tunnelEscapeTicks > 80) { // 4s timeout thoát kẹt, tránh loop vô hạn
-                tunnelOrigin = null;
-                tunnelEscapeTicks = 0;
+        // Kiểm tra xem AntiStuck có yêu cầu thoát bedrock không (thoát lên tầng an toàn Y >= -54 và rời xa điểm kẹt):
+        if (bedrockEscapeActive) {
+            bedrockEscapeTicks++;
+            if (bedrockEscapeTicks > 400) { // 20s timeout an toàn, tránh loop vô hạn
+                logDirect("§c[AntiStuck] Hết thời gian thoát kẹt bedrock, reset trạng thái đào hầm...");
+                bedrockEscapeActive = false;
+                bedrockEscapeOrigin = null;
+                bedrockEscapeTicks = 0;
                 forceReroute = true;
             } else {
-                if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
-                    net.minecraft.core.Direction dir = ctx.player().getDirection();
-                    tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                int curY = ctx.playerFeet().y;
+                // Giai đoạn 1: Đào ngược lên tầng an toàn (safeY >= -54)
+                if (curY < bedrockEscapeTargetY) {
+                    if (tickCount % 20 == 0) {
+                        logDirect("§b[AntiStuck] Đang đào ngược lên tầng an toàn Y=" + bedrockEscapeTargetY + " (hiện tại Y=" + curY + ") để thoát khỏi vùng Bedrock...");
+                    }
+                    boolean fr = forceReroute;
+                    forceReroute = false;
+                    return new PathingCommand(new GoalYLevel(bedrockEscapeTargetY), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                } else {
+                    // Giai đoạn 2: Đã đạt độ cao an toàn (curY >= bedrockEscapeTargetY)!
+                    // Đào ngang tại tầng an toàn để di chuyển cách xa điểm kẹt bedrock cũ ít nhất 20 block
+                    int distAway = bedrockEscapeOrigin != null ? (int) Math.sqrt(ctx.playerFeet().distSqr(bedrockEscapeOrigin)) : 20;
+                    if (distAway >= 20) {
+                        logDirect("§a[AntiStuck] Đã thoát xa vùng kẹt Bedrock " + distAway + "m! Trở lại trạng thái đào bình thường.");
+                        bedrockEscapeActive = false;
+                        bedrockEscapeOrigin = null;
+                        bedrockEscapeTicks = 0;
+                        tunnelOriginPos = ctx.playerFeet();
+                        forceReroute = true;
+                    } else {
+                        if (tickCount % 20 == 0) {
+                            logDirect("§a[AntiStuck] Đang đào ngang tại tầng an toàn Y=" + curY + " để rời khỏi vùng Bedrock (" + distAway + "/20m)...");
+                        }
+                        if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+                            net.minecraft.core.Direction dir = ctx.player().getDirection();
+                            tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+                        }
+                        boolean fr = forceReroute;
+                        forceReroute = false;
+                        Goal tunnelGoal = new GoalDirectionalTunnel(ctx.playerFeet(), tunnelDirection, curY);
+                        return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                    }
                 }
-                int rise = 1;
-                BlockPos escapePos = new BlockPos(
-                        ctx.playerFeet().x + tunnelDirection.getStepX() * rise,
-                        currentY + rise,
-                        ctx.playerFeet().z + tunnelDirection.getStepZ() * rise
-                );
-                if (tickCount % 20 == 0) {
-                    logDirect("§b[AntiStuck] Đang đào ngược lên Y=" + (currentY + rise) + " để thoát kẹt...");
-                }
-                boolean fr = forceReroute;
-                forceReroute = false;
-                return new PathingCommand(new GoalTwoBlocks(escapePos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             }
-        } else if (tunnelOrigin != null && currentY >= tunnelOrigin.getY()) {
-            tunnelOrigin = null;
-            tunnelEscapeTicks = 0;
         }
 
         // KHI NGƯỜI CHƠI CHƯA XUỐNG TỚI TẦNG TARGET Y (ví dụ Y=-58 từ mặt đất):
@@ -1703,6 +1723,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
             int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
             int minZ = Integer.MAX_VALUE, maxZ = Integer.MIN_VALUE;
+            double totalDist = 0;
             for (int i = 0; i < RECENT_POS_BUFFER_SIZE; i++) {
                 BetterBlockPos p = recentPositions[i];
                 if (p == null) continue;
@@ -1712,12 +1733,22 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 if (p.y > maxY) maxY = p.y;
                 if (p.z < minZ) minZ = p.z;
                 if (p.z > maxZ) maxZ = p.z;
+                if (i > 0) {
+                    BetterBlockPos prev = recentPositions[i - 1];
+                    if (prev != null) {
+                        double ddx = p.x - prev.x;
+                        double ddy = p.y - prev.y;
+                        double ddz = p.z - prev.z;
+                        totalDist += Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+                    }
+                }
             }
             double spanX = maxX - minX;
             double spanY = maxY - minY;
             double spanZ = maxZ - minZ;
             double maxSpan = Math.max(spanX, Math.max(spanY, spanZ));
-            if (maxSpan <= 2.5) {
+            // Chỉ coi là ping-pong dao động qua lại nếu thực sự di chuyển (totalDist >= 4.0) trong phạm vi hẹp <= 2.5
+            if (maxSpan <= 2.5 && totalDist >= 4.0) {
                 pingPongDetected = true;
             }
         }
@@ -1892,10 +1923,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         Baritone.settings().straightDownMine.value = true;
                         shaftOriginPos = null;
                     } else {
-                        int escapeY = currentFeet.y + 2;
-                        logDirect("§c[AntiStuck] Kẹt đào dốc cả 4 hướng! Bước ngược lên Y=" + escapeY + " để tìm lối khác...");
-                        tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
-                        tunnelEscapeTicks = 0;
+                        int escapeY = Math.max(-54, currentFeet.y + 2);
+                        logDirect("§c[AntiStuck] Kẹt đào dốc cả 4 hướng! Kích hoạt thoát hiểm lên tầng Y=" + escapeY + " để tìm lối khác...");
+                        bedrockEscapeActive = true;
+                        bedrockEscapeOrigin = currentFeet;
+                        bedrockEscapeTargetY = escapeY;
+                        bedrockEscapeTicks = 0;
                     }
                     stairOriginPos = null;
                     tunnelOriginPos = null;
@@ -1917,23 +1950,28 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 net.minecraft.core.Direction dir = ctx.player().getDirection();
                 tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
             }
-            // Sau 4 lần thử (đã xoay cả 4 hướng) mà vẫn kẹt = toàn Bedrock -> Đào ngược lên 2 block
+            // Sau 4 lần thử (đã xoay cả 4 hướng) mà vẫn kẹt = toàn Bedrock -> Kích hoạt cơ chế thoát Bedrock lên tầng an toàn (safeY >= -54)
             if (stuckRetries >= 4) {
-                int escapeY = Math.min(currentFeet.y + 2, targetY + 5);
-                logDirect("§c[AntiStuck] Bị kẹt bedrock cả 4 hướng! Đào ngược lên Y=" + escapeY + " để thoát...");
-                tunnelOrigin = new BlockPos(currentFeet.x, escapeY, currentFeet.z);
-                tunnelEscapeTicks = 0;
+                int safeY = Math.max(-54, targetY + 4);
+                logDirect("§c[AntiStuck] Bị kẹt bedrock cả 4 hướng! Kích hoạt cơ chế thoát bedrock lên tầng an toàn Y=" + safeY + "...");
+                bedrockEscapeActive = true;
+                bedrockEscapeOrigin = currentFeet;
+                bedrockEscapeTargetY = safeY;
+                bedrockEscapeTicks = 0;
                 stairOriginPos = null;
                 shaftOriginPos = null;
                 tunnelOriginPos = null;
                 stuckRetries = 0;
+                Baritone.settings().noPillar.value = false;
+                pillarFailCount = 0;
                 forceReroute = true;
                 return;
             }
             net.minecraft.core.Direction newDir = tunnelDirection.getClockWise();
             tunnelDirection = newDir;
-            tunnelOrigin = null;
-            tunnelEscapeTicks = 0;
+            bedrockEscapeActive = false;
+            bedrockEscapeOrigin = null;
+            bedrockEscapeTicks = 0;
             tunnelOriginPos = null;
             stairOriginPos = null;
             shaftOriginPos = null;
@@ -2452,8 +2490,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.branchPointRunaway = null;
         this.anticipatedDrops = new HashMap<>();
         this.currentTunnelTarget = null;
-        this.tunnelOrigin = null;
-        this.tunnelEscapeTicks = 0;
+        this.bedrockEscapeActive = false;
+        this.bedrockEscapeOrigin = null;
+        this.bedrockEscapeTargetY = -54;
+        this.bedrockEscapeTicks = 0;
         this.tunnelOriginPos = null;
         this.stairOriginPos = null;
         this.shaftOriginPos = null;
@@ -2513,7 +2553,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         public boolean isInGoal(int x, int y, int z) {
             int distFwd = (x - startX) * dx + (z - startZ) * dz;
             int distSide = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
-            return distFwd >= 16 && distSide == 0 && Math.abs(y - targetY) <= 1;
+            return distFwd >= 16 && distSide <= 2 && y >= targetY && y <= targetY + 2;
         }
 
         @Override
@@ -2523,7 +2563,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             int distSide = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
             int vertDev = Math.abs(y - targetY);
 
-            return remainingFwd * 100.0 + distSide * 1000.0 + vertDev * 1000.0;
+            return remainingFwd * 5.0 + distSide * 6.0 + vertDev * 10.0;
         }
 
         @Override
@@ -2568,7 +2608,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         public boolean isInGoal(int x, int y, int z) {
             int distFwd = (x - startX) * dx + (z - startZ) * dz;
             int distSide = Math.abs((x - startX) * dz) + Math.abs((z - startZ) * dx);
-            return distSide == 0 && (y <= targetY || distFwd >= 12);
+            return distSide <= 2 && (y <= targetY || distFwd >= 12);
         }
 
         @Override
@@ -2581,7 +2621,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             int remainingY = Math.max(0, y - targetY);
             int remainingFwd = Math.max(0, (startY - targetY) - distFwd);
 
-            return remainingY * 100.0 + remainingFwd * 50.0 + distSide * 1000.0 + vertDev * 500.0;
+            return remainingY * 8.0 + remainingFwd * 5.0 + distSide * 6.0 + vertDev * 10.0;
         }
 
         @Override
