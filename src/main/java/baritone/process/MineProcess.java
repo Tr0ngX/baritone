@@ -693,7 +693,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     ((Baritone) baritone).getInventoryBehavior().attemptToPutOnHotbar(waterSlot, s -> s == 8 || s == 7);
                 }
 
-                // 1. Quét tìm hố sâu / vách núi / hang động mở có độ tụt lớn gần đây để nhảy đáp nước (quét bán kính rộng 32 block)
+                // Quét tìm hố sâu / vách núi / hang động mở có độ tụt lớn gần đây để nhảy đáp nước (quét bán kính rộng 32 block)
                 Optional<BlockPos> opening = findNearbyDescentOpening(32, 3);
                 if (opening.isPresent()) {
                     BlockPos dropPos = opening.get();
@@ -701,14 +701,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     logDirect("§a[WaterDescent] Phát hiện hố/hang mở tụt " + dropAmount + " block! Ưu tiên nhảy đáp nước (MLG Bucket) thay vì đào xuống.");
                     return new PathingCommand(new GoalTwoBlocks(dropPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                 }
-
-                // 2. Thử đặt GoalYLevel(targetY) để A* tự động tìm các đường tụt nước/hang động ở xa hơn
-                if (!lastCalcFailed) {
-                    return new PathingCommand(new GoalYLevel(targetY), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
-                }
             }
 
-            // CHỈ KHI KHÔNG CÓ XÔ NƯỚC HOẶC KHÔNG TÌM ĐƯỢC ĐƯỜNG TỤT MỚI ĐÀO XUỐNG:
+            // CHỈ KHI KHÔNG TÌM ĐƯỢC HỐ/HANG MỞ MỚI TIẾN HÀNH ĐÀO XUỐNG:
             if (Baritone.settings().straightDownMine.value) {
                 // CHẾ ĐỘ 1: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI (SHAFT DOWN) SIÊU TỐC
                 // Giữ nguyên tọa độ X, Z hiện tại, đào từng chặng 2 block xuống dưới để A* tính toán 0ms!
@@ -1926,7 +1921,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         BlockPos bestCandidate = null;
         int maxDropFound = 0;
-        int bestScore = -999999;
+        int bestScore = 0;
 
         for (int r = 0; r <= maxHorizontalRadius; r++) {
             for (int dx = -r; dx <= r; dx++) {
@@ -1963,16 +1958,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                                 if (drop >= minDrop) {
                                     boolean isOpenFromFeet = airTopY >= feet.y - 1;
+                                    int ceilingThickness = feet.y - airTopY;
+                                    if (!isOpenFromFeet && ceilingThickness > 2) {
+                                        // Trần đá quá dày (> 2 block), không phải hố mở để nhảy nước
+                                        currentAirSpan = 0;
+                                        airTopY = -1;
+                                        continue;
+                                    }
                                     int score = drop * 10;
                                     if (isOpenFromFeet) {
                                         score += 200;
                                     } else {
-                                        int ceilingThickness = feet.y - airTopY;
-                                        if (ceilingThickness <= 2) {
-                                            score += 100;
-                                        } else {
-                                            score -= ceilingThickness * 15;
-                                        }
+                                        score += 100 - ceilingThickness * 20;
                                     }
                                     score -= (int) (Math.sqrt(dx * dx + dz * dz) * 3);
 

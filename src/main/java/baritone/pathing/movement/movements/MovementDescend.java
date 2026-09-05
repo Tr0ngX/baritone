@@ -95,7 +95,7 @@ public class MovementDescend extends Movement {
         }
         totalCost += miningCost;
         if (context.preferWaterBucketOverDigging && context.hasWaterBucket && miningCost > 0) {
-            totalCost += 50.0; // Phạt nặng hành vi đào dốc bậc thang khi có xô nước
+            totalCost += 2.0;
         }
 
         Block fromDown = context.get(x, y - 1, z).getBlock();
