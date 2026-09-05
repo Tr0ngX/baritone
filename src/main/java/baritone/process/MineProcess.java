@@ -1017,8 +1017,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         final net.minecraft.core.Direction face;
 
         ShulkerPlacementTarget(BlockPos placePos, BlockPos againstPos, net.minecraft.core.Direction face) {
-            this.placePos = placePos;
-            this.againstPos = againstPos;
+            this.placePos = new BlockPos(placePos.getX(), placePos.getY(), placePos.getZ());
+            this.againstPos = new BlockPos(againstPos.getX(), againstPos.getY(), againstPos.getZ());
             this.face = face;
         }
     }
@@ -1040,17 +1040,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         AABB playerBox = ctx.player().getBoundingBox();
 
         for (net.minecraft.core.Direction dir : dirs) {
-            BlockPos target = feet.relative(dir);
+            BlockPos target = new BlockPos(feet.x + dir.getStepX(), feet.y + dir.getStepY(), feet.z + dir.getStepZ());
             BlockState targetState = ctx.world().getBlockState(target);
             boolean targetPassable = targetState.isAir() || targetState.canBeReplaced();
             if (!targetPassable) continue;
 
             // Block phía trên target phải là Air để nắp Shulker bung lên được
-            BlockState aboveState = ctx.world().getBlockState(target.above());
+            BlockPos above = new BlockPos(target.getX(), target.getY() + 1, target.getZ());
+            BlockState aboveState = ctx.world().getBlockState(above);
             if (!aboveState.isAir()) continue;
 
             // Block dưới target phải là solid để làm sàn đặt
-            BlockPos floor = target.below();
+            BlockPos floor = new BlockPos(target.getX(), target.getY() - 1, target.getZ());
             BlockState floorState = ctx.world().getBlockState(floor);
             if (floorState.isAir() || !floorState.isSolid()) continue;
 
@@ -1128,7 +1129,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
-                shulkerPlacedPos = targetOpt.get().placePos;
+                shulkerPlacedPos = new BlockPos(targetOpt.get().placePos.getX(), targetOpt.get().placePos.getY(), targetOpt.get().placePos.getZ());
                 shulkerState = ShulkerStorageState.PLACE_BOX;
                 shulkerStateTicks = 0;
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -1141,9 +1142,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
                 ShulkerPlacementTarget pt = targetOpt.get();
-                shulkerPlacedPos = pt.placePos;
-                Vec3 hitVec = new Vec3(pt.againstPos.getX() + 0.5, pt.againstPos.getY() + 1.0, pt.againstPos.getZ() + 0.5);
-                BlockHitResult bhr = new BlockHitResult(hitVec, pt.face, pt.againstPos, false);
+                shulkerPlacedPos = new BlockPos(pt.placePos.getX(), pt.placePos.getY(), pt.placePos.getZ());
+                BlockPos againstPure = new BlockPos(pt.againstPos.getX(), pt.againstPos.getY(), pt.againstPos.getZ());
+                Vec3 hitVec = new Vec3(againstPure.getX() + 0.5, againstPure.getY() + 1.0, againstPure.getZ() + 0.5);
+                BlockHitResult bhr = new BlockHitResult(hitVec, pt.face, againstPure, false);
                 Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), hitVec, ctx.playerRotations());
                 baritone.getLookBehavior().updateTarget(rot, true);
                 ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
@@ -1168,8 +1170,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerState = ShulkerStorageState.IDLE;
                     return null;
                 }
-                Vec3 center = new Vec3(shulkerPlacedPos.getX() + 0.5, shulkerPlacedPos.getY() + 0.5, shulkerPlacedPos.getZ() + 0.5);
-                BlockHitResult bhr = new BlockHitResult(center, net.minecraft.core.Direction.UP, shulkerPlacedPos, false);
+                BlockPos openPos = new BlockPos(shulkerPlacedPos.getX(), shulkerPlacedPos.getY(), shulkerPlacedPos.getZ());
+                Vec3 center = new Vec3(openPos.getX() + 0.5, openPos.getY() + 0.5, openPos.getZ() + 0.5);
+                BlockHitResult bhr = new BlockHitResult(center, net.minecraft.core.Direction.UP, openPos, false);
                 Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), center, ctx.playerRotations());
                 baritone.getLookBehavior().updateTarget(rot, true);
                 ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
