@@ -200,13 +200,9 @@ public abstract class Movement implements IMovement, MovementHelper {
             if (hitting != null && ctx.world() != null) {
                 net.minecraft.world.level.block.state.BlockState state = ctx.world().getBlockState(hitting);
                 if (baritone.getMineProcess().isActive() && !state.isAir()) {
-                    // Nếu đang đập quặng quý thật sự thì không cancel dở
+                    // Nếu đang đập quặng mục tiêu thật sự thì không cancel dở
                     // Nếu đang đập đá/đất/deepslate đào hầm thì cho phép cancel ngay để bẻ lái sang quặng!
-                    if (state.is(net.minecraft.world.level.block.Blocks.DIAMOND_ORE)
-                            || state.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_DIAMOND_ORE)
-                            || state.is(net.minecraft.world.level.block.Blocks.ANCIENT_DEBRIS)
-                            || state.is(net.minecraft.world.level.block.Blocks.EMERALD_ORE)
-                            || state.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_EMERALD_ORE)) {
+                    if (baritone.getMineProcess().isTargetBlock(state)) {
                         return false;
                     }
                 }

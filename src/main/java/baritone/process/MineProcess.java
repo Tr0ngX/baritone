@@ -239,6 +239,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     }
 
     @Override
+    public boolean isTargetBlock(BlockState state) {
+        return filter != null && state != null && filter.has(state);
+    }
+
+    @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
         this.tickCount++;
         this.lastCalcFailed = calcFailed;
@@ -274,7 +279,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                     forceReroute = true;
                     consecutiveCalcFailures = 0;
-                    return new PathingCommand(new GoalRunAway(25, ctx.playerFeet()), PathingCommandType.CANCEL_AND_SET_GOAL);
+                    return new PathingCommand(new GoalRunAway(25, ctx.playerFeet()), PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
                 }
                 consecutiveCalcFailures++;
                 if (!knownOreLocations.isEmpty() && Baritone.settings().blacklistClosestOnFailure.value) {
@@ -891,7 +896,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             this.consecutiveCalcFailures = 0;
                             knownOreLocations = new CopyOnWriteArrayList<>(locs2);
                             logDirect("§a[AutoChop] Khởi động 1 LẦN TÍNH TOÁN SIÊU DÀI cho 1 ĐƯỜNG TÍNH DUY NHẤT nối " + tourTrees.size() + " cây...");
-                            return new PathingCommand(tourGoal, PathingCommandType.CANCEL_AND_SET_GOAL);
+                            return new PathingCommand(tourGoal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
                         }
                     }
                     this.activeChopTourGoal = null;
@@ -968,16 +973,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 if (wasTunneling || isTunnelGoal) {
                     wasTunneling = false;
-                    logDirect("§a[AutoMine] Phát hiện quặng mục tiêu khi đang đào hầm! NGAY LẬP TỨC hủy hầm để rẽ sang đào quặng...");
+                    logDirect("§a[AutoMine] Phát hiện quặng mục tiêu khi đang đào hầm! Rẽ sang đào quặng...");
                     baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
                     baritone.getInputOverrideHandler().clearAllKeys();
-                    baritone.getPathingBehavior().forceCancel();
-                    forceReroute = true;
-                    return new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
+                    baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    return new PathingCommand(goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
                 }
 
                 if (fr) {
-                    return new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
+                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    return new PathingCommand(goal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
                 }
                 // Nếu đang di chuyển trên đường thì giữ REVALIDATE để không bị softCancel khựng lại
                 return new PathingCommand(goal, (legit && !isPathing) ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
@@ -1027,7 +1033,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                     boolean fr = forceReroute;
                     forceReroute = false;
-                    return new PathingCommand(new GoalYLevel(bedrockEscapeTargetY), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                    return new PathingCommand(new GoalYLevel(bedrockEscapeTargetY), fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                 } else {
                     // Giai đoạn 2: Đã đạt độ cao an toàn (curY >= bedrockEscapeTargetY)!
                     if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null) {
@@ -1039,7 +1045,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         Goal tunnelGoal = new GoalStrictDirection(ctx.playerFeet(), tunnelDirection, 24, curY, null);
                         boolean fr = forceReroute;
                         forceReroute = false;
-                        return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                        return new PathingCommand(tunnelGoal, fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                     }
                     // Di chuyển cách xa điểm kẹt bedrock cũ ít nhất 20 block
                     int distAway = bedrockEscapeOrigin != null ? (int) Math.sqrt(ctx.playerFeet().distSqr(bedrockEscapeOrigin)) : 20;
@@ -1063,7 +1069,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         if (branchPointRunaway == null) {
                             branchPointRunaway = new GoalRunAway(20, curY, branchPoint);
                         }
-                        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                     }
                 }
             }
@@ -1087,7 +1093,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 boolean fr = forceReroute;
                 forceReroute = false;
                 Goal shaftGoal = new GoalShaftDown(shaftOriginPos.getX(), shaftOriginPos.getY(), shaftOriginPos.getZ(), targetY);
-                return new PathingCommand(shaftGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                return new PathingCommand(shaftGoal, fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
             }
 
             // ƯU TIÊN SỐ 1 KHI Ở TRÊN CAO (KHÔNG BẬT SHAFT DOWN): DÙNG XÔ NƯỚC (WATER BUCKET) ĐỂ TỤT XUỐNG THAY VÌ ĐÀO XUỐNG
@@ -1108,7 +1114,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         int dropAmount = currentY - dropPos.getY();
                         logDirect("§a[WaterDescent] Phát hiện hố/hang mở tụt " + dropAmount + " block! Ưu tiên nhảy đáp nước (MLG Bucket) thay vì đào xuống.");
                         forceReroute = false;
-                        return new PathingCommand(new GoalTwoBlocks(dropPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                        return new PathingCommand(new GoalTwoBlocks(dropPos), fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                     }
                 }
             }
@@ -1145,7 +1151,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // → A* TUYỆT ĐỐI KHÔNG BAO GIỜ tìm được đường đi ngược lại hay rẽ ngang!
         if (Baritone.settings().mineStrictOneDirection.value) {
             Goal tunnelGoal = new GoalStrictDirection(ctx.playerFeet(), tunnelDirection, 24, y, locs);
-            return new PathingCommand(tunnelGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            return new PathingCommand(tunnelGoal, fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
         }
 
         // Chế độ thường: GoalRunAway với branchPoint phía sau lưng
@@ -1157,7 +1163,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (branchPointRunaway == null) {
             branchPointRunaway = new GoalRunAway(48, y, branchPoint);
         }
-        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+        return new PathingCommand(branchPointRunaway, fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
     }
 
     private void rescan(List<BlockPos> already, CalculationContext context) {
