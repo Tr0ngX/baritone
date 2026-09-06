@@ -245,6 +245,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         int targetY = Baritone.settings().legitMineYLevel.value;
         if (ctx.playerFeet().y <= targetY) {
             hasReachedTargetY = true;
+        } else if (ctx.playerFeet().y > targetY + 3) {
+            hasReachedTargetY = false;
         }
         if (desiredQuantity > 0) {
             int curr = ctx.player().getInventory().getNonEquipmentItems().stream()
@@ -995,6 +997,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         // Đánh dấu đã chạm tới độ sâu targetY (hoặc xuất phát ngay tại tầng đào)
         if (currentY <= targetY + 1) {
             hasReachedTargetY = true;
+        } else if (currentY > targetY + 3) {
+            hasReachedTargetY = false;
         }
 
         // Kiểm tra xem AntiStuck có yêu cầu thoát bedrock không (thoát lên tầng an toàn Y >= -54 và rời xa điểm kẹt):
@@ -1059,25 +1063,47 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
-        // ƯU TIÊN SỐ 1 KHI Ở TRÊN CAO: DÙNG XÔ NƯỚC (WATER BUCKET) ĐỂ TỤT XUỐNG THAY VÌ ĐÀO XUỐNG
-        if (currentY > targetY + 3) {
-            boolean fr = forceReroute;
-            int waterSlot = ctx.player().getInventory().findSlotMatchingItem(new ItemStack(Items.WATER_BUCKET));
-            boolean hasWaterBucket = (waterSlot != -1 || ctx.player().getOffhandItem().is(Items.WATER_BUCKET))
-                    && ctx.world().dimension() != net.minecraft.world.level.Level.NETHER
-                    && Baritone.settings().allowWaterBucketFall.value;
-
-            if (hasWaterBucket && Baritone.settings().preferWaterBucketOverDigging.value) {
-                if (waterSlot >= 9) {
-                    ((Baritone) baritone).getInventoryBehavior().attemptToPutOnHotbar(waterSlot, s -> s == 8 || s == 7);
+        // KHI CHƯA ĐẠT ĐỘ SÂU TARGET Y (currentY > targetY + 1 && !hasReachedTargetY):
+        if (currentY > targetY + 1 && !hasReachedTargetY) {
+            if (Baritone.settings().straightDownMine.value) {
+                // CHẾ ĐỘ SHAFT DOWN: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI TẠI VỊ TRÍ HIỆN TẠI
+                if (shaftOriginPos == null || forceReroute
+                        || Math.abs(shaftOriginPos.getX() - ctx.playerFeet().x) > 2
+                        || Math.abs(shaftOriginPos.getZ() - ctx.playerFeet().z) > 2
+                        || shaftOriginPos.getY() - currentY >= 6
+                        || (!baritone.getPathingBehavior().isPathing() && shaftOriginPos.getY() > currentY)) {
+                    shaftOriginPos = ctx.playerFeet();
                 }
-                Optional<BlockPos> opening = findNearbyDescentOpening(32, 3);
-                if (opening.isPresent()) {
-                    BlockPos dropPos = opening.get();
-                    int dropAmount = currentY - dropPos.getY();
-                    logDirect("§a[WaterDescent] Phát hiện hố/hang mở tụt " + dropAmount + " block! Ưu tiên nhảy đáp nước (MLG Bucket) thay vì đào xuống.");
-                    forceReroute = false;
-                    return new PathingCommand(new GoalTwoBlocks(dropPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                if (tickCount % 40 == 0) {
+                    logDirect("§a[AutoMine] Đang đào thẳng đứng (Shaft Down) từ Y=" + currentY + " xuống Y=" + targetY + "...");
+                }
+                wasTunneling = true;
+                boolean fr = forceReroute;
+                forceReroute = false;
+                Goal shaftGoal = new GoalShaftDown(shaftOriginPos.getX(), shaftOriginPos.getY(), shaftOriginPos.getZ(), targetY);
+                return new PathingCommand(shaftGoal, fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            }
+
+            // ƯU TIÊN SỐ 1 KHI Ở TRÊN CAO (KHÔNG BẬT SHAFT DOWN): DÙNG XÔ NƯỚC (WATER BUCKET) ĐỂ TỤT XUỐNG THAY VÌ ĐÀO XUỐNG
+            if (currentY > targetY + 3) {
+                boolean fr = forceReroute;
+                int waterSlot = ctx.player().getInventory().findSlotMatchingItem(new ItemStack(Items.WATER_BUCKET));
+                boolean hasWaterBucket = (waterSlot != -1 || ctx.player().getOffhandItem().is(Items.WATER_BUCKET))
+                        && ctx.world().dimension() != net.minecraft.world.level.Level.NETHER
+                        && Baritone.settings().allowWaterBucketFall.value;
+
+                if (hasWaterBucket && Baritone.settings().preferWaterBucketOverDigging.value) {
+                    if (waterSlot >= 9) {
+                        ((Baritone) baritone).getInventoryBehavior().attemptToPutOnHotbar(waterSlot, s -> s == 8 || s == 7);
+                    }
+                    Optional<BlockPos> opening = findNearbyDescentOpening(32, 3);
+                    if (opening.isPresent()) {
+                        BlockPos dropPos = opening.get();
+                        int dropAmount = currentY - dropPos.getY();
+                        logDirect("§a[WaterDescent] Phát hiện hố/hang mở tụt " + dropAmount + " block! Ưu tiên nhảy đáp nước (MLG Bucket) thay vì đào xuống.");
+                        forceReroute = false;
+                        return new PathingCommand(new GoalTwoBlocks(dropPos), fr ? PathingCommandType.CANCEL_AND_SET_GOAL : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                    }
                 }
             }
         }
@@ -2867,6 +2893,15 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             // 2. Khi đang đào dốc xuống mà gặp vật cản (CHỈ khi không có quặng nào đang đào): Đổi hướng đào dốc theo chiều kim đồng hồ
             boolean noOres = (knownOreLocations == null || knownOreLocations.isEmpty()) && oreMemory.isEmpty();
             if (noOres && (!hasReachedTargetY || currentFeet.y > targetY + 3)) {
+                if (Baritone.settings().straightDownMine.value) {
+                    stuckRetries = 0;
+                    net.minecraft.core.Direction shiftDir = ctx.player().getDirection().getAxis().isHorizontal()
+                            ? ctx.player().getDirection() : net.minecraft.core.Direction.NORTH;
+                    shaftOriginPos = currentFeet.relative(shiftDir, 1);
+                    logDirect("§6[AntiStuck] Kẹt đào thẳng đứng (Shaft Down)! Dịch chuyển trục đào sang " + shiftDir.getName().toUpperCase() + " 1 block...");
+                    forceReroute = true;
+                    return;
+                }
                 if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
                     net.minecraft.core.Direction dir = ctx.player().getDirection();
                     tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
@@ -3913,5 +3948,54 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         baritone.getInputOverrideHandler().setInputForceState(Input.JUMP, false);
         baritone.getInputOverrideHandler().setInputForceState(Input.SPRINT, false);
         baritone.getInputOverrideHandler().setInputForceState(Input.SNEAK, false);
+    }
+
+    public static class GoalShaftDown implements Goal {
+        public final int x, z;
+        public final int startY;
+        public final int targetY;
+
+        public GoalShaftDown(int x, int startY, int z, int targetY) {
+            this.x = x;
+            this.startY = startY;
+            this.z = z;
+            this.targetY = targetY;
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            int horizDev = Math.abs(x - this.x) + Math.abs(z - this.z);
+            return (y <= targetY && horizDev <= 1) || ((startY - y) >= 6 && horizDev <= 1);
+        }
+
+        @Override
+        public double heuristic(int x, int y, int z) {
+            int horizDev = Math.abs(x - this.x) + Math.abs(z - this.z);
+            int remainingDrop = Math.max(0, y - targetY);
+            return remainingDrop * 100.0 + horizDev * 2000.0;
+        }
+
+        @Override
+        public double heuristic() {
+            return 0;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GoalShaftDown)) return false;
+            GoalShaftDown that = (GoalShaftDown) o;
+            return x == that.x && z == that.z && startY == that.startY && targetY == that.targetY;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, startY, z, targetY);
+        }
+
+        @Override
+        public String toString() {
+            return "GoalShaftDown{x=" + x + ", startY=" + startY + ", z=" + z + ", targetY=" + targetY + "}";
+        }
     }
 }
