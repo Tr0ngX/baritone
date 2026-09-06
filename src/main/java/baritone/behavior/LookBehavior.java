@@ -179,11 +179,6 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
     }
 
     @Override
-    public boolean hasTarget() {
-        return this.target != null;
-    }
-
-    @Override
     public void onPlayerRotationMove(RotationMoveEvent event) {
         if (this.target != null) {
             final Rotation actual = this.processor.peekRotation(this.target.rotation);

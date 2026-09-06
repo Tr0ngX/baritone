@@ -854,56 +854,6 @@ public final class Settings {
     public final Setting<String> autoLogoutPlayerWhitelist = new Setting<>("");
 
     /**
-     * Bật/tắt chế độ Anti-Aim (dựa trên thuật toán của Lambda Client).
-     * Xoay góc nhìn của người chơi liên tục để đánh lạc hướng đối thủ, chống Aimbot / KillAura, hoặc làm hiệu ứng Derp/Spinbot.
-     */
-    public final Setting<Boolean> antiAim = new Setting<>(false);
-
-    /**
-     * Silent mode cho Anti-Aim.
-     * Khi bật (mặc định), góc xoay chỉ được gửi lên server trong các gói tin di chuyển (người chơi khác thấy xoay),
-     * trong khi màn hình và camera của người chơi vẫn hoàn toàn bình thường, không bị chóng mặt.
-     */
-    public final Setting<Boolean> antiAimSilent = new Setting<>(true);
-
-    /**
-     * Chế độ xoay Yaw của Anti-Aim:
-     * - SPIN: Xoay tròn đều 360 độ theo tốc độ yawSpeed.
-     * - JITTER: Lắc qua lại ngẫu nhiên trái/phải với biên độ góc ngẫu nhiên.
-     * - SIDEWAYS: Quay ngang 90 độ so với hướng nhìn.
-     * - BACKWARDS: Quay ngoắt 180 độ ra sau lưng.
-     * - PLAYER: Tự động khóa góc Yaw nhìn về phía player gần nhất.
-     * - NONE: Giữ nguyên góc Yaw của người chơi.
-     */
-    public final Setting<String> antiAimYawMode = new Setting<>("SPIN");
-
-    /**
-     * Chế độ xoay Pitch của Anti-Aim:
-     * - UP_DOWN: Gật đầu lên xuống liên tục giữa -90 độ và 90 độ.
-     * - JITTER: Giật góc ngẩng ngẫu nhiên lên/xuống.
-     * - DOWN: Cúi gầm mặt xuống đất (90 độ) để che hitbox đầu.
-     * - UP: Ngửa cổ lên trời (-90 độ).
-     * - PLAYER: Khóa góc Pitch theo vị trí đầu của player gần nhất.
-     * - NONE: Giữ nguyên góc Pitch của người chơi.
-     */
-    public final Setting<String> antiAimPitchMode = new Setting<>("UP_DOWN");
-
-    /**
-     * Tốc độ xoay Yaw (độ mỗi game tick, mặc định 30.0 độ/tick).
-     */
-    public final Setting<Float> antiAimYawSpeed = new Setting<>(30.0F);
-
-    /**
-     * Tốc độ xoay Pitch (độ mỗi game tick, mặc định 15.0 độ/tick).
-     */
-    public final Setting<Float> antiAimPitchSpeed = new Setting<>(15.0F);
-
-    /**
-     * Hướng quay cho chế độ SPIN và SIDEWAYS: RIGHT hoặc LEFT.
-     */
-    public final Setting<String> antiAimSpinDirection = new Setting<>("RIGHT");
-
-    /**
      * Allow chat based control of Baritone. Most likely should be disabled when Baritone is imported for use in
      * something else
      */

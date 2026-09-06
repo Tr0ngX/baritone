@@ -123,7 +123,6 @@ public class Baritone implements IBaritone {
             this.inputOverrideHandler = this.registerBehavior(InputOverrideHandler::new);
             this.registerBehavior(WaypointBehavior::new);
             this.registerBehavior(EmergencySafetyBehavior::new);
-            this.registerBehavior(AntiAimBehavior::new);
         }
 
         this.pathingControlManager = new PathingControlManager(this);

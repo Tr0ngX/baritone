@@ -292,12 +292,6 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.PLAYER_HEAD), "Anti-Player", "Tự ngắt kết nối khi phát hiện người chơi (kể cả tàng hình / invis)", "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
             Baritone.settings().autoLogoutOnPlayer.value = !Baritone.settings().autoLogoutOnPlayer.value;
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.CROSSBOW), "Anti-Aim", "Tự xoay đầu Spin Right 90° & UpDown 90° đánh lừa đối thủ", "SURVIVAL", 0xFFF43F5E, () -> Baritone.settings().antiAim.value, () -> {
-            Baritone.settings().antiAim.value = !Baritone.settings().antiAim.value;
-        }));
-        allModules.add(new ModuleItem(new ItemStack(Items.SPYGLASS), "Silent Anti-Aim", "Không quay góc nhìn Client-side (chống chóng mặt), Server thực chất vẫn quay", "SURVIVAL", 0xFF38BDF8, () -> Baritone.settings().antiAimSilent.value, () -> {
-            Baritone.settings().antiAimSilent.value = !Baritone.settings().antiAimSilent.value;
-        }));
         allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Shulker Box", "Tự động đặt Shulker Box cất quặng khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
         allModules.add(new ModuleItem(new ItemStack(Items.LAVA_BUCKET), "Auto-Drop", "Tự vứt đá/đất/gravel đầy stack về sau hoặc vào lava", "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
         allModules.add(new ModuleItem(new ItemStack(Items.ZOMBIE_HEAD), "Mob Avoid", "Tự động né quái vật nguy hiểm và Spawner 14m", "SURVIVAL", 0xFFF87171, () -> optMobAvoid, () -> optMobAvoid = !optMobAvoid));
@@ -747,10 +741,6 @@ public class AutoMineScreen extends Screen implements Helper {
                                 AutoLogoutTracker.getLastX(),
                                 AutoLogoutTracker.getLastY(),
                                 AutoLogoutTracker.getLastZ());
-                    } else if (item.name.equals("Anti-Aim")) {
-                        desc = String.format(java.util.Locale.ROOT, "Yaw: %s | Pitch: %s (R-Click)",
-                                Baritone.settings().antiAimYawMode.value,
-                                Baritone.settings().antiAimPitchMode.value);
                     }
                     if (this.font.width(desc) > textMaxW) {
                         desc = this.font.plainSubstrByWidth(desc, Math.max(10, textMaxW - 6)) + "..";
