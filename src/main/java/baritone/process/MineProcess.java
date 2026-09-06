@@ -19,6 +19,7 @@ package baritone.process;
 
 import baritone.Baritone;
 import baritone.api.BaritoneAPI;
+import baritone.behavior.EmergencySafetyBehavior;
 import baritone.behavior.LookBehavior;
 import baritone.api.pathing.goals.*;
 import baritone.api.process.IMineProcess;
@@ -1640,28 +1641,34 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         BlockPos bestLava = null;
         double bestLavaDistSq = Double.MAX_VALUE;
 
-        // Quét tìm hồ Lava trong phạm vi 5x3x5 quanh người chơi để tiêu hủy rác
-        for (int dx = -5; dx <= 5; dx++) {
-            for (int dy = -3; dy <= 2; dy++) {
-                for (int dz = -5; dz <= 5; dz++) {
+        // Quét tìm hồ Lava trong tầm ném hiệu quả (tối đa ~3.5 block ngang, -3 đến +1 theo chiều Y)
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                if (dx * dx + dz * dz > 13) continue; // Bán kính ném <= 3.6 block để item chắc chắn rơi trúng lava
+                for (int dy = -3; dy <= 1; dy++) {
                     BlockPos p = feet.offset(dx, dy, dz);
                     FluidState fluid = ctx.world().getFluidState(p);
-                    if (fluid.is(FluidTags.LAVA)) {
-                        BlockPos above = p.above();
-                        BlockState aboveState = ctx.world().getBlockState(above);
-                        // Chỉ ném nếu ô phía trên lava là không khí, có thể đi qua hoặc cũng là lava (không bị bịt kín bởi đá)
-                        if (aboveState.isAir() || aboveState.canBeReplaced() || ctx.world().getFluidState(above).is(FluidTags.LAVA)) {
-                            double distSq = feet.distSqr(p);
-                            if (distSq < bestLavaDistSq) {
-                                Vec3 eye = ctx.playerHead();
-                                Vec3 target = new Vec3(p.getX() + 0.5, p.getY() + 0.7, p.getZ() + 0.5);
-                                ClipContext rayCtx = new ClipContext(eye, target, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, ctx.player());
-                                HitResult hit = ctx.world().clip(rayCtx);
-                                if (hit.getType() == HitResult.Type.MISS || (hit instanceof BlockHitResult bhr && (bhr.getBlockPos().equals(p) || bhr.getBlockPos().equals(above)))) {
-                                    bestLavaDistSq = distSq;
-                                    bestLava = p;
-                                }
-                            }
+                    boolean isLava = fluid.is(FluidTags.LAVA) || ctx.world().getBlockState(p).is(Blocks.LAVA);
+                    if (!isLava) continue;
+
+                    BlockPos above = p.above();
+                    BlockState aboveState = ctx.world().getBlockState(above);
+                    // Khoảng không phía trên ô lava phải thông thoáng để quăng đồ lọt vào
+                    boolean aboveOpen = aboveState.isAir() || aboveState.canBeReplaced()
+                            || ctx.world().getFluidState(above).is(FluidTags.LAVA)
+                            || ctx.world().getBlockState(above).is(Blocks.LAVA);
+                    if (!aboveOpen) continue;
+
+                    double distSq = feet.distSqr(p);
+                    if (distSq < bestLavaDistSq) {
+                        Vec3 eye = ctx.playerHead();
+                        Vec3 target = new Vec3(p.getX() + 0.5, p.getY() + 1.1, p.getZ() + 0.5);
+                        ClipContext rayCtx = new ClipContext(eye, target, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, ctx.player());
+                        HitResult hit = ctx.world().clip(rayCtx);
+                        if (hit.getType() == HitResult.Type.MISS || hit.getLocation().distanceToSqr(target) < 1.2
+                                || (hit instanceof BlockHitResult bhr && (bhr.getBlockPos().equals(p) || bhr.getBlockPos().equals(above)))) {
+                            bestLavaDistSq = distSq;
+                            bestLava = p;
                         }
                     }
                 }
@@ -1676,7 +1683,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         BlockPos lava = findNearbyLava();
         if (lava != null) {
-            Vec3 target = new Vec3(lava.getX() + 0.5, lava.getY() + 0.7, lava.getZ() + 0.5);
+            Vec3 target = new Vec3(lava.getX() + 0.5, lava.getY() + 1.05, lava.getZ() + 0.5);
             return RotationUtils.calcRotationFromVec3d(ctx.playerHead(), target, ctx.playerRotations());
         }
 
@@ -3436,50 +3443,78 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         return count;
     }
 
+    private int autoLogoutLavaTicks = 0;
+
     private boolean handleAutoLogout() {
         if (!Baritone.settings().autoLogoutOnDanger.value) {
+            autoLogoutLavaTicks = 0;
             return false;
         }
         if (ctx.player() == null || ctx.world() == null) {
+            autoLogoutLavaTicks = 0;
             return false;
         }
         if (ctx.player().isCreative() || ctx.player().isSpectator()) {
+            autoLogoutLavaTicks = 0;
             return false;
         }
 
-        int totemCount = getTotemCount();
-        if (totemCount > 0) {
-            return false;
-        }
-
-        // CHỈ TÍNH KHI RƠI XUỐNG DƯỚI LAVA + HẾT TOTEM (dùng 1 điều kiện, không tính máu)
+        // 1. Kiểm tra trạng thái rơi vào / đứng trong hồ Lava:
         boolean inLava = ctx.player().isInLava()
                 || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
                 || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
 
-        if (!inLava) {
-            return false;
+        if (inLava) {
+            autoLogoutLavaTicks++;
+        } else {
+            autoLogoutLavaTicks = 0;
         }
 
-        String dangerReason = "Rơi xuống dưới LAVA và ĐÃ HẾT TOTEM!";
-        String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
-        Helper.HELPER.logDirect(alert);
-        BaritoneFileLogger.warn(alert);
+        String dangerReason = null;
 
-        // DÙNG 1 LẦN DUY NHẤT: Tự động tắt tính năng để lần sau vào lại không bị logout!
-        Baritone.settings().autoLogoutOnDanger.value = false;
-        AutoMineScreen.optAutoLogout = false;
-
-        cancel();
-        baritone.getInputOverrideHandler().clearAllKeys();
-
-        Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§e" + dangerReason + "\n§aĐã tự động ngắt kết nối an toàn!\n§7(Tính năng đã tự động tắt cho lần vào lại sau)");
-        if (ctx.world() instanceof ClientLevel clientLevel) {
-            clientLevel.disconnect(kickReason);
-        } else if (Minecraft.getInstance().getConnection() != null) {
-            Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
+        // TRƯỜNG HỢP 1: LAVA ("còn lava là logout luôn", "nhớ là lava 3s thì mới làm")
+        // Ở trong lava liên tục đủ 3 giây (60 ticks) -> Logout ngay lập tức để bảo vệ trang bị!
+        if (inLava && autoLogoutLavaTicks >= 60) {
+            dangerReason = "Rơi vào hồ LAVA liên tục quá 3 giây!";
         }
-        return true;
+
+        // TRƯỜNG HỢP 2: QUÁI ĐÁNH, ĐÓI, TÉ NGÃ, v.v. (Phải Hết Totem + Nửa thanh máu)
+        if (dangerReason == null) {
+            int totemCount = getTotemCount();
+            if (totemCount == 0) {
+                float health = ctx.player().getHealth();
+                float maxHealth = ctx.player().getMaxHealth();
+                boolean lowHealth = (health <= maxHealth * 0.5f) || (health <= 10.0f);
+                if (lowHealth) {
+                    String cause = EmergencySafetyBehavior.detectDamageCause(ctx);
+                    dangerReason = cause + " (Máu còn: " + String.format("%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+                }
+            }
+        }
+
+        if (dangerReason != null) {
+            String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
+            Helper.HELPER.logDirect(alert);
+            BaritoneFileLogger.warn(alert);
+
+            // DÙNG 1 LẦN DUY NHẤT: Tự động tắt tính năng để lần sau vào lại không bị logout!
+            Baritone.settings().autoLogoutOnDanger.value = false;
+            AutoMineScreen.optAutoLogout = false;
+            autoLogoutLavaTicks = 0;
+
+            cancel();
+            baritone.getInputOverrideHandler().clearAllKeys();
+
+            Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§eLý do: " + dangerReason + "\n§aĐã tự động ngắt kết nối an toàn!\n§7(Tính năng đã tự động tắt cho lần vào lại sau)");
+            if (ctx.world() instanceof ClientLevel clientLevel) {
+                clientLevel.disconnect(kickReason);
+            } else if (Minecraft.getInstance().getConnection() != null) {
+                Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
+            }
+            return true;
+        }
+
+        return false;
     }
 
     private Optional<BlockPos> findNearbyDescentOpening(int maxHorizontalRadius, int minDrop) {
