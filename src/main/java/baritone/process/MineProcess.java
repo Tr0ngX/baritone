@@ -167,6 +167,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int placeBreakOscillationCount = 0;
     private boolean lastCalcFailed = false;
     private BlockPos activeMiningBlock = null;
+    private boolean activeMiningBlockIsObstructing = false;
+    private BlockPos pendingOreAfterObstructing = null;
+    private int obstructingTransitionTicks = 0;
+    private BlockPos shulkerClearOrigin = null;
     private int activeMiningTicks = 0;
     private BlockPos lockedTargetOre = null;
     private BlockPos lastStuckOrePos = null;
@@ -178,6 +182,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     private enum ShulkerStorageState {
         IDLE,
+        CLEAR_SPACE,
         SWAP_TO_HOTBAR,
         SELECT_SLOT,
         PLACE_BOX,
@@ -240,7 +245,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     @Override
     public boolean isTargetBlock(BlockState state) {
-        return filter != null && state != null && filter.has(state);
+        if (state == null) return false;
+        if (activeMiningBlockIsObstructing && activeMiningBlock != null && ctx.world() != null) {
+            if (ctx.world().getBlockState(activeMiningBlock).equals(state)) {
+                return true;
+            }
+        }
+        return filter != null && filter.has(state);
     }
 
     @Override
@@ -426,9 +437,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 3);
             if (activeMiningBlock.getY() > maxReachY || (!ctx.player().onGround() && !ctx.player().isInWater())) {
                 activeMiningBlock = null;
+                activeMiningBlockIsObstructing = false;
                 activeMiningTicks = 0;
                 baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
-            } else if (!state.isAir() && (filter == null || filter.has(state))) {
+            } else if (!state.isAir() && (activeMiningBlockIsObstructing || filter == null || filter.has(state))) {
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, activeMiningBlock);
                 if (rot.isPresent()) {
                     activeMiningTicks++;
@@ -436,10 +448,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     if (!isHitting && activeMiningTicks > 60) {
                         // Không thể bắt đầu đập từ vị trí/góc nhìn hiện tại sau 3s -> Nhả để A* tiếp tục dẫn đường
                         activeMiningBlock = null;
+                        activeMiningBlockIsObstructing = false;
                         activeMiningTicks = 0;
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
                     } else if (activeMiningTicks > 160) {
-                        logDirect("§c[Mine] Quặng tại " + activeMiningBlock.toShortString() + " không thể đào vỡ sau 8s (có thể do Claim)! Đã thêm vào BLACKLIST!");
+                        logDirect("§c[Mine] Block tại " + activeMiningBlock.toShortString() + " không thể đào vỡ sau 8s (có thể do Claim)! Đã thêm vào BLACKLIST!");
                         BlockPos target = activeMiningBlock;
                         blacklist.add(target);
                         oreMemory.remove(target);
@@ -450,6 +463,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             lockedTargetOre = null;
                         }
                         activeMiningBlock = null;
+                        activeMiningBlockIsObstructing = false;
                         activeMiningTicks = 0;
                         forceReroute = true;
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
@@ -467,25 +481,31 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                 } else {
                     // Chưa thể với tới trực tiếp ở góc nhìn hiện tại -> Nhả activeMiningBlock để A* tiếp tục dẫn đường
-                    // TUYỆT ĐỐI KHÔNG xóa quặng khỏi knownOreLocations hay oreMemory khi chưa đào vỡ!
                     activeMiningBlock = null;
+                    activeMiningBlockIsObstructing = false;
                     activeMiningTicks = 0;
                     baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
                 }
             } else {
-                // Block đã vỡ thành Air hoặc không còn là quặng mục tiêu: Xóa khỏi bộ nhớ
-                logDirect("§a[SmartMind] +100 Điểm thưởng: Đã khai thác thành công quặng tại " + activeMiningBlock.toShortString() + "! Tiếp tục tiến lên.");
-                blacklist.remove(activeMiningBlock);
-                oreMemory.remove(activeMiningBlock);
-                if (knownOreLocations != null) {
-                    knownOreLocations.remove(activeMiningBlock);
-                }
-                if (lockedTargetOre != null && lockedTargetOre.equals(activeMiningBlock)) {
-                    lockedTargetOre = null;
+                // Block đã vỡ thành Air (đã bị remove hoàn toàn)
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                if (activeMiningBlockIsObstructing) {
+                    logDirect("§a[AutoMine] Block che chắn tại " + activeMiningBlock.toShortString() + " đã bị loại bỏ hoàn toàn! Chờ 3 tick ổn định trước khi đào quặng...");
+                    obstructingTransitionTicks = 3; // Cooldown 3 tick cho camera quay mượt, TUYỆT ĐỐI KHÔNG FLICK NGAY!
+                } else {
+                    logDirect("§a[SmartMind] +100 Điểm thưởng: Đã khai thác thành công quặng tại " + activeMiningBlock.toShortString() + "! Tiếp tục tiến lên.");
+                    blacklist.remove(activeMiningBlock);
+                    oreMemory.remove(activeMiningBlock);
+                    if (knownOreLocations != null) {
+                        knownOreLocations.remove(activeMiningBlock);
+                    }
+                    if (lockedTargetOre != null && lockedTargetOre.equals(activeMiningBlock)) {
+                        lockedTargetOre = null;
+                    }
                 }
                 activeMiningBlock = null;
+                activeMiningBlockIsObstructing = false;
                 activeMiningTicks = 0;
-                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
             }
         }
 
@@ -496,6 +516,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (!state.isAir() && filter != null && filter.has(state)) {
                 if (activeMiningBlock == null || !activeMiningBlock.equals(destroyingPos)) {
                     activeMiningBlock = destroyingPos;
+                    activeMiningBlockIsObstructing = false;
                     activeMiningTicks = 0;
                 }
                 Optional<Rotation> rot = RotationUtils.reachable(ctx, destroyingPos);
@@ -520,7 +541,21 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         boolean canDirectMine = (ctx.player().onGround() || ctx.player().isInWater())
                 && !baritone.getInputOverrideHandler().isInputForcedDown(Input.JUMP);
         if (canDirectMine) {
+            // Nếu vừa đào vỡ block che chắn: chờ 3 tick chuyển góc nhìn mượt mà sang quặng, KHÔNG vung cúp vội!
+            if (obstructingTransitionTicks > 0) {
+                obstructingTransitionTicks--;
+                if (pendingOreAfterObstructing != null) {
+                    Optional<Rotation> smoothRot = RotationUtils.reachable(ctx, pendingOreAfterObstructing);
+                    if (smoothRot.isPresent()) {
+                        baritone.getLookBehavior().updateTarget(smoothRot.get(), true);
+                    }
+                }
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
             int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 3);
+            // 1. Quét tìm các quặng mục tiêu HOÀN TOÀN KHÔNG BỊ CHẶN:
             Optional<BlockPos> reachableOre = curr.stream()
                     .filter(pos -> ctx.playerFeet().distSqr(pos) <= 25)
                     // QUY TẮC: Đứng vững trên sàn và đào các block trong tầm với trực tiếp
@@ -530,6 +565,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         BlockState s = ctx.world().getBlockState(pos);
                         return filter.has(s) && !MovementHelper.avoidBreaking(baritone.bsi, pos.getX(), pos.getY(), pos.getZ(), s);
                     })
+                    // QUY TẮC CỐT LÕI: TUYỆT ĐỐI KHÔNG ĐÀO QUẶNG TRƯỚC NẾU CÓ BLOCK CHẶN!
+                    .filter(pos -> getObstructingBlock(pos).isEmpty())
                     // Quét toàn bộ quặng trong tầm với trực tiếp (<= 5 block) quanh người: khai thác ngay lập tức 100%!
                     .filter(pos -> RotationUtils.reachable(ctx, pos).isPresent())
                     .min(Comparator.comparingDouble(ctx.playerFeet().above()::distSqr));
@@ -538,6 +575,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 BlockPos pos = reachableOre.get();
                 if (activeMiningBlock == null || !activeMiningBlock.equals(pos)) {
                     activeMiningBlock = pos;
+                    activeMiningBlockIsObstructing = false;
+                    pendingOreAfterObstructing = null;
                     activeMiningTicks = 0;
                 }
                 BlockState state = ctx.world().getBlockState(pos);
@@ -553,6 +592,48 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+            } else {
+                // 2. Nếu có quặng ở cự ly gần (<= 16 distSqr) nhưng bị 1 block che chắn phía trước:
+                // TỰ ĐỘNG ĐÀO BLOCK CHE CHẮN ĐÓ TRƯỚC VÀ ĐẢM BẢO ĐÃ ĐƯỢC REMOVE HOÀN TOÀN MỚI ĐÀO QUẶNG!
+                Optional<BlockPos> blockedOre = curr.stream()
+                        .filter(pos -> ctx.playerFeet().distSqr(pos) <= 16)
+                        .filter(pos -> pos.getY() <= maxReachY)
+                        .filter(pos -> !ctx.world().getBlockState(pos).isAir())
+                        .filter(pos -> {
+                            BlockState s = ctx.world().getBlockState(pos);
+                            return filter.has(s);
+                        })
+                        .filter(pos -> getObstructingBlock(pos).isPresent())
+                        .min(Comparator.comparingDouble(ctx.playerFeet().above()::distSqr));
+
+                if (blockedOre.isPresent()) {
+                    BlockPos ore = blockedOre.get();
+                    BlockPos obs = getObstructingBlock(ore).get();
+                    BlockState obsState = ctx.world().getBlockState(obs);
+                    if (!obsState.isAir() && obsState.getDestroySpeed(ctx.world(), obs) >= 0
+                            && !MovementHelper.avoidBreaking(baritone.bsi, obs.getX(), obs.getY(), obs.getZ(), obsState)) {
+                        Optional<Rotation> rotObs = RotationUtils.reachable(ctx, obs);
+                        if (rotObs.isPresent()) {
+                            if (activeMiningBlock == null || !activeMiningBlock.equals(obs)) {
+                                activeMiningBlock = obs;
+                                activeMiningBlockIsObstructing = true;
+                                pendingOreAfterObstructing = ore;
+                                activeMiningTicks = 0;
+                                logDirect("§e[AutoMine] Phát hiện block che chắn quặng tại " + obs.toShortString() + "! Đào block này trước và đảm bảo dọn sạch hoàn toàn...");
+                            }
+                            if (!isChopMode) {
+                                baritone.getPathingBehavior().cancelSegmentIfSafe();
+                            }
+                            clearMovementKeysKeepAttack();
+                            baritone.getLookBehavior().updateTarget(rotObs.get(), true);
+                            MovementHelper.switchToBestToolFor(ctx, obsState);
+                            if (isAimedAtBlock(obs, rotObs.get())) {
+                                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                            }
+                            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                        }
+                    }
                 }
             }
         }
@@ -653,6 +734,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         stuckTicks = 0;
         stuckRetries = 0;
         activeMiningBlock = null;
+        activeMiningBlockIsObstructing = false;
+        pendingOreAfterObstructing = null;
+        obstructingTransitionTicks = 0;
+        shulkerClearOrigin = null;
         activeMiningTicks = 0;
         lockedTargetOre = null;
         recentPosIndex = 0;
@@ -665,6 +750,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
             shulkerState = ShulkerStorageState.IDLE;
+            shulkerClearOrigin = null;
             shulkerPlacedPos = null;
             shulkerStateTicks = 0;
             shulkerBoxCountBefore = 0;
@@ -2258,7 +2344,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 int occupied = getShulkerOccupiedSlots(inv.get(shulkerSlot));
                 String slotDesc = (occupied == 0) ? "trống 100%" : (occupied + "/27 ô đã dùng");
                 logDirect("§a[AutoShulker] Balo đã đầy (còn " + emptySlots + " ô trống)! Tự động lấy Shulker Box (" + slotDesc + " tại slot " + shulkerSlot + ") ra đặt để cất " + transferableSlots + " stack vật phẩm...");
-                shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                if (isNearLava(ctx.playerFeet(), 5)) {
+                    logDirect("§e[AutoShulker] Phát hiện dung nham gần đó (<= 5 block)! Bỏ qua đào mở rộng 3x3 để đảm bảo an toàn tuyệt đối.");
+                    shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                } else {
+                    logDirect("§a[AutoShulker] Đang dọn dẹp không gian 3x3 quanh vị trí đặt Shulker Box để đảm bảo thông thoáng...");
+                    shulkerClearOrigin = ctx.playerFeet();
+                    shulkerState = ShulkerStorageState.CLEAR_SPACE;
+                }
                 shulkerStateTicks = 0;
                 shulkerConsecutiveNoTransfer = 0;
                 shulkerUntransferableSlots.clear();
@@ -2290,6 +2383,118 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         shulkerStateTicks++;
 
         switch (shulkerState) {
+            case CLEAR_SPACE -> {
+                if (shulkerClearOrigin == null) {
+                    shulkerClearOrigin = ctx.playerFeet();
+                }
+
+                // Nếu timeout quá 200 tick (10s), bỏ qua dọn dẹp và đặt luôn
+                if (shulkerStateTicks > 200) {
+                    logDirect("§e[AutoShulker] Dọn dẹp 3x3 hết thời gian chờ (10s)! Tiến hành đặt Shulker Box...");
+                    baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                    activeMiningBlock = null;
+                    activeMiningBlockIsObstructing = false;
+                    activeMiningTicks = 0;
+                    shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                    shulkerStateTicks = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Kiểm tra nếu block đang đập dở đã vỡ thành Air
+                if (activeMiningBlock != null && activeMiningBlockIsObstructing) {
+                    BlockState s = ctx.world().getBlockState(activeMiningBlock);
+                    if (s.isAir()) {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                        activeMiningBlock = null;
+                        activeMiningBlockIsObstructing = false;
+                        activeMiningTicks = 0;
+                    }
+                }
+
+                BlockPos targetBreak = null;
+                Rotation targetRot = null;
+                BlockState targetState = null;
+
+                // Ưu tiên tiếp tục đào block đang đập dở nếu vẫn hợp lệ
+                if (activeMiningBlock != null && activeMiningBlockIsObstructing) {
+                    BlockState s = ctx.world().getBlockState(activeMiningBlock);
+                    if (!s.isAir() && s.getDestroySpeed(ctx.world(), activeMiningBlock) >= 0) {
+                        Optional<Rotation> rot = RotationUtils.reachable(ctx, activeMiningBlock);
+                        if (rot.isPresent()) {
+                            targetBreak = activeMiningBlock;
+                            targetRot = rot.get();
+                            targetState = s;
+                        }
+                    }
+                }
+
+                if (targetBreak == null) {
+                    // Quét vùng 3x3 quanh shulkerClearOrigin
+                    // dy: 1 (ngang mắt), 0 (dưới chân), 2 (trên trần đầu)
+                    int[] dyOrder = new int[]{1, 0, 2};
+                    double bestDist = Double.MAX_VALUE;
+                    for (int dy : dyOrder) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            for (int dz = -1; dz <= 1; dz++) {
+                                BlockPos p = shulkerClearOrigin.offset(dx, dy, dz);
+                                BlockState s = ctx.world().getBlockState(p);
+                                if (s.isAir() || s.getBlock() instanceof ShulkerBoxBlock) {
+                                    continue;
+                                }
+                                if (s.getDestroySpeed(ctx.world(), p) < 0) {
+                                    continue;
+                                }
+                                if (isNearLava(p, 2)) {
+                                    continue;
+                                }
+                                if (MovementHelper.avoidBreaking(baritone.bsi, p.getX(), p.getY(), p.getZ(), s)) {
+                                    continue;
+                                }
+                                Optional<Rotation> rot = RotationUtils.reachable(ctx, p);
+                                if (rot.isPresent()) {
+                                    double d = ctx.playerFeet().distSqr(p);
+                                    if (d < bestDist) {
+                                        bestDist = d;
+                                        targetBreak = p;
+                                        targetRot = rot.get();
+                                        targetState = s;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (targetBreak != null) {
+                    activeMiningBlock = targetBreak;
+                    activeMiningBlockIsObstructing = true;
+                    activeMiningTicks++;
+                    clearMovementKeysKeepAttack();
+                    baritone.getLookBehavior().updateTarget(targetRot, true);
+                    if (!LookBehavior.isF5(ctx)) {
+                        ctx.player().setYRot(targetRot.getYaw());
+                        ctx.player().setXRot(targetRot.getPitch());
+                    }
+                    MovementHelper.switchToBestToolFor(ctx, targetState);
+                    if (isAimedAtBlock(targetBreak, targetRot)) {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                    } else {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Đã dọn sạch mọi block cản trở trong vùng 3x3!
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                activeMiningBlock = null;
+                activeMiningBlockIsObstructing = false;
+                activeMiningTicks = 0;
+                logDirect("§a[AutoShulker] Không gian 3x3 đã được dọn sạch sẽ, thông thoáng! Tiến hành đặt Shulker Box...");
+                shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                shulkerStateTicks = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
             case SWAP_TO_HOTBAR -> {
                 int slot = -1;
                 if (shulkerMode == ShulkerMode.RETRIEVE_FOOD) {
@@ -2325,7 +2530,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 } else {
                     // Swap vào ô hotbar tốt nhất (slot 1-8, không bao giờ đè cúp slot 0)
                     shulkerHotbarSlot = findBestHotbarSlotForShulker();
-                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, slot, shulkerHotbarSlot, ClickType.SWAP, ctx.player());
+                    int containerSlot = slot < 9 ? (slot + 36) : slot;
+                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, containerSlot, shulkerHotbarSlot, ClickType.SWAP, ctx.player());
                     shulkerState = ShulkerStorageState.SELECT_SLOT;
                     shulkerStateTicks = 0;
                 }
@@ -3997,11 +4203,67 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 yawDiff = 360.0F - yawDiff;
             }
             float pitchDiff = Math.abs(ctx.playerRotations().getPitch() - targetRot.getPitch());
-            if (yawDiff < 25.0F && pitchDiff < 25.0F) {
+            if (yawDiff < 10.0F && pitchDiff < 10.0F) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean isNearLava(BlockPos center, int radius) {
+        if (ctx.world() == null || center == null) return false;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    BlockPos p = center.offset(dx, dy, dz);
+                    if (ctx.world().getFluidState(p).is(FluidTags.LAVA)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private Optional<BlockPos> getObstructingBlock(BlockPos targetPos) {
+        if (ctx.player() == null || ctx.world() == null || targetPos == null) {
+            return Optional.empty();
+        }
+        Vec3 eyePos = ctx.playerHead();
+        double dx = eyePos.x - (targetPos.getX() + 0.5);
+        double dy = eyePos.y - (targetPos.getY() + 0.5);
+        double dz = eyePos.z - (targetPos.getZ() + 0.5);
+        double absX = Math.abs(dx);
+        double absY = Math.abs(dy);
+        double absZ = Math.abs(dz);
+        net.minecraft.core.Direction facing;
+        if (absX >= absY && absX >= absZ) {
+            facing = dx > 0 ? net.minecraft.core.Direction.EAST : net.minecraft.core.Direction.WEST;
+        } else if (absY >= absX && absY >= absZ) {
+            facing = dy > 0 ? net.minecraft.core.Direction.UP : net.minecraft.core.Direction.DOWN;
+        } else {
+            facing = dz > 0 ? net.minecraft.core.Direction.SOUTH : net.minecraft.core.Direction.NORTH;
+        }
+        BlockPos adjacent = targetPos.relative(facing);
+        if (!adjacent.equals(targetPos)) {
+            BlockState adjState = ctx.world().getBlockState(adjacent);
+            if (!adjState.isAir() && adjState.isSolid() && (filter == null || !filter.has(adjState))) {
+                return Optional.of(adjacent);
+            }
+        }
+        Vec3 targetCenter = new Vec3(targetPos.getX() + 0.5, targetPos.getY() + 0.5, targetPos.getZ() + 0.5);
+        ClipContext clipCtx = new ClipContext(eyePos, targetCenter, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, ctx.player());
+        HitResult hit = ctx.world().clip(clipCtx);
+        if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
+            BlockPos hitPos = ((BlockHitResult) hit).getBlockPos();
+            if (!hitPos.equals(targetPos)) {
+                BlockState s = ctx.world().getBlockState(hitPos);
+                if (!s.isAir() && s.isSolid() && (filter == null || !filter.has(s))) {
+                    return Optional.of(hitPos);
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     private void clearMovementKeysKeepAttack() {
