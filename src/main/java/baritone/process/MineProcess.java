@@ -37,9 +37,13 @@ import baritone.utils.ToolSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
+import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.network.chat.Component;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
@@ -211,6 +215,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private BlockPos shulkerPlacedPos = null;
     private int shulkerStateTicks = 0;
     private int shulkerHotbarSlot = 1;
+    private int shulkerOriginalSlot = -1;
+    private final Set<Integer> blacklistedFullShulkerSlots = new HashSet<>();
     private int shulkerTransferCooldown = 0;
     private int shulkerConsecutiveNoTransfer = 0;
     private int shulkerBoxCountBefore = 0;
@@ -1763,17 +1769,30 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     public static int getShulkerOccupiedSlots(ItemStack stack) {
         if (!isShulkerBox(stack)) return 999;
+
+        // 1. Kiểm tra DataComponents.CONTAINER (chuẩn Vanilla Minecraft 1.20.5+)
         ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
-        if (contents == null) {
-            return 0; // null component = Shulker Box hoàn toàn trống!
+        if (contents != null) {
+            int count = 0;
+            for (ItemStack item : contents.nonEmptyItems()) {
+                if (!item.isEmpty()) {
+                    count++;
+                }
+            }
+            return count;
         }
-        int count = 0;
-        for (ItemStack item : contents.nonEmptyItems()) {
-            if (!item.isEmpty()) {
-                count++;
+
+        // 2. Kiểm tra DataComponents.BLOCK_ENTITY_DATA (chuẩn Paper/Spigot/KingMC lưu trữ Items NBT)
+        CustomData customData = stack.get(DataComponents.BLOCK_ENTITY_DATA);
+        if (customData != null && !customData.isEmpty()) {
+            CompoundTag tag = customData.copyTag();
+            java.util.Optional<ListTag> listOpt = tag.getList("Items");
+            if (listOpt != null && listOpt.isPresent()) {
+                return listOpt.get().size();
             }
         }
-        return count;
+
+        return 0; // null component & null NBT = Shulker Box hoàn toàn trống 100%!
     }
 
     private int countShulkerBoxesInInventory() {
@@ -1811,11 +1830,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         for (int slot : slotOrder) {
             ItemStack stack = inv.get(slot);
             if (!isShulkerBox(stack)) continue;
+            // Bỏ qua nếu hộp này đã được đánh dấu là đầy/không thể nhận thêm đồ trong balo
+            if (blacklistedFullShulkerSlots.contains(slot)) continue;
 
             int occupied = getShulkerOccupiedSlots(stack);
+            // TUYỆT ĐỐI BỎ QUA nếu Shulker Box đã đầy 27/27 ô!
+            if (occupied >= 27) continue;
+
             // 1. Shulker box đang dùng dở (chưa full, 0 < occupied < 27):
             // ƯU TIÊN SỐ 1: Tiếp tục đặt ra và cho đồ vào tiếp cho đến khi đầy 27/27 ô!
-            if (occupied > 0 && occupied < 27) {
+            if (occupied > 0) {
                 if (occupied > maxPartialOccupied) {
                     maxPartialOccupied = occupied;
                     bestPartialSlot = slot;
@@ -2018,7 +2042,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private ItemEntity findNearbyDroppedShulker() {
         if (ctx.world() == null || ctx.player() == null) return null;
         ItemEntity best = null;
-        double bestDist = 36.0; // Bán kính tối đa 6 block
+        double bestDist = 256.0; // Bán kính tối đa 16 block
         for (Entity entity : ((ClientLevel) ctx.world()).entitiesForRendering()) {
             if (entity instanceof ItemEntity ei && ei.isAlive()) {
                 if (isShulkerBox(ei.getItem())) {
@@ -2299,6 +2323,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         if (shulkerCooldownTicks > 0) {
             shulkerCooldownTicks--;
+            if (shulkerCooldownTicks == 0) {
+                blacklistedFullShulkerSlots.clear();
+            }
             return null;
         }
 
@@ -2505,6 +2532,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 if (shulkerBoxCountBefore <= 0) {
                     shulkerBoxCountBefore = countShulkerBoxesInInventory();
                 }
+                shulkerOriginalSlot = slot;
                 if (slot < 9 && slot > 0) {
                     shulkerHotbarSlot = slot;
                     shulkerState = ShulkerStorageState.SELECT_SLOT;
@@ -2779,8 +2807,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                 }
 
-                if (isBoxFull) {
-                    logDirect("§6[AutoShulker] Shulker Box đã đầy (27/27 ô)! Đã cất " + shulkerTransferredCount + " stack.");
+                if (isBoxFull || shulkerTransferredCount == 0) {
+                    if (isBoxFull) {
+                        logDirect("§6[AutoShulker] Shulker Box đã đầy 100% (27/27 ô)! Đã cất " + shulkerTransferredCount + " stack.");
+                    } else {
+                        logDirect("§6[AutoShulker] Shulker Box này không thể nhận thêm vật phẩm nào trong balo! (0 stack được chuyển).");
+                    }
+                    if (shulkerHotbarSlot >= 0 && shulkerHotbarSlot < 9) {
+                        blacklistedFullShulkerSlots.add(shulkerHotbarSlot);
+                    }
+                    if (shulkerOriginalSlot >= 0 && shulkerOriginalSlot < 36) {
+                        blacklistedFullShulkerSlots.add(shulkerOriginalSlot);
+                    }
                 } else {
                     logDirect("§a[AutoShulker] Đã cất gọn " + shulkerTransferredCount + " stack vào Shulker Box (giữ nguyên Công cụ, Cúp, Rìu, Xẻng, Totem, Xô nước & Đồ ăn)!");
                 }
@@ -2849,6 +2887,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 // BẮT BUỘC: Đã nhặt được Shulker Box vào balo (tổng số lượng Shulker Box trong balo >= số lượng trước khi đặt)
                 if (currentShulkerCount >= shulkerBoxCountBefore) {
                     baritone.getInputOverrideHandler().clearAllKeys();
+                    baritone.getPathingBehavior().cancelSegmentIfSafe();
                     logDirect("§a[AutoShulker] Đã thu hồi và nhặt Shulker Box vào balo an toàn (Tổng: " + currentShulkerCount + ")!");
                     shulkerPlacedPos = null;
                     shulkerStateTicks = 0;
@@ -2878,13 +2917,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 // Nếu chưa nhặt được: xác định vị trí thực tế của Shulker Box rơi trên sàn
                 ItemEntity droppedItem = findNearbyDroppedShulker();
                 Vec3 targetPos = null;
+                BlockPos targetBlock = null;
                 if (droppedItem != null) {
                     targetPos = droppedItem.position();
+                    targetBlock = droppedItem.blockPosition();
                 } else if (shulkerPlacedPos != null) {
                     targetPos = new Vec3(shulkerPlacedPos.getX() + 0.5, shulkerPlacedPos.getY(), shulkerPlacedPos.getZ() + 0.5);
+                    targetBlock = shulkerPlacedPos;
                 }
 
-                if (targetPos != null) {
+                if (targetPos != null && targetBlock != null) {
                     Vec3 playerPos = ctx.player().position();
                     double dx = targetPos.x - playerPos.x;
                     double dz = targetPos.z - playerPos.z;
@@ -2894,14 +2936,44 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), targetPos, ctx.playerRotations());
                     baritone.getLookBehavior().updateTarget(rot, true);
 
-                    // Di chuyển bước tới vị trí item nếu còn cách xa
+                    // 1. Nếu item ở ngay sát người chơi (<= 0.35 block): dừng di chuyển để hút
+                    if (horizontalDistSq <= 0.12 && Math.abs(targetPos.y - playerPos.y) <= 0.8) {
+                        baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, false);
+                        baritone.getInputOverrideHandler().setInputForceState(Input.JUMP, false);
+                        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                    }
+
+                    // 2. YÊU CẦU: "không tiếp cận được shulker box bị rơi thì ĐÀO ĐẾN ĐÓ cũng được"
+                    // Sau 10 tick nếu chưa hút được (do vật cản, chênh lệch độ cao, hoặc rơi vào hố/kẹt trong ngách):
+                    if (shulkerStateTicks > 10) {
+                        // A) Tự động đập block chắn trực tiếp nếu đang va chạm tường chắn hướng về item
+                        if (ctx.player().horizontalCollision) {
+                            BlockPos obstacle = ctx.playerFeet().relative(Direction.fromYRot(rot.getYaw()));
+                            BlockState obsState = ctx.world().getBlockState(obstacle);
+                            if (!obsState.isAir() && !obsState.canBeReplaced() && !(obsState.getBlock() instanceof ShulkerBoxBlock)) {
+                                MovementHelper.switchToBestToolFor(ctx, obsState);
+                                Optional<Rotation> reachRot = RotationUtils.reachable(ctx, obstacle);
+                                if (reachRot.isPresent()) {
+                                    baritone.getLookBehavior().updateTarget(reachRot.get(), true);
+                                    if (isAimedAtBlock(obstacle, reachRot.get())) {
+                                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                                    }
+                                }
+                            }
+                        }
+
+                        // B) Kích hoạt A* Pathfinding để đào thông đường và nhảy tới vị trí Shulker Box rơi!
+                        GoalBlock goal = new GoalBlock(targetBlock);
+                        return new PathingCommand(goal, PathingCommandType.SET_GOAL_AND_PATH);
+                    }
+
+                    // Trong 10 tick đầu: di chuyển bước tới nhặt nhanh
                     if (horizontalDistSq > 0.08) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, true);
                     } else {
                         baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, false);
                     }
 
-                    // Tự động nhảy nếu gặp vật cản hoặc chênh lệch độ cao
                     if (ctx.player().horizontalCollision || targetPos.y > playerPos.y + 0.5) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.JUMP, true);
                     } else {
@@ -2912,15 +2984,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     baritone.getInputOverrideHandler().setInputForceState(Input.JUMP, false);
                 }
 
-                // Báo log định kỳ mỗi 40 tick (2 giây) để người chơi biết bot đang nhặt đồ
+                // Báo log định kỳ mỗi 40 tick (2 giây) để người chơi biết bot đang đào tiếp cận
                 if (shulkerStateTicks > 0 && shulkerStateTicks % 40 == 0) {
-                    logDirect("§e[AutoShulker] Đang di chuyển để nhặt lại Shulker Box (" + (shulkerStateTicks / 20) + "s)...");
+                    logDirect("§e[AutoShulker] Đang đào thông đường tiếp cận để nhặt lại Shulker Box (" + (shulkerStateTicks / 20) + "s)...");
                 }
 
-                // Timeout an toàn: 200 tick (10 giây). Tránh kẹt vô hạn nếu Shulker Box rơi vào void hoặc bị người khác nhặt mất
-                if (shulkerStateTicks > 200) {
+                // Timeout an toàn: 600 tick (30 giây) để bot có đủ thời gian đào qua các vách đá/địa hình
+                if (shulkerStateTicks > 600) {
                     baritone.getInputOverrideHandler().clearAllKeys();
-                    logDirect("§c[AutoShulker] Quá thời gian chờ nhặt Shulker Box (10s)! Tiếp tục hành trình...");
+                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    logDirect("§c[AutoShulker] Quá thời gian chờ nhặt Shulker Box (30s)! Tiếp tục hành trình...");
                     shulkerState = ShulkerStorageState.IDLE;
                     shulkerPlacedPos = null;
                     shulkerStateTicks = 0;
