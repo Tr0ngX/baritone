@@ -196,7 +196,21 @@ public abstract class Movement implements IMovement, MovementHelper {
     public boolean safeToCancel() {
         if (baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
                 || (ctx.minecraft().gameMode != null && ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock())) {
-            return false;
+            BlockPos hitting = ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).getCurrentBlock();
+            if (hitting != null && ctx.world() != null) {
+                net.minecraft.world.level.block.state.BlockState state = ctx.world().getBlockState(hitting);
+                if (baritone.getMineProcess().isActive() && !state.isAir()) {
+                    // Nếu đang đập quặng quý thật sự thì không cancel dở
+                    // Nếu đang đập đá/đất/deepslate đào hầm thì cho phép cancel ngay để bẻ lái sang quặng!
+                    if (state.is(net.minecraft.world.level.block.Blocks.DIAMOND_ORE)
+                            || state.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_DIAMOND_ORE)
+                            || state.is(net.minecraft.world.level.block.Blocks.ANCIENT_DEBRIS)
+                            || state.is(net.minecraft.world.level.block.Blocks.EMERALD_ORE)
+                            || state.is(net.minecraft.world.level.block.Blocks.DEEPSLATE_EMERALD_ORE)) {
+                        return false;
+                    }
+                }
+            }
         }
         return safeToCancel(currentState);
     }

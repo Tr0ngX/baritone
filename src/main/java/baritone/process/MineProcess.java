@@ -418,7 +418,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             // NGUYÊN TẮC: Khi quặng ở trên cao (> feet.getY() + 2) hoặc bot đang ở trên không (không onGround):
             // TUYỆT ĐỐI KHÔNG nhảy lên đập dở! Nhả activeMiningBlock để A* thực hiện xong bước nhảy/kê chân vững vàng trước!
             // Riêng khi chặt cây (Chop Mode), cho phép với tới độ cao +4 block để chặt sạch thân cây khi đứng trên đất!
-            int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 2);
+            int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 3);
             if (activeMiningBlock.getY() > maxReachY || (!ctx.player().onGround() && !ctx.player().isInWater())) {
                 activeMiningBlock = null;
                 activeMiningTicks = 0;
@@ -515,7 +515,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         boolean canDirectMine = (ctx.player().onGround() || ctx.player().isInWater())
                 && !baritone.getInputOverrideHandler().isInputForcedDown(Input.JUMP);
         if (canDirectMine) {
-            int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 2);
+            int maxReachY = isChopMode ? (ctx.playerFeet().getY() + 4) : (ctx.playerFeet().getY() + 3);
             Optional<BlockPos> reachableOre = curr.stream()
                     .filter(pos -> ctx.playerFeet().distSqr(pos) <= 25)
                     // QUY TẮC: Đứng vững trên sàn và đào các block trong tầm với trực tiếp
@@ -555,7 +555,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         Optional<BlockPos> shaft = curr.stream()
                 .filter(pos -> pos.getX() == ctx.playerFeet().getX() && pos.getZ() == ctx.playerFeet().getZ())
                 .filter(pos -> pos.getY() >= ctx.playerFeet().getY())
-                .filter(pos -> pos.getY() <= ctx.playerFeet().getY() + 2) // Chỉ đào thẳng đứng nếu trong tầm đứng vững trên sàn
+                .filter(pos -> pos.getY() <= ctx.playerFeet().getY() + 3) // Chỉ đào thẳng đứng nếu trong tầm đứng vững trên sàn
                 .filter(pos -> !(BlockStateInterface.get(ctx, pos).getBlock() instanceof AirBlock)) // after breaking a block, it takes mineGoalUpdateInterval ticks for it to actually update this list =(
                 .min(Comparator.comparingDouble(ctx.playerFeet().above()::distSqr));
         if (shaft.isPresent() && ctx.player().onGround()) {
@@ -712,18 +712,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             // Chunk KHÔNG LOAD hoặc CHƯA ĐẦY ĐỦ DATA: Tuyệt đối giữ nguyên trong oreMemory, không được xóa!
             return false;
         });
-
-        // 4. Nếu quặng nằm ngay sát chân/dưới sàn (distSqr <= 2.25) nhưng không thể với tới để đào (unreachable):
-        // Xóa khỏi oreMemory và blacklist để tránh loop "cách 0m"!
-        oreMemory.removeIf(pos -> {
-            if (ctx.playerFeet().distSqr(pos) <= 2.25 && pos.getY() < ctx.playerFeet().getY()) {
-                if (!RotationUtils.reachable(ctx, pos).isPresent()) {
-                    blacklist.add(pos);
-                    return true;
-                }
-            }
-            return false;
-        });
     }
 
     private PathingCommand updateGoal() {
@@ -738,18 +726,22 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             boolean isInvFull = ctx.player() != null && ctx.player().getInventory().getFreeSlot() == -1;
             List<BlockPos> droppedItems = droppedItemsScan();
             if (!droppedItems.isEmpty() && !isInvFull) {
-                // Lọc bỏ những item rơi nằm ngược hướng hầm đang đào nếu cách xa quá 2 block
+                // Lọc bỏ những item rơi nếu ở quá xa phía sau (chỉ bỏ qua nếu > 6 block)
                 List<BlockPos> validDrops = droppedItems.stream().filter(dropPos -> {
+                    // QUY TẮC CỐT LÕI: Item rơi ở cự ly gần (<= 6 block) quanh người TUYỆT ĐỐI BẮT BUỘC HÚT SẠCH 100%!
+                    if (ctx.playerFeet().distSqr(dropPos) <= 36.0) {
+                        return true;
+                    }
                     if (tunnelDirection != null) {
                         int dot = (dropPos.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (dropPos.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
                         if (Baritone.settings().mineStrictOneDirection.value) {
-                            if (dot < 0) return false; // Tuyệt đối không quay xe nhặt đồ phía sau!
+                            if (dot < 0) return false;
                             int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
                                     ? Math.abs(dropPos.getX() - ctx.playerFeet().getX())
                                     : Math.abs(dropPos.getZ() - ctx.playerFeet().getZ());
-                            if (perpDist > 3) return false; // Lệch ngang quá 3 block -> không rẽ ngang nhặt!
-                        } else if (dot < 0 && ctx.playerFeet().distSqr(dropPos) > 4.0) {
-                            return false; // Nằm ngược hướng đào hầm -> không quay đầu chạy ngược lại!
+                            if (perpDist > 4) return false;
+                        } else if (dot < 0 && ctx.playerFeet().distSqr(dropPos) > 16.0) {
+                            return false;
                         }
                     }
                     return true;
@@ -760,6 +752,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             .min(Comparator.comparingDouble(ctx.playerFeet()::distSqr));
                     if (closestDrop.isPresent()) {
                         BlockPos dropPos = closestDrop.get();
+                        double distSq = ctx.playerFeet().distSqr(dropPos);
                         if (dropAttemptPos != null && dropAttemptPos.equals(dropPos)) {
                             dropAttemptTicks++;
                             if (dropAttemptTicks > 40) { // Đứng sát item 2 giây mà không hút được (bị kẹt/vướng)
@@ -772,8 +765,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             dropAttemptTicks = 0;
                         }
 
-                        // Nếu chưa đứng trong bán kính hút đồ (1 block) -> Bước tới nhặt!
-                        if (ctx.playerFeet().distSqr(dropPos) > 1.0) {
+                        // Nếu ở ngay sát item (<= 1.5 block) nhưng chưa hút được: bước thẳng vào tâm ô để hút trọn vẹn!
+                        if (distSq <= 1.5) {
+                            Vec3 targetVec = new Vec3(dropPos.getX() + 0.5, dropPos.getY() + 0.1, dropPos.getZ() + 0.5);
+                            Rotation rot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), targetVec, ctx.playerRotations());
+                            baritone.getLookBehavior().updateTarget(rot, true);
+                            return new PathingCommand(new GoalBlock(dropPos), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+                        } else {
                             return new PathingCommand(new GoalTwoBlocks(dropPos), PathingCommandType.REVALIDATE_GOAL_AND_PATH);
                         }
                     }
@@ -819,19 +817,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             // Loại bỏ các quặng nằm quá xa phía sau hướng hầm đang đào (tránh quay xe chạy ngược hầm cũ)
             if (tunnelDirection != null && (hasReachedTargetY || Baritone.settings().mineStrictOneDirection.value)) {
                 allCandidates.removeIf(p -> {
-                    // QUY TẮC CỐT LÕI: Quặng ở cự ly gần (<= 6 block) quanh người TUYỆT ĐỐI KHÔNG BỎ QUA!
-                    if (ctx.playerFeet().distSqr(p) <= 36.0) {
+                    // QUY TẮC CỐT LÕI: Quặng ở cự ly gần (<= 10 block) quanh người TUYỆT ĐỐI KHÔNG BỎ QUA!
+                    if (ctx.playerFeet().distSqr(p) <= 100.0) {
                         return false;
                     }
                     int dot = (p.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (p.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
                     if (Baritone.settings().mineStrictOneDirection.value) {
-                        if (dot < 0) return true; // Chỉ bỏ qua quặng phía sau lưng nếu đã đi xa quá 6 block!
+                        if (dot < 0) return true; // Chỉ bỏ qua quặng phía sau lưng nếu đã đi xa quá 10 block!
                         int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
                                 ? Math.abs(p.getX() - ctx.playerFeet().getX())
                                 : Math.abs(p.getZ() - ctx.playerFeet().getZ());
-                        return perpDist > 4;
+                        return perpDist > 8;
                     }
-                    return dot < -8;
+                    return dot < -10;
                 });
             }
             if (ctx.playerFeet().y > targetY + 3 && !hasReachedTargetY) {
@@ -853,18 +851,18 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             // CHẾ ĐỘ ĐÀO 1 HƯỚNG DUY NHẤT (STRICT ONE-DIRECTION MINING):
             if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null && !isChopMode) {
                 locs2.removeIf(p -> {
-                    // QUY TẮC CỐT LÕI: Quặng ở cự ly gần (<= 6 block) quanh người TUYỆT ĐỐI KHÔNG BỎ QUA!
-                    if (ctx.playerFeet().distSqr(p) <= 36.0) {
+                    // QUY TẮC CỐT LÕI: Quặng ở cự ly gần (<= 10 block) quanh người TUYỆT ĐỐI KHÔNG BỎ QUA!
+                    if (ctx.playerFeet().distSqr(p) <= 100.0) {
                         return false;
                     }
                     int forward = (p.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (p.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
                     if (forward < 0) {
-                        return true; // Chỉ bỏ qua nếu đã đi xa quá 6 block về phía trước!
+                        return true; // Chỉ bỏ qua nếu đã đi xa quá 10 block về phía trước!
                     }
                     int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
                             ? Math.abs(p.getX() - ctx.playerFeet().getX())
                             : Math.abs(p.getZ() - ctx.playerFeet().getZ());
-                    return perpDist > 4;
+                    return perpDist > 8;
                 });
             }
             if (!locs2.isEmpty()) {
@@ -914,11 +912,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     lockedTargetOre = null;
                 }
 
-                // Cơ chế Hysteresis thông minh: Nếu có quặng ngay sát người (<= 4 block, distSqr <= 16)
-                // trong khi lockedTargetOre ở xa hơn (> 4 block), lập tức đổi lockedTargetOre sang quặng sát người!
-                if (lockedTargetOre != null && ctx.playerFeet().distSqr(lockedTargetOre) > 16) {
+                // Cơ chế Hysteresis thông minh: Nếu có quặng ngay sát người (<= 8 block, distSqr <= 64)
+                // trong khi lockedTargetOre ở xa hơn (> 8 block), lập tức đổi lockedTargetOre sang quặng sát người!
+                if (lockedTargetOre != null && ctx.playerFeet().distSqr(lockedTargetOre) > 64) {
                     Optional<BlockPos> veryClose = locs2.stream()
-                            .filter(pos -> ctx.playerFeet().distSqr(pos) <= 16)
+                            .filter(pos -> ctx.playerFeet().distSqr(pos) <= 64)
                             .min(Comparator.comparingDouble(ctx.playerFeet()::distSqr));
                     if (veryClose.isPresent()) {
                         lockedTargetOre = veryClose.get();
@@ -943,10 +941,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 List<BlockPos> targetOres;
                 if (lockedTargetOre != null) {
-                    // Gom toàn bộ quặng trong cùng cụm (bán kính 10 block quanh lockedTargetOre) để GoalComposite bao trùm cả vỉa
+                    // Bao gồm toàn bộ quặng gần người chơi (<= 16 block) VÀ cụm vỉa quanh lockedTargetOre để không bỏ sót quặng gần!
                     final BlockPos target = lockedTargetOre;
                     targetOres = locs2.stream()
-                            .filter(pos -> pos.equals(target) || pos.distSqr(target) <= 100)
+                            .filter(pos -> ctx.playerFeet().distSqr(pos) <= 256 || pos.equals(target) || pos.distSqr(target) <= 100)
                             .collect(Collectors.toList());
                     if (targetOres.isEmpty()) {
                         targetOres = Collections.singletonList(target);
@@ -962,11 +960,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 forceReroute = false;
 
                 // NẾU ĐANG ĐÀO HẦM (TUNNEL) MÀ PHÁT HIỆN QUẶNG:
-                // NGAY LẬP TỨC HỦY ĐƯỜNG ĐÀO HẦM ĐỂ CHUYỂN SANG ĐÀO QUẶNG!
-                if (wasTunneling) {
+                // NGAY LẬP TỨC HỦY ĐƯỜNG ĐÀO HẦM ĐỂ BẺ LÁI SANG ĐÀO QUẶNG!
+                Goal currentGoal = baritone.getPathingBehavior().getGoal();
+                boolean isTunnelGoal = (currentGoal instanceof GoalStrictDirection)
+                        || (currentGoal instanceof GoalShaftDown)
+                        || (currentGoal instanceof GoalRunAway);
+
+                if (wasTunneling || isTunnelGoal) {
                     wasTunneling = false;
-                    logDirect("§a[AutoMine] Phát hiện quặng mục tiêu khi đang đào hầm! NGAY LẬP TỨC chuyển hướng sang đào quặng...");
-                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    logDirect("§a[AutoMine] Phát hiện quặng mục tiêu khi đang đào hầm! NGAY LẬP TỨC hủy hầm để rẽ sang đào quặng...");
+                    baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+                    baritone.getInputOverrideHandler().clearAllKeys();
+                    baritone.getPathingBehavior().forceCancel();
+                    forceReroute = true;
                     return new PathingCommand(goal, PathingCommandType.CANCEL_AND_SET_GOAL);
                 }
 
@@ -1297,7 +1303,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 ItemEntity ei = (ItemEntity) entity;
                 ItemStack stack = ei.getItem();
                 Item item = stack.getItem();
-                if (ORE_DROPS.contains(item) || (filter != null && filter.has(stack)) || item.getDescriptionId().contains("ore") || item.getDescriptionId().contains("raw")) {
+                if (isShulkerBox(stack) || isTargetOre(stack) || ORE_DROPS.contains(item) || (filter != null && filter.has(stack)) || item.getDescriptionId().contains("ore") || item.getDescriptionId().contains("raw")) {
                     BlockPos pos = entity.blockPosition();
                     if (!ignoredDrops.containsKey(pos) && pos.distSqr(pf) <= 256) { // Trong bán kính 16 block
                         ret.add(pos);
@@ -1407,18 +1413,30 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int countDroppableTrashSlots() {
         if (ctx.player() == null) return 0;
         NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
-        int keptBuildingBlocks = 0;
+        List<Integer> buildingSlots = new ArrayList<>();
+        for (int i = 1; i < 36; i++) {
+            ItemStack s = inv.get(i);
+            if (!s.isEmpty() && !isProtectedFromDrop(s) && isBuildingBlock(s)) {
+                buildingSlots.add(i);
+            }
+        }
+        buildingSlots.sort((a, b) -> Integer.compare(inv.get(b).getCount(), inv.get(a).getCount()));
+
+        Set<Integer> keptSlots = new HashSet<>();
+        int keptCount = 0;
+        for (int slot : buildingSlots) {
+            if (keptCount < 64) {
+                keptSlots.add(slot);
+                keptCount += inv.get(slot).getCount();
+            }
+        }
+
         int trashSlots = 0;
-        for (int i = 0; i < 36; i++) {
+        for (int i = 1; i < 36; i++) {
             ItemStack stack = inv.get(i);
             if (stack.isEmpty()) continue;
             if (isProtectedFromDrop(stack)) continue;
-            if (isBuildingBlock(stack)) {
-                if (keptBuildingBlocks < 64) {
-                    keptBuildingBlocks += stack.getCount();
-                    continue;
-                }
-            }
+            if (isBuildingBlock(stack) && keptSlots.contains(i)) continue;
             trashSlots++;
         }
         return trashSlots;
@@ -1433,8 +1451,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             ItemStack stack = inv.get(i);
             if (stack.isEmpty()) continue;
             if (shouldKeepInInventory(stack)) continue;
-            // Block xây dựng thông thường (đá, đất, v.v.) không phải là món cất vào Shulker Box
-            if (isBuildingBlock(stack) && !isTargetOre(stack)) continue;
             transferable++;
         }
         return transferable;
@@ -1445,7 +1461,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return null;
         }
 
-        if (!Baritone.settings().autoDrop.value) {
+        if (!Baritone.settings().autoDrop.value && pendingDropSlots.isEmpty()) {
             return null;
         }
 
@@ -1454,23 +1470,58 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return null;
         }
 
-        // Nếu đang đập block dở (activeMiningBlock hoặc isHittingBlock), hoãn vứt rác cho tới khi block vỡ xong
-        boolean isMining = (activeMiningBlock != null)
-                || baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
-                || ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock();
+        // 1. Quét tìm và nạp rác vào hàng đợi (KHÔNG bị chặn bởi việc đang đập block):
+        if (pendingDropSlots.isEmpty()) {
+            boolean shouldScan = (tickCount % 100 == 0);
+            if (!shouldScan) {
+                NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+                int emptyCount = 0;
+                boolean hasFullExcessStack = false;
+                int buildingBlockCount = 0;
 
-        // 1. Nếu đang có hàng đợi vứt rác → vứt 1 stack mỗi 4 tick (0.2s) để tránh kick packet
+                for (int i = 1; i < 36; i++) {
+                    ItemStack s = inv.get(i);
+                    if (s.isEmpty()) {
+                        emptyCount++;
+                    } else if (!isProtectedFromDrop(s)) {
+                        if (isBuildingBlock(s)) {
+                            buildingBlockCount += s.getCount();
+                            if (buildingBlockCount > 64 && s.getCount() >= 64) {
+                                hasFullExcessStack = true;
+                            }
+                        } else if (s.getCount() >= 64) {
+                            hasFullExcessStack = true;
+                        }
+                    }
+                }
+                if (emptyCount <= 3 || hasFullExcessStack) {
+                    shouldScan = true;
+                }
+            }
+
+            if (shouldScan) {
+                scanAndQueueTrashDrops();
+            }
+        }
+
+        // 2. Thực hiện vứt rác từ hàng đợi:
         if (!pendingDropSlots.isEmpty()) {
-            if (isMining) {
+            // Nếu đang đào quặng quý mục tiêu (activeMiningBlock != null): chờ đào xong quặng quý
+            if (activeMiningBlock != null) {
                 return null;
             }
+
             if (dropCooldown > 0) {
                 dropCooldown--;
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             }
+
+            // Tạm dừng việc đập hầm khi vứt rác
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+
             int slotIndex = pendingDropSlots.remove(0);
             NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
-            if (slotIndex >= 0 && slotIndex < inv.size()) {
+            if (slotIndex >= 1 && slotIndex < inv.size()) {
                 ItemStack stack = inv.get(slotIndex);
                 int windowSlot = (slotIndex < 9) ? (slotIndex + 36) : slotIndex;
                 ItemStack menuStack = ctx.player().inventoryMenu.getSlot(windowSlot).getItem();
@@ -1501,10 +1552,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             ));
                         }
                     }
+                    // Button 1 = Vứt trọn vẹn toàn bộ full stack (Ctrl+Q)!
                     ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 1, ClickType.THROW, ctx.player());
                 }
             }
-            dropCooldown = 4;
+            dropCooldown = 3; // 3 ticks (0.15s) cooldown giữa mỗi stack ném
             if (pendingDropSlots.isEmpty()) {
                 logDirect("§a[AutoDrop] Đã dọn sạch toàn bộ đá thừa và quặng không liên quan!");
                 return null;
@@ -1512,28 +1564,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
-        if (isMining) {
-            return null;
-        }
-
-        // 2. CHU KỲ TỰ ĐỘNG VỨT MỖI 10 GIÂY (200 ticks) - KHÔNG CẦN CHỜ ĐẦY MỚI VỨT:
-        if (tickCount % 200 == 0) {
-            scanAndQueueTrashDrops();
-        } else {
-            // 3. KHI BALO GẦN ĐẦY (còn <= 3 ô trống): Quét và vứt rác NGAY LẬP TỨC để giải phóng chỗ trống
-            NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
-            int emptyCount = 0;
-            for (int i = 0; i < 36; i++) {
-                if (inv.get(i).isEmpty()) emptyCount++;
-            }
-            if (emptyCount <= 3 && pendingDropSlots.isEmpty()) {
-                scanAndQueueTrashDrops();
-            }
-        }
-
-        if (!pendingDropSlots.isEmpty()) {
-            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
-        }
         return null;
     }
 
@@ -1597,25 +1627,41 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private void scanAndQueueTrashDrops() {
         if (ctx.player() == null) return;
         NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
-        int keptBuildingBlocks = 0;
-        int newQueued = 0;
 
-        for (int i = 0; i < 36; i++) {
+        // 1. Phân loại các slot chứa block xây dựng (đá, đất, v.v.):
+        List<Integer> buildingSlots = new ArrayList<>();
+        for (int i = 1; i < 36; i++) { // Luôn bỏ qua slot 0 (cúp chính)
+            ItemStack s = inv.get(i);
+            if (!s.isEmpty() && !isProtectedFromDrop(s) && isBuildingBlock(s)) {
+                buildingSlots.add(i);
+            }
+        }
+        // Ưu tiên giữ lại stack to nhất (nhiều block nhất) lên đầu
+        buildingSlots.sort((a, b) -> Integer.compare(inv.get(b).getCount(), inv.get(a).getCount()));
+
+        Set<Integer> keptSlots = new HashSet<>();
+        int keptCount = 0;
+        for (int slot : buildingSlots) {
+            if (keptCount < 64) {
+                keptSlots.add(slot);
+                keptCount += inv.get(slot).getCount();
+            }
+        }
+
+        int newQueued = 0;
+        for (int i = 1; i < 36; i++) { // Không vứt slot 0
             ItemStack stack = inv.get(i);
             if (stack.isEmpty()) continue;
 
-            // 1. Giữ các vật phẩm bảo vệ: Shulker Box, Totem, Thức ăn, Công cụ/Cúp, Quặng mục tiêu
+            // Bỏ qua item bảo vệ (Shulker Box, Totem, Tool, Food, Target Ore, Enchanted)
             if (isProtectedFromDrop(stack)) continue;
 
-            // 2. Block xây dựng -> Giữ đúng 1 stack (tối đa 64 block) để bắc cầu/kê chân
-            if (isBuildingBlock(stack)) {
-                if (keptBuildingBlocks < 64) {
-                    keptBuildingBlocks += stack.getCount();
-                    continue;
-                }
+            // Nếu là block xây dựng và nằm trong số slot được giữ lại (tổng <= 64): bỏ qua
+            if (isBuildingBlock(stack) && keptSlots.contains(i)) {
+                continue;
             }
 
-            // 3. Toàn bộ đá thừa, quặng không liên quan, rác linh tinh -> nạp vào hàng đợi vứt
+            // Toàn bộ đá thừa, block thừa, rác không mong muốn -> nạp vào hàng đợi vứt
             if (!pendingDropSlots.contains(i)) {
                 pendingDropSlots.add(i);
                 newQueued++;
@@ -1676,8 +1722,10 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int findBestShulkerBoxSlot() {
         if (ctx.player() == null) return -1;
         NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
-        int bestSlot = -1;
-        int minOccupied = 27; // Chỉ nhận Shulker còn ô trống (< 27 ô)
+
+        int bestPartialSlot = -1;
+        int maxPartialOccupied = -1;
+        int bestEmptySlot = -1;
 
         // Thứ tự ưu tiên slot: hotbar slot 1-8 trước, rồi balo chính 9-35, cuối cùng slot 0
         int[] slotOrder = new int[36];
@@ -1691,19 +1739,23 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (!isShulkerBox(stack)) continue;
 
             int occupied = getShulkerOccupiedSlots(stack);
-            // ƯU TIÊN TUYỆT ĐỐI: Shulker trống hoàn toàn (0 ô chứa đồ)!
-            if (occupied == 0) {
-                return slot;
-            }
-
-            // Ưu tiên tiếp theo: Shulker còn nhiều chỗ trống nhất (occupied nhỏ nhất < 27)
-            if (occupied < minOccupied) {
-                minOccupied = occupied;
-                bestSlot = slot;
+            // 1. Shulker box đang dùng dở (chưa full, 0 < occupied < 27):
+            // ƯU TIÊN SỐ 1: Tiếp tục đặt ra và cho đồ vào tiếp cho đến khi đầy 27/27 ô!
+            if (occupied > 0 && occupied < 27) {
+                if (occupied > maxPartialOccupied) {
+                    maxPartialOccupied = occupied;
+                    bestPartialSlot = slot;
+                }
+            } else if (occupied == 0 && bestEmptySlot == -1) {
+                // 2. Shulker trống hoàn toàn (dự phòng khi không có hộp dùng dở)
+                bestEmptySlot = slot;
             }
         }
 
-        return bestSlot;
+        if (bestPartialSlot != -1) {
+            return bestPartialSlot;
+        }
+        return bestEmptySlot;
     }
 
     public static boolean isUsableMiningTool(ItemStack stack) {
@@ -2185,44 +2237,42 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
 
             int transferableSlots = countTransferableSlots();
+            int shulkerSlot = findBestShulkerBoxSlot();
 
             // ĐIỀU KIỆN KÍCH HOẠT AUTO SHULKER:
-            // CHỈ kích hoạt khi:
-            // 1. Phải có ít nhất 1 stack quặng cần cất (transferableSlots > 0)
-            // 2. Balo thực sự ĐÃ ĐẦY: chỉ còn tối đa 1 ô trống (emptySlots <= 1)
-            // Tuyệt đối KHÔNG cất khi balo còn nhiều ô trống!
-            boolean shouldStore = transferableSlots > 0 && emptySlots <= 1;
+            // 1. Phải có Shulker Box còn chỗ (chưa full < 27 ô: ưu tiên đang dùng dở, rồi mới tới hộp trống)
+            // 2. Phải có vật phẩm hợp lệ cần cất (transferableSlots > 0)
+            // 3. Balo THỰC SỰ ĐÃ ĐẦY: chỉ còn tối đa 1 ô trống (emptySlots <= 1)
+            // TUYỆT ĐỐI KHÔNG đặt khi balo chưa đầy!
+            boolean shouldStore = shulkerSlot != -1 && transferableSlots > 0 && emptySlots <= 1;
             if (shouldStore) {
-                int shulkerSlot = findBestShulkerBoxSlot();
-                if (shulkerSlot != -1) {
-                    pendingDropSlots.clear(); // Hủy toàn bộ hàng đợi vứt rác cũ để tránh race condition
-                    shulkerClearingInProgress = true;
-                    shulkerBoxCountBefore = countShulkerBoxesInInventory();
-                    int occupied = getShulkerOccupiedSlots(inv.get(shulkerSlot));
-                    String slotDesc = (occupied == 0) ? "trống 100%" : (occupied + "/27 ô đã dùng");
-                    logDirect("§a[AutoShulker] Balo đã đầy (còn " + emptySlots + " ô trống)! Tự động cất " + transferableSlots + " stack quặng vào Shulker Box (" + slotDesc + " tại slot " + shulkerSlot + ")...");
-                    shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
-                    shulkerStateTicks = 0;
-                    shulkerConsecutiveNoTransfer = 0;
-                    shulkerUntransferableSlots.clear();
-                    shulkerTransferredCount = 0;
-                    baritone.getPathingBehavior().cancelSegmentIfSafe();
-                    baritone.getInputOverrideHandler().clearAllKeys();
-                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
-                } else {
-                    // Nếu người chơi có Shulker nhưng tất cả đều đầy
-                    boolean hasAnyShulker = false;
-                    for (int i = 0; i < 36; i++) {
-                        if (isShulkerBox(inv.get(i))) {
-                            hasAnyShulker = true;
-                            break;
-                        }
+                pendingDropSlots.clear(); // Hủy toàn bộ hàng đợi vứt rác cũ để tránh race condition
+                shulkerClearingInProgress = true;
+                shulkerBoxCountBefore = countShulkerBoxesInInventory();
+                int occupied = getShulkerOccupiedSlots(inv.get(shulkerSlot));
+                String slotDesc = (occupied == 0) ? "trống 100%" : (occupied + "/27 ô đã dùng");
+                logDirect("§a[AutoShulker] Balo đã đầy (còn " + emptySlots + " ô trống)! Tự động lấy Shulker Box (" + slotDesc + " tại slot " + shulkerSlot + ") ra đặt để cất " + transferableSlots + " stack vật phẩm...");
+                shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                shulkerStateTicks = 0;
+                shulkerConsecutiveNoTransfer = 0;
+                shulkerUntransferableSlots.clear();
+                shulkerTransferredCount = 0;
+                baritone.getPathingBehavior().cancelSegmentIfSafe();
+                baritone.getInputOverrideHandler().clearAllKeys();
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            } else if (transferableSlots > 0 && emptySlots <= 2) {
+                // Nếu người chơi có Shulker nhưng tất cả đều đã đầy (27/27)
+                boolean hasAnyShulker = false;
+                for (int i = 0; i < 36; i++) {
+                    if (isShulkerBox(inv.get(i))) {
+                        hasAnyShulker = true;
+                        break;
                     }
-                    if (hasAnyShulker && (System.currentTimeMillis() - lastShulkerFullWarningTime > 20000)) {
-                        logDirect("§c[AutoShulker] Toàn bộ Shulker Box trong balo đều đã đầy (27/27 ô)! Không thể cất thêm đồ.");
-                        lastShulkerFullWarningTime = System.currentTimeMillis();
-                        shulkerCooldownTicks = 400; // Cooldown 20s để bot tiếp tục đào và dùng AutoDrop
-                    }
+                }
+                if (hasAnyShulker && (System.currentTimeMillis() - lastShulkerFullWarningTime > 20000)) {
+                    logDirect("§c[AutoShulker] Toàn bộ Shulker Box trong balo đều đã đầy (27/27 ô)! Không thể cất thêm đồ.");
+                    lastShulkerFullWarningTime = System.currentTimeMillis();
+                    shulkerCooldownTicks = 400; // Cooldown 20s để bot tiếp tục đào và dùng AutoDrop
                 }
             }
             return null;
@@ -2335,9 +2385,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     ctx.player().setYRot(rot.getYaw());
                     ctx.player().setXRot(rot.getPitch());
                 }
+                // Đảm bảo tay chính đang cầm đúng Shulker Box
+                if (!isShulkerBox(ctx.player().getMainHandItem())) {
+                    for (int h = 0; h < 9; h++) {
+                        if (isShulkerBox(ctx.player().getInventory().getNonEquipmentItems().get(h))) {
+                            shulkerHotbarSlot = h;
+                            break;
+                        }
+                    }
+                }
                 ctx.player().getInventory().setSelectedSlot(shulkerHotbarSlot);
                 ctx.playerController().syncHeldItem();
                 ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
+                ctx.player().swing(InteractionHand.MAIN_HAND);
                 shulkerState = ShulkerStorageState.WAIT_FOR_BLOCK;
                 shulkerStateTicks = 0;
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -2347,7 +2407,22 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 if (shulkerPlacedPos != null && ctx.world().getBlockState(shulkerPlacedPos).getBlock() instanceof ShulkerBoxBlock) {
                     shulkerState = ShulkerStorageState.OPEN_BOX;
                     shulkerStateTicks = 0;
-                } else if (shulkerStateTicks > 15) {
+                } else if (shulkerStateTicks == 10 && shulkerPlacedPos != null) {
+                    // Thử click lại nếu mạng bị trễ packet
+                    Optional<ShulkerPlacementTarget> retryOpt = findShulkerPlacePos();
+                    if (retryOpt.isPresent()) {
+                        ShulkerPlacementTarget pt = retryOpt.get();
+                        BlockPos againstPure = new BlockPos(pt.againstPos.getX(), pt.againstPos.getY(), pt.againstPos.getZ());
+                        Vec3 hitVec = pt.face == net.minecraft.core.Direction.UP
+                                ? new Vec3(againstPure.getX() + 0.5, againstPure.getY() + 1.0, againstPure.getZ() + 0.5)
+                                : new Vec3(againstPure.getX() + 0.5 + pt.face.getStepX() * 0.5, againstPure.getY() + 0.5, againstPure.getZ() + 0.5 + pt.face.getStepZ() * 0.5);
+                        BlockHitResult bhr = new BlockHitResult(hitVec, pt.face, againstPure, false);
+                        ctx.player().getInventory().setSelectedSlot(shulkerHotbarSlot);
+                        ctx.playerController().syncHeldItem();
+                        ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), InteractionHand.MAIN_HAND, bhr);
+                        ctx.player().swing(InteractionHand.MAIN_HAND);
+                    }
+                } else if (shulkerStateTicks > 25) {
                     logDirect("§c[AutoShulker] Không thể đặt Shulker Box (server từ chối hoặc lag)! Tạm hoãn 10s...");
                     shulkerState = ShulkerStorageState.IDLE;
                     shulkerCooldownTicks = 200; // Cooldown 10s
@@ -2472,10 +2547,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                     ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
                     if (stack.isEmpty()) continue;
-                    // BỎ QUA các món thiết yếu: Cúp, Totem, Xô nước, Đồ ăn (và Shulker Box)
+                    // BỎ QUA các món thiết yếu: Cúp, Totem, Xô nước, Đồ ăn, và 1 stack block xây dựng giữ lại
                     if (shouldKeepInInventory(stack)) continue;
-                    // BỎ QUA block xây dựng thông thường (không nhét đá/đất vào Shulker Box trừ khi là mục tiêu đào)
-                    if (isBuildingBlock(stack) && !isTargetOre(stack)) continue;
                     // BỎ QUA ô đã thử mà không thể chuyển vào Shulker Box (shulker đã đầy hoặc từ chối)
                     if (shulkerUntransferableSlots.contains(slotId)) continue;
 
@@ -2597,21 +2670,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         return null;
                     }
 
-                    // Kiểm tra xem người chơi còn món nào cần cất vào Shulker Box tiếp theo không
-                    int remainingTransferable = countTransferableSlots();
-                    int nextShulkerSlot = findBestShulkerBoxSlot();
-                    if (shulkerClearingInProgress && remainingTransferable > 0 && nextShulkerSlot != -1) {
-                        logDirect("§a[AutoShulker] Còn " + remainingTransferable + " ô vật phẩm cần cất! Tiếp tục mở Shulker Box tiếp theo...");
-                        shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
-                        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
-                    }
-
+                    // Sau khi đã cất xong 1 Shulker Box và nhặt lại vào balo an toàn:
+                    // Hoàn tất quy trình ngay lập tức! Tuyệt đối không mở liên hoàn nhiều Shulker Box liên tiếp.
                     shulkerClearingInProgress = false;
                     shulkerState = ShulkerStorageState.IDLE;
                     shulkerMode = ShulkerMode.DEPOSIT;
                     pendingDropSlots.clear();
-                    shulkerCooldownTicks = 100; // Cooldown 5s sau khi cất đồ xong
-                    logDirect("§a[AutoShulker] Đã cất toàn bộ vật phẩm vào Shulker Box (giữ nguyên Công cụ, Cúp, Rìu, Xẻng, Totem, Xô nước & Đồ ăn)! Tiếp tục đào...");
+                    shulkerCooldownTicks = 200; // Cooldown 10s để bot tiếp tục đào
+                    logDirect("§a[AutoShulker] Đã hoàn tất cất đồ vào Shulker Box an toàn! Tiếp tục hành trình đào...");
                     return null;
                 }
 
@@ -2861,8 +2927,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             lastStuckOrePos = pos;
                             stuckRetries = 1;
                         }
-                        if (Baritone.settings().mineStrictOneDirection.value || stuckRetries >= 2) {
-                            // Đã thử nhưng vẫn kẹt (hoặc đang ở chế độ 1 hướng): Thêm NGAY LẬP TỨC toàn bộ vỉa quặng vào BLACKLIST để không bao giờ đào lại!
+                        if (stuckRetries >= 3 && lastCalcFailed) {
+                            // Đã thử nhiều lần và pathfinding thực sự thất bại: Thêm toàn bộ vỉa quặng vào BLACKLIST để không bị kẹt mãi
                             List<BlockPos> veinOres = candidates.stream()
                                     .filter(p -> p.equals(pos) || p.distSqr(pos) <= 9)
                                     .collect(Collectors.toList());
@@ -2873,7 +2939,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             if (knownOreLocations != null) {
                                 knownOreLocations.removeIf(blacklist::contains);
                             }
-                            logDirect("§c[AntiStuck (1-Dir)] Quặng tại " + pos.toShortString() + " (" + veinOres.size() + " block) không thể đào thẳng tới được! ĐÃ BLACKLIST để tiếp tục tiến lên!");
+                            logDirect("§c[AntiStuck] Quặng tại " + pos.toShortString() + " (" + veinOres.size() + " block) không thể tìm đường tới! Đã BLACKLIST để tiếp tục tiến lên!");
                             lockedTargetOre = null;
                             forceReroute = true;
                             stuckRetries = 0;
@@ -2883,7 +2949,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             lockedTargetOre = null;
                             forceReroute = true;
                             baritone.getPathingBehavior().cancelSegmentIfSafe();
-                            logDirect("§e[AntiStuck] Thử đổi hướng tiếp cận quặng tại " + pos.toShortString() + " (lần 1)...");
+                            logDirect("§e[AntiStuck] Thử đổi hướng tiếp cận quặng tại " + pos.toShortString() + " (lần " + stuckRetries + ")...");
                             return;
                         }
                     }
@@ -3488,15 +3554,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 // Né xa toàn bộ quặng nằm trong vùng nguy hiểm của lồng Spawner (mặc định 16 block)
                 .filter(pos -> !isNearSpawner(ctx, pos, Baritone.settings().mobSpawnerAvoidanceRadius.value))
 
-                .sorted((a, b) -> {
-                    BlockPos p = ctx.getBaritone().getPlayerContext().player().blockPosition();
-                    // Phạt nặng chênh lệch độ cao Y (* 5.0) để ưu tiên quặng ngang tầng đào hiện tại
-                    double dyA = (a.getY() - p.getY()) * 5.0;
-                    double distA = Math.pow(a.getX() - p.getX(), 2) + Math.pow(dyA, 2) + Math.pow(a.getZ() - p.getZ(), 2);
-                    double dyB = (b.getY() - p.getY()) * 5.0;
-                    double distB = Math.pow(b.getX() - p.getX(), 2) + Math.pow(dyB, 2) + Math.pow(b.getZ() - p.getZ(), 2);
-                    return Double.compare(distA, distB);
-                })
+                .sorted(Comparator.comparingDouble(ctx.getBaritone().getPlayerContext().player().blockPosition()::distSqr))
                 .collect(Collectors.toList());
 
         if (locs.size() > max) {
