@@ -36,7 +36,7 @@ public class MixinPlayerTabOverlay {
     private void onGetNameForDisplay(PlayerInfo playerInfo, CallbackInfoReturnable<Component> cir) {
         if (StreamerUtil.isHidePlayerNameActive() && playerInfo != null && playerInfo.getProfile() != null) {
             String localName = StreamerUtil.getLocalPlayerName();
-            if (!localName.isEmpty() && localName.equalsIgnoreCase(playerInfo.getProfile().getName())) {
+            if (!localName.isEmpty() && localName.equalsIgnoreCase(playerInfo.getProfile().name())) {
                 Component original = cir.getReturnValue();
                 if (original != null) {
                     cir.setReturnValue(StreamerUtil.censorComponent(original));

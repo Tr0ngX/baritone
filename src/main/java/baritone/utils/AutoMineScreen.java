@@ -26,6 +26,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
@@ -394,12 +397,13 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (BaritoneKeyBindings.KEY_AUTOMINE_GUI.matches(keyCode, scanCode)) {
+    public boolean keyPressed(KeyEvent event) {
+        if (BaritoneKeyBindings.KEY_AUTOMINE_GUI.matches(event)) {
             this.onClose();
             return true;
         }
 
+        int keyCode = event.key();
         if (searchFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 searchFocused = false;
@@ -418,19 +422,20 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         }
 
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(event);
     }
 
     @Override
-    public boolean charTyped(char codePoint, int modifiers) {
+    public boolean charTyped(CharacterEvent event) {
         if (searchFocused) {
+            int codePoint = event.codepoint();
             if (codePoint >= 32 && codePoint != 127) {
-                searchQuery += codePoint;
+                searchQuery += event.codepointAsString();
                 scrollOffset = 0;
                 return true;
             }
         }
-        return super.charTyped(codePoint, modifiers);
+        return super.charTyped(event);
     }
 
     @Override
@@ -443,7 +448,10 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
         ResponsiveLayout l = new ResponsiveLayout(this.width, this.height, activeTab, !searchQuery.isEmpty());
 
         // 1. Kiểm tra Click vào Tab Bar (6 tabs)
@@ -589,7 +597,7 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.mouseClicked(event, doubleClick);
     }
 
     private List<ModuleItem> getFilteredModules() {

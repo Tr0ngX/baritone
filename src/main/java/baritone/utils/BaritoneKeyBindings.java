@@ -19,19 +19,16 @@ package baritone.utils;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 public final class BaritoneKeyBindings {
 
-    public static final String CATEGORY = "category.baritone";
+    public static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("baritone", "main"));
 
     public static final KeyMapping KEY_AUTOMINE_GUI = new KeyMapping(
             "key.baritone.automine_gui",
@@ -60,55 +57,16 @@ public final class BaritoneKeyBindings {
             KEY_PAUSE
     };
 
-    private static boolean registered = false;
-
     /**
-     * Đảm bảo category "category.baritone" được thêm vào CATEGORY_SORT_ORDER của KeyMapping
-     * để tránh NullPointerException khi Minecraft so sánh danh mục trong Key Binds screen.
+     * Trong 1.21.11, KeyMapping.Category.register đã tự động đăng ký vào SORT_ORDER.
      */
     public static void registerCategory() {
-        if (registered) return;
-        try {
-            // 1. Thử qua MixinKeyMapping
-            try {
-                Class<?> mixinClass = Class.forName("baritone.launch.mixins.MixinKeyMapping");
-                Method method = mixinClass.getMethod("getCategorySortOrder");
-                @SuppressWarnings("unchecked")
-                Map<String, Integer> map = (Map<String, Integer>) method.invoke(null);
-                if (map != null && !map.containsKey(CATEGORY)) {
-                    int max = map.values().stream().max(Integer::compareTo).orElse(0);
-                    map.put(CATEGORY, max + 1);
-                    registered = true;
-                    return;
-                }
-            } catch (Throwable ignored) {}
-
-            // 2. Fallback qua reflection quét static Map trong KeyMapping
-            for (Field f : KeyMapping.class.getDeclaredFields()) {
-                if (Map.class.isAssignableFrom(f.getType()) && Modifier.isStatic(f.getModifiers())) {
-                    f.setAccessible(true);
-                    @SuppressWarnings("unchecked")
-                    Map<String, Integer> map = (Map<String, Integer>) f.get(null);
-                    if (map != null) {
-                        if (map.containsKey("key.categories.movement") || map.containsKey(KeyMapping.CATEGORY_MOVEMENT) || !map.isEmpty()) {
-                            if (!map.containsKey(CATEGORY)) {
-                                int max = map.values().stream().max(Integer::compareTo).orElse(0);
-                                map.put(CATEGORY, max + 1);
-                                registered = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
     }
 
     /**
      * Merge toàn bộ Baritone KeyMappings vào mảng keyMappings của Options.
      */
     public static KeyMapping[] process(KeyMapping[] existing) {
-        registerCategory();
         if (existing == null) {
             return ALL_KEYS.clone();
         }

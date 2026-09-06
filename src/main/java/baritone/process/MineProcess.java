@@ -1783,12 +1783,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
 
         // 2. Kiểm tra DataComponents.BLOCK_ENTITY_DATA (chuẩn Paper/Spigot/KingMC lưu trữ Items NBT)
-        CustomData customData = stack.get(DataComponents.BLOCK_ENTITY_DATA);
-        if (customData != null && !customData.isEmpty()) {
-            CompoundTag tag = customData.copyTag();
-            java.util.Optional<ListTag> listOpt = tag.getList("Items");
-            if (listOpt != null && listOpt.isPresent()) {
-                return listOpt.get().size();
+        var blockEntityData = stack.get(DataComponents.BLOCK_ENTITY_DATA);
+        if (blockEntityData != null) {
+            CompoundTag tag = blockEntityData.getUnsafe();
+            if (tag != null) {
+                java.util.Optional<ListTag> listOpt = tag.getList("Items");
+                if (listOpt != null && listOpt.isPresent()) {
+                    return listOpt.get().size();
+                }
             }
         }
 

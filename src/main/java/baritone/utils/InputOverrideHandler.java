@@ -120,7 +120,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
             return;
         }
         try {
-            long window = ctx.minecraft().getWindow().getWindow();
+            com.mojang.blaze3d.platform.Window window = ctx.minecraft().getWindow();
             boolean altDown = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT);
             
             // 1. Kiểm tra phím mở AutoMine Menu (qua KeyMapping tùy chỉnh trong Controls -> Key Binds)

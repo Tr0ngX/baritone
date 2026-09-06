@@ -121,11 +121,11 @@ public class Avoidance {
                             // 2. CREEPER - Chống nổ tan xác (Bán kính né 16 block, hệ số phạt 500.0)
                             coeff = 500.0D;
                             rad = 16;
-                        } else if (entity instanceof net.minecraft.world.entity.monster.Zombie) {
+                        } else if (entity instanceof net.minecraft.world.entity.monster.zombie.Zombie) {
                             // 3. ZOMBIE - Đánh cận chiến đông đảo (Bán kính né 14 block, hệ số phạt 250.0)
                             coeff = 250.0D;
                             rad = 14;
-                        } else if (entity instanceof net.minecraft.world.entity.monster.AbstractSkeleton) {
+                        } else if (entity instanceof net.minecraft.world.entity.monster.skeleton.AbstractSkeleton) {
                             // 4. SKELETON - Bắn tỉa tầm xa (Bán kính né 16 block, hệ số phạt 200.0)
                             coeff = 200.0D;
                             rad = 16;

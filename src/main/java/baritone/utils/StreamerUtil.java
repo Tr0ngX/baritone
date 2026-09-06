@@ -41,7 +41,7 @@ public final class StreamerUtil {
         }
         LocalPlayer player = mc.player;
         if (player != null && player.getGameProfile() != null) {
-            String name = player.getGameProfile().getName();
+            String name = player.getGameProfile().name();
             if (name != null && !name.trim().isEmpty()) {
                 return name.trim();
             }
