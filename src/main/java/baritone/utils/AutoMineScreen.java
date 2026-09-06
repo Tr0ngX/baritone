@@ -54,7 +54,8 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean oreCoal = false;
     public static boolean oreQuartz = false;
 
-    // Trạng thái tùy chọn tự động
+    // Trạng thái bảng thống kê & tùy chọn tự động
+    public static boolean optMiningStats = true;
     public static boolean optAutoTool = true;
     public static boolean optAutoEat = true;
     public static boolean optAutoTotem = true;
@@ -206,9 +207,9 @@ public class AutoMineScreen extends Screen implements Helper {
             this.rebuildWidgets();
         }).bounds(leftSub2, startY + gap * 6, btnW, btnH).build());
 
-        // Hàng 7 cột 1: Overshoot & Water Sprint
-        addRenderableWidget(createOptBtn(leftSub1, startY + gap * 7, btnW, btnH, "Overshoot", optOvershoot, () -> optOvershoot = !optOvershoot));
-        addRenderableWidget(createOptBtn(leftSub2, startY + gap * 7, btnW, btnH, "Water Sprint", optWaterSprint, () -> optWaterSprint = !optWaterSprint));
+        // Hàng 7 cột 1: Stats HUD & Overshoot
+        addRenderableWidget(createOptBtn(leftSub1, startY + gap * 7, btnW, btnH, "Stats HUD", optMiningStats, () -> optMiningStats = !optMiningStats));
+        addRenderableWidget(createOptBtn(leftSub2, startY + gap * 7, btnW, btnH, "Overshoot", optOvershoot, () -> optOvershoot = !optOvershoot));
 
         // Hàng 8 cột 1: Hide Scoreboard & Hide Player Name
         addRenderableWidget(createOptBtn(leftSub1, startY + gap * 8, btnW, btnH, "Hide Board", optHideScoreboard, () -> {
@@ -298,7 +299,7 @@ public class AutoMineScreen extends Screen implements Helper {
         panelBottom = startY + gap * 9 + 4;
         bottomY = panelBottom + 8;
         actionGap = 6;
-        actionBtnW = (panelTotalW - (actionGap * 3)) / 4;
+        actionBtnW = (panelTotalW - (actionGap * 4)) / 5;
         actionStartX = leftCardX;
 
         addRenderableWidget(Button.builder(Component.literal("START MINING"), b -> {
@@ -316,10 +317,16 @@ public class AutoMineScreen extends Screen implements Helper {
             this.onClose();
         }).bounds(actionStartX + (actionBtnW + actionGap) * 2, bottomY, actionBtnW, 22).build());
 
+        addRenderableWidget(Button.builder(Component.literal("RESET STATS"), b -> {
+            MiningStatsTracker.getInstance().reset();
+            Helper.HELPER.logDirect("§a[AutoMine] Đã reset toàn bộ thống kê đào khoáng!");
+            this.rebuildWidgets();
+        }).bounds(actionStartX + (actionBtnW + actionGap) * 3, bottomY, actionBtnW, 22).build());
+
         String closeKeyName = BaritoneKeyBindings.KEY_AUTOMINE_GUI.getTranslatedKeyMessage().getString();
         addRenderableWidget(Button.builder(Component.literal("CLOSE (" + closeKeyName + ")"), b -> {
             this.onClose();
-        }).bounds(actionStartX + (actionBtnW + actionGap) * 3, bottomY, actionBtnW, 22).build());
+        }).bounds(actionStartX + (actionBtnW + actionGap) * 4, bottomY, actionBtnW, 22).build());
     }
 
     @Override
@@ -646,6 +653,16 @@ public class AutoMineScreen extends Screen implements Helper {
         drawOutline(graphics, rightCardX, 47, colW, panelBottom - 47, 0x20FFFFFF);
         graphics.fill(rightCardX, 47, rightCardX + colW, 48, 0xFF10B981); // Emerald Accent Header Line
         graphics.drawString(this.font, "AUTOMATION & RAGE ENGINE", rightCardX + 10, 51, 0x34D399);
+
+        // Bảng Thống Kê Bên Cạnh (Stats Side Panel) nếu màn hình có đủ khoảng trống:
+        if (optMiningStats) {
+            boolean isMining = baritone.getMineProcess().isActive();
+            if (this.width - (rightCardX + colW) >= 155) {
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, rightCardX + colW + 8, 47, 142, isMining);
+            } else if (leftCardX >= 155) {
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, leftCardX - 150, 47, 142, isMining);
+            }
+        }
 
         // Footer Telemetry Status Line
         String footerStatus = "STATUS: RAGE ENGINE READY | ARA* ANYTIME (EPS=3.0) | ANTI-LAVA 100% | 0ms DELAY";

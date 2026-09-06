@@ -59,4 +59,15 @@ public class MixinGui {
     private Component onSetOverlayMessage(Component message) {
         return StreamerUtil.censorComponent(message);
     }
+
+    /**
+     * Vẽ bảng thống kê đào quặng (Mining Statistics HUD) lên màn hình.
+     */
+    @Inject(method = "render", at = @At("RETURN"))
+    private void onRender(GuiGraphics guiGraphics, DeltaTracker deltaTracker, CallbackInfo ci) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.font != null) {
+            baritone.utils.MiningStatsTracker.getInstance().renderHud(guiGraphics, mc.font);
+        }
+    }
 }
