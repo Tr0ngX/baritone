@@ -56,20 +56,6 @@ public final class AntiAimBehavior extends Behavior implements Helper {
             return;
         }
 
-        // Nếu Baritone đang chủ động nhắm mục tiêu để đập block hoặc đặt block:
-        // Tạm nhường quyền cho LookBehavior để không làm hỏng thao tác đào / xây dựng
-        if (baritone.getLookBehavior().hasTarget()) {
-            hasModifiedRotation = false;
-            return;
-        }
-
-        // Nếu người chơi đang tự tay đào block bằng chuột trái:
-        // Tạm dừng để server raycast đào block chính xác không bị trượt
-        if (ctx.minecraft().gameMode != null && ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock()) {
-            hasModifiedRotation = false;
-            return;
-        }
-
         LocalPlayer player = ctx.player();
 
         switch (event.getState()) {
