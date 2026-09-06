@@ -211,6 +211,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int shulkerTransferredCount = 0;
     private boolean shulkerClearingInProgress = false;
     private int consecutiveCalcFailures = 0;
+    private int shulkerCooldownTicks = 0;
     private boolean isChopMode = false;
     private GoalChopTour activeChopTourGoal = null;
     private final Map<BlockPos, Long> ignoredDrops = new HashMap<>();
@@ -664,7 +665,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             shulkerTransferredCount = 0;
             shulkerClearingInProgress = false;
             shulkerMode = ShulkerMode.DEPOSIT;
+            shulkerCooldownTicks = 0;
         }
+        shulkerCooldownTicks = 0;
         if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
             ctx.player().closeContainer();
         }
@@ -829,6 +832,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return dot < -8;
                 });
             }
+            if (ctx.playerFeet().y > targetY + 3 && !hasReachedTargetY) {
+                allCandidates.removeIf(p -> Math.abs(p.getY() - ctx.playerFeet().y) > 6 || ctx.playerFeet().distSqr(p) > 64);
+            }
             locs = prune(context, allCandidates, filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
             if (!locs.isEmpty()) {
                 knownOreLocations = new CopyOnWriteArrayList<>(locs);
@@ -838,6 +844,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (!locs.isEmpty()) {
             CalculationContext context = new CalculationContext(baritone);
             List<BlockPos> locs2 = prune(context, new ArrayList<>(locs), filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
+            if (ctx.playerFeet().y > targetY + 3 && !hasReachedTargetY) {
+                locs2.removeIf(p -> Math.abs(p.getY() - ctx.playerFeet().y) > 6 || ctx.playerFeet().distSqr(p) > 64);
+            }
             
             // CHẾ ĐỘ ĐÀO 1 HƯỚNG DUY NHẤT (STRICT ONE-DIRECTION MINING):
             if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null && !isChopMode) {
@@ -2068,7 +2077,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             && (aboveState.isAir() || aboveState.canBeReplaced())
                             && !new AABB(above).intersects(playerBox)) {
 
-                        Vec3 hitVec = new Vec3(floor.getX() + 0.5, floor.getY() + 1.0, floor.getZ() + 0.5);
+                        Vec3 hitVec = new Vec3(floor.getX() + 0.5, floor.getY() + 0.95, floor.getZ() + 0.5);
                         double dist = head.distanceTo(hitVec);
                         if (dist >= 1.1 && dist <= 3.8) {
                             ClipContext rayCtx = new ClipContext(head, hitVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, ctx.player());
@@ -2136,6 +2145,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private PathingCommand handleShulkerStorage(boolean isSafeToCancel) {
         if (ctx.player() == null) return null;
 
+        if (shulkerCooldownTicks > 0) {
+            shulkerCooldownTicks--;
+            return null;
+        }
+
         // Kích hoạt khi đang IDLE
         if (shulkerState == ShulkerStorageState.IDLE) {
             NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
@@ -2181,6 +2195,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     if (hasAnyShulker && (System.currentTimeMillis() - lastShulkerFullWarningTime > 20000)) {
                         logDirect("§c[AutoShulker] Toàn bộ Shulker Box trong balo đều đã đầy (27/27 ô)! Không thể cất thêm đồ.");
                         lastShulkerFullWarningTime = System.currentTimeMillis();
+                        shulkerCooldownTicks = 400; // Cooldown 20s để bot tiếp tục đào và dùng AutoDrop
                     }
                 }
             }
@@ -2215,6 +2230,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerMode = ShulkerMode.DEPOSIT;
                     shulkerBoxCountBefore = 0;
                     shulkerUntransferableSlots.clear();
+                    shulkerCooldownTicks = 300;
                     return null;
                 }
                 if (shulkerBoxCountBefore <= 0) {
@@ -2250,15 +2266,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
 
                     if (shulkerStateTicks > 24) { // Đã xoay hơn 1 vòng 360 độ (24 ticks = 720 độ) mà vẫn không có chỗ
-                        logDirect("§c[AutoShulker] Đã xoay 360 độ nhưng không tìm thấy vị trí thích hợp để đặt Shulker Box! Hủy quy trình...");
+                        logDirect("§c[AutoShulker] Đã xoay 360 độ nhưng không tìm thấy vị trí thích hợp để đặt Shulker Box! Tạm hoãn 15s để tiếp tục đào...");
                         shulkerState = ShulkerStorageState.IDLE;
+                        shulkerCooldownTicks = 300; // Cooldown 15s để bot tiếp tục tiến lên tìm không gian rộng hơn
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
 
                 ShulkerPlacementTarget pt = targetOpt.get();
                 Vec3 hitVec = pt.face == net.minecraft.core.Direction.UP
-                        ? new Vec3(pt.againstPos.getX() + 0.5, pt.againstPos.getY() + 1.0, pt.againstPos.getZ() + 0.5)
+                        ? new Vec3(pt.againstPos.getX() + 0.5, pt.againstPos.getY() + 0.95, pt.againstPos.getZ() + 0.5)
                         : new Vec3(pt.againstPos.getX() + 0.5 + pt.face.getStepX() * 0.5, pt.againstPos.getY() + 0.5, pt.againstPos.getZ() + 0.5 + pt.face.getStepZ() * 0.5);
                 Rotation aimRot = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), hitVec, ctx.playerRotations());
                 baritone.getLookBehavior().updateTarget(aimRot, true);
@@ -2305,8 +2322,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerState = ShulkerStorageState.OPEN_BOX;
                     shulkerStateTicks = 0;
                 } else if (shulkerStateTicks > 15) {
-                    logDirect("§c[AutoShulker] Không thể đặt Shulker Box (server từ chối hoặc lag)! Hủy quy trình...");
+                    logDirect("§c[AutoShulker] Không thể đặt Shulker Box (server từ chối hoặc lag)! Tạm hoãn 10s...");
                     shulkerState = ShulkerStorageState.IDLE;
+                    shulkerCooldownTicks = 200; // Cooldown 10s
                 }
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             }
@@ -2566,6 +2584,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerState = ShulkerStorageState.IDLE;
                     shulkerMode = ShulkerMode.DEPOSIT;
                     pendingDropSlots.clear();
+                    shulkerCooldownTicks = 100; // Cooldown 5s sau khi cất đồ xong
                     logDirect("§a[AutoShulker] Đã cất toàn bộ vật phẩm vào Shulker Box (giữ nguyên Công cụ, Cúp, Rìu, Xẻng, Totem, Xô nước & Đồ ăn)! Tiếp tục đào...");
                     return null;
                 }
@@ -2623,6 +2642,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     shulkerUntransferableSlots.clear();
                     shulkerClearingInProgress = false;
                     shulkerMode = ShulkerMode.DEPOSIT;
+                    shulkerCooldownTicks = 300; // Cooldown 15s
                 }
 
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);

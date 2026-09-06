@@ -68,6 +68,14 @@ public class GoalStrictDirection implements Goal {
     public boolean isInGoal(int x, int y, int z) {
         int forward = (x - this.x) * dx + (z - this.z) * dz;
         int lateral = Math.abs((x - this.x) * dz) + Math.abs((z - this.z) * dx);
+        if (targetY != null && this.y > targetY) {
+            // Đang đào dốc hạ độ cao xuống tầng targetY
+            if (y <= targetY) {
+                return forward >= 1 && lateral <= 1;
+            }
+            int dropped = this.y - y;
+            return (forward >= 6 && dropped >= 2 && lateral <= 1) || (forward >= targetDistance && lateral <= 1);
+        }
         int vertical = Math.abs(y - (targetY != null ? targetY : this.y));
         // Đã đào thông tới cự ly mục tiêu trong hành lang hầm mà không lệch quá 1 block
         return forward >= targetDistance && lateral <= 1 && vertical <= 1;
@@ -77,7 +85,15 @@ public class GoalStrictDirection implements Goal {
     public double heuristic(int x, int y, int z) {
         int forward = (x - this.x) * dx + (z - this.z) * dz;
         int lateral = Math.abs((x - this.x) * dz) + Math.abs((z - this.z) * dx);
-        int vertical = Math.abs(y - (targetY != null ? targetY : this.y));
+
+        int targetYEffective;
+        if (targetY != null && this.y > targetY) {
+            // Đang đào dốc: hạ dần độ cao theo mỗi bước tiến tới trước
+            targetYEffective = Math.max(targetY, this.y - Math.max(1, forward));
+        } else {
+            targetYEffective = (targetY != null ? targetY : this.y);
+        }
+        int vertical = Math.abs(y - targetYEffective);
 
         double heuristic;
         if (forward <= 0) {
