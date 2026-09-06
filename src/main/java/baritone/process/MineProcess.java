@@ -220,7 +220,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int consecutiveCalcFailures = 0;
     private int shulkerCooldownTicks = 0;
     private boolean isChopMode = false;
-    private GoalChopTour activeChopTourGoal = null;
     private final Map<BlockPos, Long> ignoredDrops = new HashMap<>();
     private BlockPos dropAttemptPos = null;
     private int dropAttemptTicks = 0;
@@ -283,7 +282,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (!isMining) {
                 if (isChopMode) {
                     // CHẾ ĐỘ CHOP WOOD: TUYỆT ĐỐI KHÔNG DÙNG CẢNH BÁO, KHÔNG CANCEL VÀ KHÔNG STOP!
-                    activeChopTourGoal = null;
                     if (lockedTargetOre != null) {
                         blacklist.add(lockedTargetOre);
                         oreMemory.remove(lockedTargetOre);
@@ -705,7 +703,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     @Override
     public void cancel() {
-        activeChopTourGoal = null;
         isChopMode = false;
         onLostControl();
         baritone.getPathingBehavior().forceCancel();
@@ -718,7 +715,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     @Override
     public void onLostControl() {
-        activeChopTourGoal = null;
         if (eatingSlot != -1) {
             try {
                 ctx.minecraft().options.keyUse.setDown(false);
@@ -965,34 +961,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             if (!locs2.isEmpty()) {
                 currentTunnelTarget = null;
 
-                // CHẾ ĐỘ TỰ ĐỘNG CHẶT CÂY (LUMBERJACK) - 1 ĐƯỜNG TÍNH DUY NHẤT & 1 LẦN TÍNH TOÁN SIÊU DÀI:
-                if (isChopMode) {
-                    boolean isPathing = baritone.getPathingBehavior().isPathing();
-                    boolean hasInProgress = baritone.getPathingBehavior().getInProgress().isPresent();
-
-                    // Nếu tour hiện tại vẫn đang chạy và không bị buộc reroute (AntiStuck):
-                    if (activeChopTourGoal != null && (isPathing || hasInProgress) && !forceReroute) {
-                        knownOreLocations = new CopyOnWriteArrayList<>(locs2);
-                        return new PathingCommand(activeChopTourGoal, PathingCommandType.REVALIDATE_GOAL_AND_PATH);
-                    }
-
-                    // Tạo tour mới nối các cây thành 1 đường duy nhất:
-                    List<TreeInfo> trees = clusterTrees(ctx, locs2);
-                    if (!trees.isEmpty()) {
-                        List<TreeInfo> tourTrees = planTreeTour(trees, ctx.playerFeet(), 25);
-                        if (!tourTrees.isEmpty()) {
-                            List<BlockPos> bases = tourTrees.stream().map(t -> t.baseLog).collect(Collectors.toList());
-                            GoalChopTour tourGoal = new GoalChopTour(bases);
-                            this.activeChopTourGoal = tourGoal;
-                            this.forceReroute = false;
-                            this.consecutiveCalcFailures = 0;
-                            knownOreLocations = new CopyOnWriteArrayList<>(locs2);
-                            logDirect("§a[AutoChop] Khởi động 1 LẦN TÍNH TOÁN SIÊU DÀI cho 1 ĐƯỜNG TÍNH DUY NHẤT nối " + tourTrees.size() + " cây...");
-                            return new PathingCommand(tourGoal, PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH);
-                        }
-                    }
-                    this.activeChopTourGoal = null;
-                }
                 // TARGET LOCK / HYSTERESIS:
                 // Tránh GoalComposite bị dao động qua lại giữa cụm gần và cụm xa khi bot di chuyển ở ngưỡng ranh giới (8 block).
                 // Duy trì lockedTargetOre cố định cho đến khi quặng này bị đào vỡ hoặc bị blacklist.
@@ -3960,7 +3928,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (isWoodFilter(filter)) {
             this.isChopMode = true;
         }
-        this.activeChopTourGoal = null;
         this.desiredQuantity = quantity;
         this.knownOreLocations = new CopyOnWriteArrayList<>();
         this.blacklist.clear();
@@ -4138,121 +4105,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         public String toString() {
             return "GoalStaircaseDescent{start=" + startX + "," + startY + "," + startZ + ", dir=" + dx + "," + dz + ", targetY=" + targetY + "}";
         }
-    }
-
-    public static class TreeInfo {
-        public final List<BlockPos> logs = new ArrayList<>();
-        public BlockPos baseLog;
-        public BetterBlockPos standPos;
-
-        public TreeInfo(BlockPos firstLog) {
-            logs.add(firstLog);
-            baseLog = firstLog;
-        }
-    }
-
-    public static List<TreeInfo> clusterTrees(IPlayerContext ctx, List<BlockPos> logPositions) {
-        if (logPositions == null || logPositions.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<TreeInfo> trees = new ArrayList<>();
-        List<BlockPos> sorted = new ArrayList<>(logPositions);
-        sorted.sort(Comparator.comparingInt(BlockPos::getY));
-
-        for (BlockPos pos : sorted) {
-            TreeInfo matchingTree = null;
-            for (TreeInfo tree : trees) {
-                for (BlockPos existing : tree.logs) {
-                    int dx = Math.abs(pos.getX() - existing.getX());
-                    int dz = Math.abs(pos.getZ() - existing.getZ());
-                    int dy = Math.abs(pos.getY() - existing.getY());
-                    if (dx <= 2 && dz <= 2 && dy <= 6) {
-                        matchingTree = tree;
-                        break;
-                    }
-                }
-                if (matchingTree != null) break;
-            }
-
-            if (matchingTree != null) {
-                matchingTree.logs.add(pos);
-                if (pos.getY() < matchingTree.baseLog.getY()) {
-                    matchingTree.baseLog = pos;
-                }
-            } else {
-                trees.add(new TreeInfo(pos));
-            }
-        }
-
-        for (TreeInfo tree : trees) {
-            BlockPos base = tree.baseLog;
-            BetterBlockPos bestStand = null;
-            double bestDist = Double.MAX_VALUE;
-
-            BlockPos[] neighbors = new BlockPos[] {
-                    base.east(), base.west(), base.south(), base.north(),
-                    base.east().below(), base.west().below(), base.south().below(), base.north().below()
-            };
-
-            for (BlockPos n : neighbors) {
-                try {
-                    BlockState feetState = ctx.world().getBlockState(n);
-                    BlockState headState = ctx.world().getBlockState(n.above());
-                    BlockState floorState = ctx.world().getBlockState(n.below());
-
-                    boolean feetPassable = feetState.isAir() || feetState.canBeReplaced() || feetState.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock;
-                    boolean headPassable = headState.isAir() || headState.canBeReplaced() || headState.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock;
-                    boolean floorSolid = !floorState.isAir() && floorState.isSolid();
-
-                    if (feetPassable && headPassable && floorSolid) {
-                        double d = ctx.playerFeet().distSqr(n);
-                        if (d < bestDist) {
-                            bestDist = d;
-                            bestStand = new BetterBlockPos(n);
-                        }
-                    }
-                } catch (Exception ignored) {}
-            }
-
-            if (bestStand == null) {
-                bestStand = new BetterBlockPos(base);
-            }
-            tree.standPos = bestStand;
-        }
-
-        return trees;
-    }
-
-    public static List<TreeInfo> planTreeTour(List<TreeInfo> trees, BetterBlockPos startPos, int maxTrees) {
-        if (trees == null || trees.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<TreeInfo> unvisited = new ArrayList<>(trees);
-        List<TreeInfo> tour = new ArrayList<>();
-        BetterBlockPos current = startPos;
-
-        int limit = Math.min(unvisited.size(), maxTrees);
-        while (!unvisited.isEmpty() && tour.size() < limit) {
-            TreeInfo bestTree = null;
-            double bestDist = Double.MAX_VALUE;
-
-            for (TreeInfo tree : unvisited) {
-                double d = current.distSqr(tree.standPos);
-                if (d < bestDist) {
-                    bestDist = d;
-                    bestTree = tree;
-                }
-            }
-
-            if (bestTree == null) break;
-            tour.add(bestTree);
-            unvisited.remove(bestTree);
-            current = bestTree.standPos;
-        }
-
-        return tour;
     }
 
     private boolean isWoodFilter(BlockOptionalMetaLookup f) {

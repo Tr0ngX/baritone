@@ -57,11 +57,11 @@ public class ChopCommand extends Command {
         Baritone.settings().maxCachedWorldScanCount.value = 1000;
         Baritone.settings().extendCacheOnThreshold.value = true;
 
-        // CẤU HÌNH TIMEOUT CHO 1 LẦN TÍNH TOÁN SIÊU DÀI QUA NHIỀU CÂY:
-        Baritone.settings().primaryTimeoutMS.value = 20000L;
-        Baritone.settings().failureTimeoutMS.value = 30000L;
-        Baritone.settings().planAheadPrimaryTimeoutMS.value = 10000L;
-        Baritone.settings().planAheadFailureTimeoutMS.value = 15000L;
+        // Cấu hình timeout phản xạ nhanh chuẩn upstream Baritone (chống đơ/lag/flag):
+        Baritone.settings().primaryTimeoutMS.value = 2500L;
+        Baritone.settings().failureTimeoutMS.value = 4000L;
+        Baritone.settings().planAheadPrimaryTimeoutMS.value = 2500L;
+        Baritone.settings().planAheadFailureTimeoutMS.value = 4000L;
 
         Baritone.settings().autoEat.value = true;
         Baritone.settings().autoEatThreshold.value = 19;

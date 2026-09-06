@@ -58,6 +58,19 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean oreCoal = false;
     public static boolean oreQuartz = false;
 
+    // === CÁC LOẠI CÂY (AUTO CHOP) ===
+    public static boolean woodOak = true;
+    public static boolean woodBirch = true;
+    public static boolean woodSpruce = true;
+    public static boolean woodJungle = true;
+    public static boolean woodAcacia = true;
+    public static boolean woodDarkOak = true;
+    public static boolean woodMangrove = true;
+    public static boolean woodCherry = true;
+    public static boolean woodBamboo = true;
+    public static boolean woodCrimson = false;
+    public static boolean woodWarped = false;
+
     // === TRẠNG THÁI CẤU HÌNH TỰ ĐỘNG & SINH TỒN ===
     public static boolean optMiningStats = true;
     public static boolean optAutoTool = true;
@@ -91,6 +104,7 @@ public class AutoMineScreen extends Screen implements Helper {
     private static int activeTab = 0;
     private static final String[] TAB_FULL_NAMES = new String[]{
             "QUẶNG",
+            "CHẶT CÂY",
             "DI CHUYỂN",
             "SINH TỒN",
             "GIAO DIỆN",
@@ -98,6 +112,7 @@ public class AutoMineScreen extends Screen implements Helper {
     };
     private static final String[] TAB_SHORT_NAMES = new String[]{
             "Quặng",
+            "Cây",
             "Hầm",
             "Sống",
             "HUD",
@@ -105,6 +120,7 @@ public class AutoMineScreen extends Screen implements Helper {
     };
     private static final ItemStack[] TAB_ITEM_ICONS = new ItemStack[]{
             new ItemStack(Items.DIAMOND_ORE),
+            new ItemStack(Items.OAK_LOG),
             new ItemStack(Items.COMPASS),
             new ItemStack(Items.SHIELD),
             new ItemStack(Items.ENDER_EYE),
@@ -157,18 +173,18 @@ public class AutoMineScreen extends Screen implements Helper {
             this.panelW = Math.min(maxW, Math.min(760, Math.max(260, targetW)));
             this.panelX = (screenW - this.panelW) / 2;
 
-            // Header và Tab bar
+            // Header và Tab bar (6 tabs)
             int headerH = screenH < 320 ? 12 : 14;
             this.tabY = 4 + headerH + (screenH < 320 ? 2 : 4);
             this.tabH = screenH < 320 ? 18 : 22;
-            this.tabW = this.panelW / 5;
+            this.tabW = this.panelW / 6;
 
             // Search bar
             this.searchY = this.tabY + this.tabH + 3;
             this.searchH = screenH < 320 ? 16 : 19;
 
-            // Nút chọn nhanh quặng (Tab 0)
-            boolean showQuick = (activeTab == 0 && !hasSearch);
+            // Nút chọn nhanh (Tab 0 Quặng hoặc Tab 1 Cây)
+            boolean showQuick = (activeTab == 0 || activeTab == 1) && !hasSearch;
             this.quickH = showQuick ? (screenH < 320 ? 15 : 18) : 0;
             this.quickY = this.searchY + this.searchH + 3;
 
@@ -235,7 +251,20 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.COAL_ORE), "Than", "Quặng Coal cung cấp nhiên liệu", "ORES", 0xFF94A3B8, () -> oreCoal, () -> oreCoal = !oreCoal));
         allModules.add(new ModuleItem(new ItemStack(Items.NETHER_QUARTZ_ORE), "Thạch Anh", "Quặng Nether Quartz thế giới Nether", "ORES", 0xFFF1F5F9, () -> oreQuartz, () -> oreQuartz = !oreQuartz));
 
-        // 2. TAB DI CHUYỂN
+        // 2. TAB CHẶT CÂY (TREES)
+        allModules.add(new ModuleItem(new ItemStack(Items.OAK_LOG), "Gỗ Sồi (Oak)", "Khai thác thân gỗ Sồi Oak Log & Wood", "TREES", 0xFFB48A55, () -> woodOak, () -> woodOak = !woodOak));
+        allModules.add(new ModuleItem(new ItemStack(Items.BIRCH_LOG), "Gỗ Bạch Dương", "Khai thác gỗ Bạch Dương thân trắng", "TREES", 0xFFE2E8F0, () -> woodBirch, () -> woodBirch = !woodBirch));
+        allModules.add(new ModuleItem(new ItemStack(Items.SPRUCE_LOG), "Gỗ Thông (Spruce)", "Khai thác gỗ Thông rừng Taiga và vùng tuyết", "TREES", 0xFF6B4226, () -> woodSpruce, () -> woodSpruce = !woodSpruce));
+        allModules.add(new ModuleItem(new ItemStack(Items.JUNGLE_LOG), "Gỗ Rừng (Jungle)", "Khai thác cây cổ thụ rừng nhiệt đới khổng lồ", "TREES", 0xFF966F33, () -> woodJungle, () -> woodJungle = !woodJungle));
+        allModules.add(new ModuleItem(new ItemStack(Items.ACACIA_LOG), "Gỗ Keo (Acacia)", "Khai thác gỗ Keo thảo nguyên Savanna", "TREES", 0xFFFB923C, () -> woodAcacia, () -> woodAcacia = !woodAcacia));
+        allModules.add(new ModuleItem(new ItemStack(Items.DARK_OAK_LOG), "Gỗ Sồi Sẫm", "Khai thác gỗ Sồi Sẫm tán dày rừng Dark Forest", "TREES", 0xFF4A3525, () -> woodDarkOak, () -> woodDarkOak = !woodDarkOak));
+        allModules.add(new ModuleItem(new ItemStack(Items.MANGROVE_LOG), "Gỗ Đước (Mangrove)", "Khai thác gỗ Đước đầm lầy ngập mặn", "TREES", 0xFFE11D48, () -> woodMangrove, () -> woodMangrove = !woodMangrove));
+        allModules.add(new ModuleItem(new ItemStack(Items.CHERRY_LOG), "Gỗ Anh Đào (Cherry)", "Khai thác hoa anh đào rực rỡ vùng núi cao", "TREES", 0xFFF472B6, () -> woodCherry, () -> woodCherry = !woodCherry));
+        allModules.add(new ModuleItem(new ItemStack(Items.BAMBOO_BLOCK), "Cây Tre (Bamboo)", "Khai thác thân tre khối Bamboo Block", "TREES", 0xFFA3E635, () -> woodBamboo, () -> woodBamboo = !woodBamboo));
+        allModules.add(new ModuleItem(new ItemStack(Items.CRIMSON_STEM), "Nấm U Ám (Crimson)", "Khai thác thân nấm Crimson đỏ thế giới Nether", "TREES", 0xFFDC2626, () -> woodCrimson, () -> woodCrimson = !woodCrimson));
+        allModules.add(new ModuleItem(new ItemStack(Items.WARPED_STEM), "Nấm Kỳ Dị (Warped)", "Khai thác thân nấm Warped xanh thế giới Nether", "TREES", 0xFF06B6D4, () -> woodWarped, () -> woodWarped = !woodWarped));
+
+        // 3. TAB DI CHUYỂN
         allModules.add(new ModuleItem(new ItemStack(Items.NETHER_STAR), "ARA* Engine", "Tính toán đường đi Anytime Search 0ms phản xạ", "MOVEMENT", 0xFF38BDF8, () -> optZeroDelay, () -> optZeroDelay = !optZeroDelay));
         allModules.add(new ModuleItem(new ItemStack(Items.OAK_TRAPDOOR), "Crawl 1-Block", "Đào hầm chui 1 block siêu tốc bằng trapdoor", "MOVEMENT", 0xFF60A5FA, () -> optCrawlMode, () -> optCrawlMode = !optCrawlMode));
         allModules.add(new ModuleItem(new ItemStack(Items.RABBIT_FOOT), "Tunnel Bhop", "Nhảy liên hoàn trong đường hầm tăng tốc độ", "MOVEMENT", 0xFF34D399, () -> optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
@@ -329,7 +358,24 @@ public class AutoMineScreen extends Screen implements Helper {
         }
     }
 
-    private String getResponsiveQuickTitle(int q, int btnW) {
+    private String getResponsiveQuickTitle(int q, int btnW, int currentTab) {
+        if (currentTab == 1) {
+            if (btnW >= 70) {
+                switch (q) {
+                    case 0: return "[ TẤT CẢ ]";
+                    case 1: return "[ CÂY THƯỜNG ]";
+                    case 2: return "[ BỎ CHỌN ]";
+                    default: return "[ MẶC ĐỊNH ]";
+                }
+            } else {
+                switch (q) {
+                    case 0: return "[ALL]";
+                    case 1: return "[COMM]";
+                    case 2: return "[NONE]";
+                    default: return "[DEF]";
+                }
+            }
+        }
         if (btnW >= 70) {
             switch (q) {
                 case 0: return "[ TẤT CẢ ]";
@@ -400,8 +446,8 @@ public class AutoMineScreen extends Screen implements Helper {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         ResponsiveLayout l = new ResponsiveLayout(this.width, this.height, activeTab, !searchQuery.isEmpty());
 
-        // 1. Kiểm tra Click vào Tab Bar
-        for (int i = 0; i < 5; i++) {
+        // 1. Kiểm tra Click vào Tab Bar (6 tabs)
+        for (int i = 0; i < 6; i++) {
             int tx = l.panelX + i * l.tabW;
             if (mouseX >= tx && mouseX <= tx + l.tabW && mouseY >= l.tabY && mouseY <= l.tabY + l.tabH) {
                 activeTab = i;
@@ -420,38 +466,53 @@ public class AutoMineScreen extends Screen implements Helper {
             searchFocused = false;
         }
 
-        // 3. Kiểm tra Click vào Quick Select Buttons (Tab 0 Ores)
-        if (activeTab == 0 && searchQuery.isEmpty()) {
+        // 3. Kiểm tra Click vào Quick Select Buttons (Tab 0 Ores hoặc Tab 1 Trees)
+        if ((activeTab == 0 || activeTab == 1) && searchQuery.isEmpty()) {
             int btnW = (l.panelW - 3 * 4) / 4;
             for (int q = 0; q < 4; q++) {
                 int qx = l.panelX + q * (btnW + 4);
                 if (mouseX >= qx && mouseX <= qx + btnW && mouseY >= l.quickY && mouseY <= l.quickY + l.quickH) {
-                    if (q == 0) {
-                        oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = true;
-                    } else if (q == 1) {
-                        oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
-                    } else if (q == 2) {
-                        oreDiamond = !oreDiamond;
-                        oreLapis = !oreLapis;
-                        oreRedstone = !oreRedstone;
-                        oreGold = !oreGold;
-                        oreIron = !oreIron;
-                        oreEmerald = !oreEmerald;
-                        oreDebris = !oreDebris;
-                        oreCopper = !oreCopper;
-                        oreCoal = !oreCoal;
-                        oreQuartz = !oreQuartz;
-                    } else {
-                        oreDiamond = true;
-                        oreLapis = true;
-                        oreRedstone = true;
-                        oreGold = false;
-                        oreIron = false;
-                        oreEmerald = true;
-                        oreDebris = false;
-                        oreCopper = false;
-                        oreCoal = false;
-                        oreQuartz = false;
+                    if (activeTab == 0) {
+                        if (q == 0) {
+                            oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = true;
+                        } else if (q == 1) {
+                            oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
+                        } else if (q == 2) {
+                            oreDiamond = !oreDiamond;
+                            oreLapis = !oreLapis;
+                            oreRedstone = !oreRedstone;
+                            oreGold = !oreGold;
+                            oreIron = !oreIron;
+                            oreEmerald = !oreEmerald;
+                            oreDebris = !oreDebris;
+                            oreCopper = !oreCopper;
+                            oreCoal = !oreCoal;
+                            oreQuartz = !oreQuartz;
+                        } else {
+                            oreDiamond = true;
+                            oreLapis = true;
+                            oreRedstone = true;
+                            oreGold = false;
+                            oreIron = false;
+                            oreEmerald = true;
+                            oreDebris = false;
+                            oreCopper = false;
+                            oreCoal = false;
+                            oreQuartz = false;
+                        }
+                    } else if (activeTab == 1) {
+                        if (q == 0) {
+                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = woodCrimson = woodWarped = true;
+                        } else if (q == 1) {
+                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = true;
+                            woodCrimson = woodWarped = false;
+                        } else if (q == 2) {
+                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = woodCrimson = woodWarped = false;
+                        } else {
+                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = true;
+                            woodCrimson = false;
+                            woodWarped = false;
+                        }
                     }
                     return true;
                 }
@@ -475,8 +536,8 @@ public class AutoMineScreen extends Screen implements Helper {
                 }
             }
 
-            // Click vào Target Y & FPS Limiter trong Tab 3
-            if (activeTab == 3 && searchQuery.isEmpty()) {
+            // Click vào Target Y & FPS Limiter trong Tab 4 (HUD)
+            if (activeTab == 4 && searchQuery.isEmpty()) {
                 int extraRowY = l.contentY + ((filtered.size() + l.cardCols - 1) / l.cardCols) * (l.cardH + 4) - scrollOffset;
                 int halfColW = (l.panelW - 6) / 2;
 
@@ -542,9 +603,10 @@ public class AutoMineScreen extends Screen implements Helper {
                 }
             } else {
                 if (activeTab == 0 && item.category.equals("ORES")) result.add(item);
-                else if (activeTab == 1 && item.category.equals("MOVEMENT")) result.add(item);
-                else if (activeTab == 2 && item.category.equals("SURVIVAL")) result.add(item);
-                else if (activeTab == 3 && item.category.equals("HUD")) result.add(item);
+                else if (activeTab == 1 && item.category.equals("TREES")) result.add(item);
+                else if (activeTab == 2 && item.category.equals("MOVEMENT")) result.add(item);
+                else if (activeTab == 3 && item.category.equals("SURVIVAL")) result.add(item);
+                else if (activeTab == 4 && item.category.equals("HUD")) result.add(item);
             }
         }
         return result;
@@ -570,7 +632,7 @@ public class AutoMineScreen extends Screen implements Helper {
         graphics.fill(l.panelX, l.tabY, l.panelX + l.panelW, l.tabY + l.tabH, ClickGuiTheme.BG_CARD);
         ClickGuiTheme.drawOutline(graphics, l.panelX, l.tabY, l.panelW, l.tabH, ClickGuiTheme.BORDER_CARD);
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             int tx = l.panelX + i * l.tabW;
             boolean isTabActive = (activeTab == i && searchQuery.isEmpty());
             boolean isTabHover = mouseX >= tx && mouseX <= tx + l.tabW && mouseY >= l.tabY && mouseY <= l.tabY + l.tabH;
@@ -592,15 +654,15 @@ public class AutoMineScreen extends Screen implements Helper {
             graphics.fill(cursorX, l.searchY + 3, cursorX + 1, l.searchY + l.searchH - 3, 0xFF38BDF8);
         }
 
-        // 4. Quick Action Buttons (Tab 0 Ores)
-        if (activeTab == 0 && searchQuery.isEmpty()) {
+        // 4. Quick Action Buttons (Tab 0 Ores hoặc Tab 1 Trees)
+        if ((activeTab == 0 || activeTab == 1) && searchQuery.isEmpty()) {
             int btnW = (l.panelW - 3 * 4) / 4;
             int[] qColors = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_ROSE, ClickGuiTheme.ACCENT_PURPLE, ClickGuiTheme.ACCENT_AMBER};
 
             for (int q = 0; q < 4; q++) {
                 int qx = l.panelX + q * (btnW + 4);
                 boolean qHover = mouseX >= qx && mouseX <= qx + btnW && mouseY >= l.quickY && mouseY <= l.quickY + l.quickH;
-                String qTitle = getResponsiveQuickTitle(q, btnW);
+                String qTitle = getResponsiveQuickTitle(q, btnW, activeTab);
                 ClickGuiTheme.drawActionButton(graphics, this.font, ItemStack.EMPTY, qTitle, qx, l.quickY, btnW, l.quickH, qColors[q], qHover);
             }
         }
@@ -608,12 +670,12 @@ public class AutoMineScreen extends Screen implements Helper {
         // 5. Danh sách Card Modules (Scissor Box an toàn)
         graphics.enableScissor(l.panelX - 1, l.contentY, l.panelX + l.panelW + 1, l.contentBottom);
 
-        if (activeTab == 4 && searchQuery.isEmpty()) {
+        if (activeTab == 5 && searchQuery.isEmpty()) {
             renderTelemetryDashboard(graphics, l.panelX, l.contentY - scrollOffset, l.panelW);
         } else {
             List<ModuleItem> filtered = getFilteredModules();
             int totalRows = (filtered.size() + l.cardCols - 1) / l.cardCols;
-            if (activeTab == 3 && searchQuery.isEmpty()) {
+            if (activeTab == 4 && searchQuery.isEmpty()) {
                 totalRows++;
             }
             maxScroll = Math.max(0, totalRows * (l.cardH + 4) - (l.contentBottom - l.contentY));
@@ -670,8 +732,8 @@ public class AutoMineScreen extends Screen implements Helper {
                 }
             }
 
-            // Target Y & FPS Limiter trong Tab 3
-            if (activeTab == 3 && searchQuery.isEmpty()) {
+            // Target Y & FPS Limiter trong Tab 4 (HUD)
+            if (activeTab == 4 && searchQuery.isEmpty()) {
                 int extraRowY = l.contentY + ((filtered.size() + l.cardCols - 1) / l.cardCols) * (l.cardH + 4) - scrollOffset;
                 int halfColW = (l.panelW - 6) / 2;
 
@@ -846,42 +908,82 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().maxCachedWorldScanCount.value = 1000;
         Baritone.settings().extendCacheOnThreshold.value = true;
 
-        Baritone.settings().primaryTimeoutMS.value = 20000L;
-        Baritone.settings().failureTimeoutMS.value = 30000L;
-        Baritone.settings().planAheadPrimaryTimeoutMS.value = 10000L;
-        Baritone.settings().planAheadFailureTimeoutMS.value = 15000L;
+        // Phản xạ nhanh chuẩn upstream Baritone (chống đơ/lag/anti-cheat flags):
+        Baritone.settings().primaryTimeoutMS.value = 2500L;
+        Baritone.settings().failureTimeoutMS.value = 4000L;
+        Baritone.settings().planAheadPrimaryTimeoutMS.value = 2500L;
+        Baritone.settings().planAheadFailureTimeoutMS.value = 4000L;
 
         List<BlockOptionalMeta> boms = new ArrayList<>();
-        boms.add(new BlockOptionalMeta(Blocks.OAK_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.BIRCH_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.SPRUCE_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.DARK_OAK_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.ACACIA_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.JUNGLE_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.CHERRY_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.MANGROVE_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.CRIMSON_STEM));
-        boms.add(new BlockOptionalMeta(Blocks.WARPED_STEM));
+        if (woodOak) {
+            boms.add(new BlockOptionalMeta(Blocks.OAK_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.OAK_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_OAK_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_OAK_WOOD));
+        }
+        if (woodBirch) {
+            boms.add(new BlockOptionalMeta(Blocks.BIRCH_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.BIRCH_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_BIRCH_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_BIRCH_WOOD));
+        }
+        if (woodSpruce) {
+            boms.add(new BlockOptionalMeta(Blocks.SPRUCE_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.SPRUCE_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_SPRUCE_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_SPRUCE_WOOD));
+        }
+        if (woodDarkOak) {
+            boms.add(new BlockOptionalMeta(Blocks.DARK_OAK_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.DARK_OAK_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_DARK_OAK_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_DARK_OAK_WOOD));
+        }
+        if (woodAcacia) {
+            boms.add(new BlockOptionalMeta(Blocks.ACACIA_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.ACACIA_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_ACACIA_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_ACACIA_WOOD));
+        }
+        if (woodJungle) {
+            boms.add(new BlockOptionalMeta(Blocks.JUNGLE_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.JUNGLE_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_JUNGLE_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_JUNGLE_WOOD));
+        }
+        if (woodCherry) {
+            boms.add(new BlockOptionalMeta(Blocks.CHERRY_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.CHERRY_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CHERRY_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CHERRY_WOOD));
+        }
+        if (woodMangrove) {
+            boms.add(new BlockOptionalMeta(Blocks.MANGROVE_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.MANGROVE_WOOD));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_MANGROVE_LOG));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_MANGROVE_WOOD));
+        }
+        if (woodBamboo) {
+            boms.add(new BlockOptionalMeta(Blocks.BAMBOO_BLOCK));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_BAMBOO_BLOCK));
+        }
+        if (woodCrimson) {
+            boms.add(new BlockOptionalMeta(Blocks.CRIMSON_STEM));
+            boms.add(new BlockOptionalMeta(Blocks.CRIMSON_HYPHAE));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CRIMSON_STEM));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CRIMSON_HYPHAE));
+        }
+        if (woodWarped) {
+            boms.add(new BlockOptionalMeta(Blocks.WARPED_STEM));
+            boms.add(new BlockOptionalMeta(Blocks.WARPED_HYPHAE));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_WARPED_STEM));
+            boms.add(new BlockOptionalMeta(Blocks.STRIPPED_WARPED_HYPHAE));
+        }
 
-        boms.add(new BlockOptionalMeta(Blocks.OAK_WOOD));
-        boms.add(new BlockOptionalMeta(Blocks.BIRCH_WOOD));
-        boms.add(new BlockOptionalMeta(Blocks.SPRUCE_WOOD));
-        boms.add(new BlockOptionalMeta(Blocks.DARK_OAK_WOOD));
-        boms.add(new BlockOptionalMeta(Blocks.ACACIA_WOOD));
-        boms.add(new BlockOptionalMeta(Blocks.JUNGLE_WOOD));
-        boms.add(new BlockOptionalMeta(Blocks.CHERRY_WOOD));
-        boms.add(new BlockOptionalMeta(Blocks.MANGROVE_WOOD));
-
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_OAK_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_BIRCH_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_SPRUCE_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_DARK_OAK_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_ACACIA_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_JUNGLE_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CHERRY_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_MANGROVE_LOG));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_CRIMSON_STEM));
-        boms.add(new BlockOptionalMeta(Blocks.STRIPPED_WARPED_STEM));
+        if (boms.isEmpty()) {
+            Helper.HELPER.logDirect("§c[AutoChop] Bạn chưa chọn loại cây nào để chặt! Hãy mở tab CHẶT CÂY để bật chọn loại cây muốn khai thác.");
+            return;
+        }
 
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
         Helper.HELPER.logDirect("§a[AutoChop] Đã bắt đầu TỰ ĐỘNG CHẶT CÂY!");
