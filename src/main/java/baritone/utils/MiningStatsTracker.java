@@ -46,25 +46,25 @@ public final class MiningStatsTracker {
     }
 
     public enum OreType {
-        DIAMOND("Kim Cương", "Diamond", 0x38BDF8, () -> AutoMineScreen.oreDiamond,
+        DIAMOND("Kim Cương", "Diamond", 0xFF38BDF8, () -> AutoMineScreen.oreDiamond,
                 Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE),
-        EMERALD("Lục Bảo", "Emerald", 0x34D399, () -> AutoMineScreen.oreEmerald,
+        EMERALD("Lục Bảo", "Emerald", 0xFF34D399, () -> AutoMineScreen.oreEmerald,
                 Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE),
-        ANCIENT_DEBRIS("Debris", "Ancient Debris", 0xC084FC, () -> AutoMineScreen.oreDebris,
+        ANCIENT_DEBRIS("Debris", "Ancient Debris", 0xFFC084FC, () -> AutoMineScreen.oreDebris,
                 Blocks.ANCIENT_DEBRIS),
-        GOLD("Vàng", "Gold", 0xFBBF24, () -> AutoMineScreen.oreGold,
+        GOLD("Vàng", "Gold", 0xFFFBBF24, () -> AutoMineScreen.oreGold,
                 Blocks.GOLD_ORE, Blocks.DEEPSLATE_GOLD_ORE, Blocks.NETHER_GOLD_ORE),
-        IRON("Sắt", "Iron", 0xE2E8F0, () -> AutoMineScreen.oreIron,
+        IRON("Sắt", "Iron", 0xFFE2E8F0, () -> AutoMineScreen.oreIron,
                 Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE),
-        REDSTONE("Redstone", "Redstone", 0xF87171, () -> AutoMineScreen.oreRedstone,
+        REDSTONE("Redstone", "Redstone", 0xFFF87171, () -> AutoMineScreen.oreRedstone,
                 Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE),
-        LAPIS("Lapis", "Lapis", 0x60A5FA, () -> AutoMineScreen.oreLapis,
+        LAPIS("Lapis", "Lapis", 0xFF60A5FA, () -> AutoMineScreen.oreLapis,
                 Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE),
-        COPPER("Đồng", "Copper", 0xFB923C, () -> AutoMineScreen.oreCopper,
+        COPPER("Đồng", "Copper", 0xFFFB923C, () -> AutoMineScreen.oreCopper,
                 Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE),
-        COAL("Than", "Coal", 0x94A3B8, () -> AutoMineScreen.oreCoal,
+        COAL("Than", "Coal", 0xFF94A3B8, () -> AutoMineScreen.oreCoal,
                 Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE),
-        QUARTZ("Thạch Anh", "Quartz", 0xF1F5F9, () -> AutoMineScreen.oreQuartz,
+        QUARTZ("Thạch Anh", "Quartz", 0xFFF1F5F9, () -> AutoMineScreen.oreQuartz,
                 Blocks.NETHER_QUARTZ_ORE);
 
         private final String nameVi;
@@ -187,6 +187,14 @@ public final class MiningStatsTracker {
     }
 
     /**
+     * Helper vẽ text luôn đảm bảo có Alpha channel đầy đủ (chống chữ bị tàng hình trong MC 1.21).
+     */
+    private void drawText(GuiGraphics graphics, Font font, String text, int x, int y, int color, boolean shadow) {
+        int argb = (color & 0xFF000000) == 0 ? (color | 0xFF000000) : color;
+        graphics.drawString(font, text, x, y, argb, shadow);
+    }
+
+    /**
      * Vẽ bảng thống kê HUD trên màn hình game.
      */
     public void renderHud(GuiGraphics guiGraphics, Font font) {
@@ -216,7 +224,7 @@ public final class MiningStatsTracker {
 
         int startX = 8;
         int startY = 8;
-        int width = 142;
+        int width = 148;
 
         renderCard(guiGraphics, font, startX, startY, width, isMining);
     }
@@ -251,15 +259,15 @@ public final class MiningStatsTracker {
         int curY = y + 6;
 
         // Header Title
-        guiGraphics.drawString(font, "AUTOMINE STATS", x + 6, curY, 0x38BDF8, true);
+        drawText(guiGraphics, font, "AUTOMINE STATS", x + 6, curY, 0xFF38BDF8, true);
         String statusDot = isMining ? "§a●" : "§7○";
-        guiGraphics.drawString(font, statusDot, x + width - 13, curY, 0xFFFFFF, true);
+        drawText(guiGraphics, font, statusDot, x + width - 13, curY, 0xFFFFFFFF, true);
         curY += 13;
 
         // Time & Rate row
         String timeStr = getFormattedDuration();
         String rateStr = String.format("%,d/h", getBlocksPerHour());
-        guiGraphics.drawString(font, "§8" + timeStr + " §7| §e" + rateStr, x + 6, curY, 0x94A3B8, true);
+        drawText(guiGraphics, font, "§8" + timeStr + " §7| §e" + rateStr, x + 6, curY, 0xFF94A3B8, true);
         curY += 12;
 
         // Divider
@@ -267,10 +275,10 @@ public final class MiningStatsTracker {
         curY += 3;
 
         // Total Blocks Mined row
-        guiGraphics.drawString(font, "⛏ Đã đào:", x + 6, curY, 0xE2E8F0, true);
+        drawText(guiGraphics, font, "Đã đào:", x + 6, curY, 0xFFE2E8F0, true);
         String totalStr = String.format("%,d blk", totalBlocksMined.get());
         int totalW = font.width(totalStr);
-        guiGraphics.drawString(font, "§e" + totalStr, x + width - totalW - 6, curY, 0xFBBF24, true);
+        drawText(guiGraphics, font, "§e" + totalStr, x + width - totalW - 6, curY, 0xFFFBBF24, true);
         curY += 13;
 
         // Selected Ores section (CHỈ HIỆN CÁC QUẶNG ĐÃ CHỌN)
@@ -282,16 +290,16 @@ public final class MiningStatsTracker {
                 int count = getOreCount(ore);
 
                 // Dấu chấm tròn màu quặng
-                guiGraphics.drawString(font, "●", x + 6, curY, ore.getColor(), true);
+                drawText(guiGraphics, font, "●", x + 6, curY, ore.getColor(), true);
 
                 // Tên quặng tiếng Việt
-                guiGraphics.drawString(font, ore.getNameVi(), x + 16, curY, 0xE2E8F0, true);
+                drawText(guiGraphics, font, ore.getNameVi(), x + 16, curY, 0xFFE2E8F0, true);
 
                 // Số lượng quặng đào được
                 String countStr = String.format("%,d", count);
                 int valW = font.width(countStr);
-                int countColor = count > 0 ? 0xFFFFFF : 0x64748B;
-                guiGraphics.drawString(font, countStr, x + width - valW - 6, curY, countColor, true);
+                int countColor = count > 0 ? 0xFFFFFFFF : 0xFF64748B;
+                drawText(guiGraphics, font, countStr, x + width - valW - 6, curY, countColor, true);
 
                 curY += 12;
             }

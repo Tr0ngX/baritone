@@ -615,7 +615,7 @@ public class AutoMineScreen extends Screen implements Helper {
 
         // Tiêu đề Header với thanh viền neon responsive
         graphics.fill(cx - panelHalfW, 6, cx + panelHalfW, 7, 0xFF38BDF8);
-        graphics.drawCenteredString(this.font, "BARITONE NEXTGEN CONTROL PANEL", cx, 10, 0xFFFFFF);
+        graphics.drawCenteredString(this.font, "BARITONE NEXTGEN CONTROL PANEL", cx, 10, 0xFFFFFFFF);
 
         // Hardware Telemetry HUD (RAM / CPU / GPU / FPS)
         long maxMem = Runtime.getRuntime().maxMemory() / (1024 * 1024);
@@ -640,33 +640,33 @@ public class AutoMineScreen extends Screen implements Helper {
         drawOutline(graphics, cx - panelHalfW, 23, panelTotalW, 18, 0x3038BDF8);
 
         String perfLine = "RAM: " + usedMem + "/" + maxMem + "MB (" + usedPct + "%) | CPU: " + cores + " Cores | GPU: " + gpu + " | " + curFps + " FPS (" + limitStr + ")";
-        graphics.drawCenteredString(this.font, perfLine, cx, 28, 0x34D399);
+        graphics.drawCenteredString(this.font, perfLine, cx, 28, 0xFF34D399);
 
         // Khối Card Cột Trái (TARGET ORES)
         graphics.fill(leftCardX, 47, leftCardX + colW, panelBottom, 0x600F172A);
         drawOutline(graphics, leftCardX, 47, colW, panelBottom - 47, 0x20FFFFFF);
         graphics.fill(leftCardX, 47, leftCardX + colW, 48, 0xFF38BDF8); // Cyan Accent Header Line
-        graphics.drawString(this.font, "TARGET ORES & VEINS", leftCardX + 10, 51, 0x38BDF8);
+        graphics.drawString(this.font, "TARGET ORES & VEINS", leftCardX + 10, 51, 0xFF38BDF8);
 
         // Khối Card Cột Phải (AUTOMATION & SAFETY)
         graphics.fill(rightCardX, 47, rightCardX + colW, panelBottom, 0x600F172A);
         drawOutline(graphics, rightCardX, 47, colW, panelBottom - 47, 0x20FFFFFF);
         graphics.fill(rightCardX, 47, rightCardX + colW, 48, 0xFF10B981); // Emerald Accent Header Line
-        graphics.drawString(this.font, "AUTOMATION & RAGE ENGINE", rightCardX + 10, 51, 0x34D399);
+        graphics.drawString(this.font, "AUTOMATION & RAGE ENGINE", rightCardX + 10, 51, 0xFF34D399);
 
         // Bảng Thống Kê Bên Cạnh (Stats Side Panel) nếu màn hình có đủ khoảng trống:
         if (optMiningStats) {
             boolean isMining = baritone.getMineProcess().isActive();
             if (this.width - (rightCardX + colW) >= 155) {
-                MiningStatsTracker.getInstance().renderCard(graphics, this.font, rightCardX + colW + 8, 47, 142, isMining);
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, rightCardX + colW + 8, 47, 148, isMining);
             } else if (leftCardX >= 155) {
-                MiningStatsTracker.getInstance().renderCard(graphics, this.font, leftCardX - 150, 47, 142, isMining);
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, leftCardX - 156, 47, 148, isMining);
             }
         }
 
         // Footer Telemetry Status Line
         String footerStatus = "STATUS: RAGE ENGINE READY | ARA* ANYTIME (EPS=3.0) | ANTI-LAVA 100% | 0ms DELAY";
-        graphics.drawCenteredString(this.font, footerStatus, cx, this.height - 14, 0x64748B);
+        graphics.drawCenteredString(this.font, footerStatus, cx, this.height - 14, 0xFF64748B);
 
         super.render(graphics, mouseX, mouseY, partialTicks);
     }
