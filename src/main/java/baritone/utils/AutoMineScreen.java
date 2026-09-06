@@ -316,9 +316,19 @@ public class AutoMineScreen extends Screen implements Helper {
             this.onClose();
         }).bounds(actionStartX + (actionBtnW + actionGap) * 2, bottomY, actionBtnW, 22).build());
 
-        addRenderableWidget(Button.builder(Component.literal("CLOSE (F4)"), b -> {
+        String closeKeyName = BaritoneKeyBindings.KEY_AUTOMINE_GUI.getTranslatedKeyMessage().getString();
+        addRenderableWidget(Button.builder(Component.literal("CLOSE (" + closeKeyName + ")"), b -> {
             this.onClose();
         }).bounds(actionStartX + (actionBtnW + actionGap) * 3, bottomY, actionBtnW, 22).build());
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (BaritoneKeyBindings.KEY_AUTOMINE_GUI.matches(keyCode, scanCode)) {
+            this.onClose();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     private Button createOreBtn(int x, int y, int w, int h, String name, int activeColor, boolean state, Runnable toggle) {

@@ -31,7 +31,9 @@
     "MixinGui",
     "MixinPlayerRenderer",
     "MixinPlayerTabOverlay",
-    "MixinChatComponent"
+    "MixinChatComponent",
+    "MixinOptions",
+    "MixinKeyMapping"
   ],
   "mixins": [
   ]

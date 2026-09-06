@@ -122,11 +122,41 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         try {
             long window = ctx.minecraft().getWindow().getWindow();
             boolean altDown = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT);
-            boolean f4Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F4);
-            if (!altDown && f4Down && !f4WasDown) {
+            
+            // 1. Kiểm tra phím mở AutoMine Menu (qua KeyMapping tùy chỉnh trong Controls -> Key Binds)
+            boolean keyTriggered = BaritoneKeyBindings.KEY_AUTOMINE_GUI.consumeClick();
+            if (!keyTriggered && BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDefault()) {
+                boolean f4Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F4);
+                if (f4Down && !f4WasDown) {
+                    keyTriggered = true;
+                }
+                f4WasDown = f4Down;
+            } else {
+                f4WasDown = BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDown();
+            }
+
+            if (!altDown && keyTriggered) {
                 ctx.minecraft().setScreen(new AutoMineScreen(baritone));
             }
-            f4WasDown = f4Down;
+
+            // 2. Phím Hủy / Dừng Baritone (nếu người chơi có gán phím)
+            if (BaritoneKeyBindings.KEY_CANCEL.consumeClick()) {
+                baritone.getPathingBehavior().cancelEverything();
+                baritone.getPathingBehavior().forceCancel();
+                baritone.getMineProcess().cancel();
+                clearAllKeys();
+                blockBreakHelper.stopBreakingBlock();
+                if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
+                    ctx.player().closeContainer();
+                }
+                Helper.HELPER.logDirect("§c[Baritone] Đã hủy / dừng toàn bộ tiến trình!");
+            }
+
+            // 3. Phím Tạm dừng Baritone (nếu người chơi có gán phím)
+            if (BaritoneKeyBindings.KEY_PAUSE.consumeClick()) {
+                baritone.getPathingBehavior().requestPause();
+                Helper.HELPER.logDirect("§e[Baritone] Đã yêu cầu tạm dừng tiến trình!");
+            }
         } catch (Throwable ignored) {}
     }
 
