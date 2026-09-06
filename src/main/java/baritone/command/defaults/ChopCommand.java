@@ -24,6 +24,7 @@ import baritone.api.command.Command;
 import baritone.api.command.argument.IArgConsumer;
 import baritone.api.command.exception.CommandException;
 import baritone.api.utils.BlockOptionalMeta;
+import baritone.utils.AutoMineScreen;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.ArrayList;
@@ -66,7 +67,7 @@ public class ChopCommand extends Command {
         Baritone.settings().autoEat.value = true;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = true;
-        Baritone.settings().autoLogoutOnDanger.value = true;
+        Baritone.settings().autoLogoutOnDanger.value = AutoMineScreen.optAutoLogout;
         Baritone.settings().avoidance.value = true;
         Baritone.settings().mobAvoidanceRadius.value = 14;
         Baritone.settings().mobAvoidanceCoefficient.value = 500.0;

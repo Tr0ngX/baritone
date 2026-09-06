@@ -29,6 +29,7 @@ import baritone.api.utils.input.Input;
 import baritone.cache.CachedChunk;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
+import baritone.utils.AutoMineScreen;
 import baritone.utils.BaritoneProcessHelper;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
@@ -3451,40 +3452,34 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return false;
         }
 
+        // CHỈ TÍNH KHI RƠI XUỐNG DƯỚI LAVA + HẾT TOTEM (dùng 1 điều kiện, không tính máu)
         boolean inLava = ctx.player().isInLava()
                 || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
                 || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
 
-        float health = ctx.player().getHealth();
-        float maxHealth = ctx.player().getMaxHealth();
-        float thresholdPct = Baritone.settings().autoLogoutHealthThreshold.value;
-        boolean lowHealth = (health <= maxHealth * thresholdPct) || (health <= 10.0f);
-
-        String dangerReason = null;
-        if (inLava) {
-            dangerReason = "Rơi vào hồ LAVA và ĐÃ HẾT TOTEM!";
-        } else if (lowHealth) {
-            dangerReason = "Máu tụt còn nửa thanh (" + String.format("%.1f", health) + "/" + (int)maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+        if (!inLava) {
+            return false;
         }
 
-        if (dangerReason != null) {
-            String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
-            Helper.HELPER.logDirect(alert);
-            BaritoneFileLogger.warn(alert);
+        String dangerReason = "Rơi xuống dưới LAVA và ĐÃ HẾT TOTEM!";
+        String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
+        Helper.HELPER.logDirect(alert);
+        BaritoneFileLogger.warn(alert);
 
-            cancel();
-            baritone.getInputOverrideHandler().clearAllKeys();
+        // DÙNG 1 LẦN DUY NHẤT: Tự động tắt tính năng để lần sau vào lại không bị logout!
+        Baritone.settings().autoLogoutOnDanger.value = false;
+        AutoMineScreen.optAutoLogout = false;
 
-            Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§e" + dangerReason + "\n§aĐã tự động ngắt kết nối an toàn!");
-            if (ctx.world() instanceof ClientLevel clientLevel) {
-                clientLevel.disconnect(kickReason);
-            } else if (Minecraft.getInstance().getConnection() != null) {
-                Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
-            }
-            return true;
+        cancel();
+        baritone.getInputOverrideHandler().clearAllKeys();
+
+        Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§e" + dangerReason + "\n§aĐã tự động ngắt kết nối an toàn!\n§7(Tính năng đã tự động tắt cho lần vào lại sau)");
+        if (ctx.world() instanceof ClientLevel clientLevel) {
+            clientLevel.disconnect(kickReason);
+        } else if (Minecraft.getInstance().getConnection() != null) {
+            Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
         }
-
-        return false;
+        return true;
     }
 
     private Optional<BlockPos> findNearbyDescentOpening(int maxHorizontalRadius, int minDrop) {

@@ -21,6 +21,7 @@ import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.BaritoneFileLogger;
 import baritone.api.utils.Helper;
+import baritone.utils.AutoMineScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.NonNullList;
@@ -71,40 +72,44 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             return;
         }
 
-        // 2. Điều kiện A: Rơi vào hồ Lava + không còn Totem
+        // 2. ĐIỀU KIỆN DUY NHẤT: Phải rơi xuống dưới hồ Lava + ĐÃ HẾT TOTEM (dùng 1 điều kiện, không tính máu)
         boolean inLava = ctx.player().isInLava()
                 || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
                 || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
 
-        // 3. Điều kiện B: Còn nửa thanh máu (<= 50% max HP hoặc <= 10 HP) + không còn Totem
-        float health = ctx.player().getHealth();
-        float maxHealth = ctx.player().getMaxHealth();
-        float thresholdPct = Baritone.settings().autoLogoutHealthThreshold.value;
-        boolean lowHealth = (health <= maxHealth * thresholdPct) || (health <= 10.0f);
-
-        String dangerReason = null;
-        if (inLava) {
-            dangerReason = "Rơi vào hồ LAVA và ĐÃ HẾT TOTEM!";
-        } else if (lowHealth) {
-            dangerReason = "Máu tụt còn nửa thanh (" + String.format("%.1f", health) + "/" + (int)maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+        if (!inLava) {
+            return;
         }
 
-        if (dangerReason != null) {
-            String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
-            Helper.HELPER.logDirect(alert);
-            BaritoneFileLogger.warn(alert);
+        String dangerReason = "Rơi xuống dưới LAVA và ĐÃ HẾT TOTEM!";
+        String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
+        Helper.HELPER.logDirect(alert);
+        BaritoneFileLogger.warn(alert);
 
-            // Dừng toàn bộ tiến trình điều khiển và xóa phím bấm
-            baritone.getPathingControlManager().cancelEverything();
-            baritone.getInputOverrideHandler().clearAllKeys();
+        // DÙNG 1 LẦN DUY NHẤT: Tự động tắt tính năng đi để lần sau vào lại không bị logout!
+        Baritone.settings().autoLogoutOnDanger.value = false;
+        AutoMineScreen.optAutoLogout = false;
 
-            // Thực hiện ngắt kết nối an toàn với máy chủ
-            Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§e" + dangerReason + "\n§aĐã tự động ngắt kết nối bảo toàn trang bị thành công!");
-            if (ctx.world() instanceof ClientLevel clientLevel) {
-                clientLevel.disconnect(kickReason);
-            } else if (Minecraft.getInstance().getConnection() != null) {
-                Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
-            }
+        // Dừng toàn bộ tiến trình điều khiển và xóa phím bấm
+        baritone.getPathingControlManager().cancelEverything();
+        baritone.getMineProcess().cancel();
+        baritone.getInputOverrideHandler().clearAllKeys();
+
+        // Thực hiện ngắt kết nối an toàn với máy chủ
+        Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§e" + dangerReason + "\n§aĐã tự động ngắt kết nối bảo toàn trang bị thành công!\n§7(Tính năng đã tự động tắt cho lần vào lại sau)");
+        if (ctx.world() instanceof ClientLevel clientLevel) {
+            clientLevel.disconnect(kickReason);
+        } else if (Minecraft.getInstance().getConnection() != null) {
+            Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
+        }
+    }
+
+    @Override
+    public void onWorldEvent(baritone.api.event.events.WorldEvent event) {
+        // Khi thoát thế giới hoặc disconnect: tự động tắt đi để lần sau vào lại game không bị kick
+        if (event.getWorld() == null) {
+            Baritone.settings().autoLogoutOnDanger.value = false;
+            AutoMineScreen.optAutoLogout = false;
         }
     }
 

@@ -25,6 +25,7 @@ import baritone.api.command.argument.IArgConsumer;
 import baritone.api.command.datatypes.ForBlockOptionalMeta;
 import baritone.api.command.exception.CommandException;
 import baritone.api.utils.BlockOptionalMeta;
+import baritone.utils.AutoMineScreen;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.ArrayList;
@@ -94,7 +95,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().autoEat.value = true;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = true;
-        Baritone.settings().autoLogoutOnDanger.value = true;
+        Baritone.settings().autoLogoutOnDanger.value = AutoMineScreen.optAutoLogout;
         Baritone.settings().autoShulkerStorage.value = true;
         Baritone.settings().autoDrop.value = true;
 

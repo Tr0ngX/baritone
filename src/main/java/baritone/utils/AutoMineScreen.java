@@ -76,7 +76,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optAutoTool = true;
     public static boolean optAutoEat = true;
     public static boolean optAutoTotem = true;
-    public static boolean optAutoLogout = true;
+    public static boolean optAutoLogout = false;
     public static boolean optAutoDrop = true;
     public static boolean optShulkerStorage = true;
     public static boolean optMobAvoid = true;
@@ -282,7 +282,7 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_PICKAXE), "Auto-Tool", "Tự động đổi công cụ tối ưu (Cúp, Rìu, Xẻng)", "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
         allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_CARROT), "Auto-Eat", "Tự động ăn thức ăn ngon nhất khi đói < 19", "SURVIVAL", 0xFF34D399, () -> optAutoEat, () -> optAutoEat = !optAutoEat));
         allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Auto-Totem", "Tự động lấy Totem of Undying ra tay phụ khi tụt máu", "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Auto-Logout", "Tự thoát game khi rơi Lava hoặc còn 50% máu mà hết Totem", "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
+        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Auto-Logout", "Tự thoát game khi rơi xuống Lava mà hết Totem (dùng 1 lần rồi tự tắt)", "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
             optAutoLogout = !optAutoLogout;
             Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
         }));

@@ -825,9 +825,10 @@ public final class Settings {
     public final Setting<Boolean> logToChat = new Setting<>(true);
 
     /**
-     * Tự động Logout / Ngắt kết nối khẩn cấp khi rơi vào Lava không còn Totem hoặc máu còn <= 50% không còn Totem
+     * Tự động Logout ngắt kết nối khẩn cấp khi rơi xuống dưới Lava và không còn Totem.
+     * Mặc định là false (tắt) để khi đăng nhập lại vào game không bị lặp logout. Dùng 1 lần rồi tự động tắt.
      */
-    public final Setting<Boolean> autoLogoutOnDanger = new Setting<>(true);
+    public final Setting<Boolean> autoLogoutOnDanger = new Setting<>(false);
 
     /**
      * Ngưỡng máu tối đa để kích hoạt tự động Logout khẩn cấp (mặc định 0.5F = 50% tức nửa thanh máu)
