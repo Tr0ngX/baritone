@@ -836,6 +836,24 @@ public final class Settings {
     public final Setting<Float> autoLogoutHealthThreshold = new Setting<>(0.5F);
 
     /**
+     * Tự động Logout khi phát hiện bất kỳ người chơi nào đến gần (kể cả người chơi dùng tàng hình / invisibility).
+     * Mặc định là false (người chơi bật trong ClickGUI khi cần bảo vệ, và tự động tắt khi bị kích ra).
+     */
+    public final Setting<Boolean> autoLogoutOnPlayer = new Setting<>(false);
+
+    /**
+     * Khoảng cách tối đa (mét/block) để kích hoạt tự động Logout khi phát hiện người chơi khác.
+     * Mặc định 256.0 blocks (siêu nhạy xa). Nếu cấu hình <= 0 sẽ quét không giới hạn khoảng cách
+     * (bất kỳ người chơi nào xuất hiện trong tầm tải của Client đều kích hoạt bảo vệ tức thì).
+     */
+    public final Setting<Double> autoLogoutPlayerRange = new Setting<>(256.0D);
+
+    /**
+     * Danh sách trắng các tên người chơi (đồng đội/bạn bè, phân cách bằng dấu phẩy) sẽ được bỏ qua khi phát hiện.
+     */
+    public final Setting<String> autoLogoutPlayerWhitelist = new Setting<>("");
+
+    /**
      * Allow chat based control of Baritone. Most likely should be disabled when Baritone is imported for use in
      * something else
      */

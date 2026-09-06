@@ -211,6 +211,44 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
         }
     }
 
+    @Inject(
+            method = "handleAddEntity",
+            at = @At("RETURN")
+    )
+    private void onAddEntity(ClientboundAddEntityPacket packetIn, CallbackInfo ci) {
+        if (!Baritone.settings().autoLogoutOnPlayer.value) {
+            return;
+        }
+        for (IBaritone ibaritone : BaritoneAPI.getProvider().getAllBaritones()) {
+            if (ibaritone.getPlayerContext() != null && ibaritone.getPlayerContext().player() != null && ibaritone.getPlayerContext().world() != null) {
+                baritone.utils.AutoLogoutTracker.DetectedPlayerInfo threat = baritone.utils.AutoLogoutTracker.scanForNearbyPlayer(ibaritone.getPlayerContext());
+                if (threat != null) {
+                    baritone.utils.AutoLogoutTracker.performAutoLogout(ibaritone.getPlayerContext(), "Phát hiện người chơi: " + threat.getFormattedDescription());
+                    break;
+                }
+            }
+        }
+    }
+
+    @Inject(
+            method = "handleTeleportEntity",
+            at = @At("RETURN")
+    )
+    private void onTeleportEntity(ClientboundTeleportEntityPacket packetIn, CallbackInfo ci) {
+        if (!Baritone.settings().autoLogoutOnPlayer.value) {
+            return;
+        }
+        for (IBaritone ibaritone : BaritoneAPI.getProvider().getAllBaritones()) {
+            if (ibaritone.getPlayerContext() != null && ibaritone.getPlayerContext().player() != null && ibaritone.getPlayerContext().world() != null) {
+                baritone.utils.AutoLogoutTracker.DetectedPlayerInfo threat = baritone.utils.AutoLogoutTracker.scanForNearbyPlayer(ibaritone.getPlayerContext());
+                if (threat != null) {
+                    baritone.utils.AutoLogoutTracker.performAutoLogout(ibaritone.getPlayerContext(), "Phát hiện người chơi: " + threat.getFormattedDescription());
+                    break;
+                }
+            }
+        }
+    }
+
     /*
     @Inject(
             method = "handleChunkData",

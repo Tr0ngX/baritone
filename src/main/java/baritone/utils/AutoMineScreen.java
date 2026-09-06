@@ -285,9 +285,12 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_PICKAXE), "Auto-Tool", "Tự động đổi công cụ tối ưu (Cúp, Rìu, Xẻng)", "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
         allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_CARROT), "Auto-Eat", "Tự động ăn thức ăn ngon nhất khi đói < 19", "SURVIVAL", 0xFF34D399, () -> optAutoEat, () -> optAutoEat = !optAutoEat));
         allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Auto-Totem", "Tự động lấy Totem of Undying ra tay phụ khi tụt máu", "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Auto-Logout", "Tự thoát game khi rơi xuống Lava mà hết Totem (dùng 1 lần rồi tự tắt)", "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
+        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Auto-Logout", "Tự thoát game khi gặp nguy hiểm (Lava, hết Totem, phát hiện Player/Invis)", "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
             optAutoLogout = !optAutoLogout;
             Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.PLAYER_HEAD), "Anti-Player", "Tự ngắt kết nối khi phát hiện người chơi (kể cả tàng hình / invis)", "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
+            Baritone.settings().autoLogoutOnPlayer.value = !Baritone.settings().autoLogoutOnPlayer.value;
         }));
         allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Shulker Box", "Tự động đặt Shulker Box cất quặng khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
         allModules.add(new ModuleItem(new ItemStack(Items.LAVA_BUCKET), "Auto-Drop", "Tự vứt đá/đất/gravel đầy stack về sau hoặc vào lava", "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
@@ -732,6 +735,12 @@ public class AutoMineScreen extends Screen implements Helper {
 
                 if (!l.isCompact || l.cardH >= 28) {
                     String desc = item.desc;
+                    if (item.name.equals("Auto-Logout") && AutoLogoutTracker.hasLoggedOut()) {
+                        desc = String.format(java.util.Locale.ROOT, "Toạ độ: X:%.1f Y:%.1f Z:%.1f",
+                                AutoLogoutTracker.getLastX(),
+                                AutoLogoutTracker.getLastY(),
+                                AutoLogoutTracker.getLastZ());
+                    }
                     if (this.font.width(desc) > textMaxW) {
                         desc = this.font.plainSubstrByWidth(desc, Math.max(10, textMaxW - 6)) + "..";
                     }

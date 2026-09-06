@@ -30,6 +30,7 @@ import baritone.api.utils.input.Input;
 import baritone.cache.CachedChunk;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
+import baritone.utils.AutoLogoutTracker;
 import baritone.utils.AutoMineScreen;
 import baritone.utils.BaritoneProcessHelper;
 import baritone.utils.BlockStateInterface;
@@ -3521,7 +3522,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int autoLogoutLavaTicks = 0;
 
     private boolean handleAutoLogout() {
-        if (!Baritone.settings().autoLogoutOnDanger.value) {
+        boolean checkDanger = Baritone.settings().autoLogoutOnDanger.value;
+        boolean checkPlayer = Baritone.settings().autoLogoutOnPlayer.value;
+        if (!checkDanger && !checkPlayer) {
             autoLogoutLavaTicks = 0;
             return false;
         }
@@ -3534,58 +3537,56 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return false;
         }
 
-        // 1. Kiểm tra trạng thái rơi vào / đứng trong hồ Lava:
-        boolean inLava = ctx.player().isInLava()
-                || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
-                || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
+        // 1. Kiểm tra trạng thái rơi vào / đứng trong hồ Lava (chỉ khi checkDanger bật):
+        boolean inLava = false;
+        if (checkDanger) {
+            inLava = ctx.player().isInLava()
+                    || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
+                    || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
 
-        if (inLava) {
-            autoLogoutLavaTicks++;
+            if (inLava) {
+                autoLogoutLavaTicks++;
+            } else {
+                autoLogoutLavaTicks = 0;
+            }
         } else {
             autoLogoutLavaTicks = 0;
         }
 
         String dangerReason = null;
 
-        // TRƯỜNG HỢP 1: LAVA ("còn lava là logout luôn", "nhớ là lava 3s thì mới làm")
-        // Ở trong lava liên tục đủ 3 giây (60 ticks) -> Logout ngay lập tức để bảo vệ trang bị!
-        if (inLava && autoLogoutLavaTicks >= 60) {
+        // TRƯỜNG HỢP 1: PHÁT HIỆN NGƯỜI CHƠI ĐẾN GẦN (KỂ CẢ DÙNG THUỐC TÀNG HÌNH / INVIS)
+        // Ưu tiên cao nhất: nếu phát hiện player khác xâm nhập vùng an toàn -> Logout ngay lập tức!
+        if (checkPlayer) {
+            AutoLogoutTracker.DetectedPlayerInfo playerThreat = AutoLogoutTracker.scanForNearbyPlayer(ctx);
+            if (playerThreat != null) {
+                dangerReason = "Phát hiện người chơi: " + playerThreat.getFormattedDescription();
+            }
+        }
+
+        // TRƯỜNG HỢP 2: LAVA (chỉ khi checkDanger bật)
+        if (dangerReason == null && checkDanger && inLava && autoLogoutLavaTicks >= 60) {
             dangerReason = "Rơi vào hồ LAVA liên tục quá 3 giây!";
         }
 
-        // TRƯỜNG HỢP 2: QUÁI ĐÁNH, ĐÓI, TÉ NGÃ, v.v. (Phải Hết Totem + Nửa thanh máu)
-        if (dangerReason == null) {
+        // TRƯỜNG HỢP 3: QUÁI ĐÁNH, ĐÓI, TÉ NGÃ, v.v. (Phải Hết Totem + Nửa thanh máu, chỉ khi checkDanger bật)
+        if (dangerReason == null && checkDanger) {
             int totemCount = getTotemCount();
             if (totemCount == 0) {
                 float health = ctx.player().getHealth();
                 float maxHealth = ctx.player().getMaxHealth();
-                boolean lowHealth = (health <= maxHealth * 0.5f) || (health <= 10.0f);
+                float threshold = Baritone.settings().autoLogoutHealthThreshold.value;
+                boolean lowHealth = (health <= maxHealth * threshold) || (health <= 10.0f);
                 if (lowHealth) {
                     String cause = EmergencySafetyBehavior.detectDamageCause(ctx);
-                    dangerReason = cause + " (Máu còn: " + String.format("%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+                    dangerReason = cause + " (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
                 }
             }
         }
 
         if (dangerReason != null) {
-            String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
-            Helper.HELPER.logDirect(alert);
-            BaritoneFileLogger.warn(alert);
-
-            // DÙNG 1 LẦN DUY NHẤT: Tự động tắt tính năng để lần sau vào lại không bị logout!
-            Baritone.settings().autoLogoutOnDanger.value = false;
-            AutoMineScreen.optAutoLogout = false;
             autoLogoutLavaTicks = 0;
-
-            cancel();
-            baritone.getInputOverrideHandler().clearAllKeys();
-
-            Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§eLý do: " + dangerReason + "\n§aĐã tự động ngắt kết nối an toàn!\n§7(Tính năng đã tự động tắt cho lần vào lại sau)");
-            if (ctx.world() instanceof ClientLevel clientLevel) {
-                clientLevel.disconnect(kickReason);
-            } else if (Minecraft.getInstance().getConnection() != null) {
-                Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
-            }
+            AutoLogoutTracker.performAutoLogout(ctx, dangerReason);
             return true;
         }
 

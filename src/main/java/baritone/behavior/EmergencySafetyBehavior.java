@@ -21,6 +21,7 @@ import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.BaritoneFileLogger;
 import baritone.api.utils.Helper;
+import baritone.utils.AutoLogoutTracker;
 import baritone.utils.AutoMineScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -58,7 +59,9 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
         tickCount++;
 
-        if (!Baritone.settings().autoLogoutOnDanger.value) {
+        boolean checkDanger = Baritone.settings().autoLogoutOnDanger.value;
+        boolean checkPlayer = Baritone.settings().autoLogoutOnPlayer.value;
+        if (!checkDanger && !checkPlayer) {
             lavaTicks = 0;
             return;
         }
@@ -72,61 +75,56 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             return;
         }
 
-        // 1. Kiểm tra trạng thái rơi vào / đứng trong hồ Lava:
-        boolean inLava = ctx.player().isInLava()
-                || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
-                || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
+        // 1. Kiểm tra trạng thái rơi vào / đứng trong hồ Lava (chỉ khi checkDanger bật):
+        boolean inLava = false;
+        if (checkDanger) {
+            inLava = ctx.player().isInLava()
+                    || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
+                    || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
 
-        if (inLava) {
-            lavaTicks++;
+            if (inLava) {
+                lavaTicks++;
+            } else {
+                lavaTicks = 0;
+            }
         } else {
             lavaTicks = 0;
         }
 
         String dangerReason = null;
 
-        // TRƯỜNG HỢP 1: LAVA ("còn lava là logout luôn", "nhớ là lava 3s thì mới làm")
-        // Ở trong lava liên tục đủ 3 giây (60 ticks) -> Logout ngay lập tức để bảo vệ trang bị!
-        if (inLava && lavaTicks >= 60) {
+        // TRƯỜNG HỢP 1: PHÁT HIỆN NGƯỜI CHƠI ĐẾN GẦN (KỂ CẢ DÙNG THUỐC TÀNG HÌNH / INVIS)
+        // Ưu tiên cao nhất: nếu phát hiện player khác xâm nhập vùng an toàn -> Logout ngay lập tức!
+        if (checkPlayer) {
+            AutoLogoutTracker.DetectedPlayerInfo playerThreat = AutoLogoutTracker.scanForNearbyPlayer(ctx);
+            if (playerThreat != null) {
+                dangerReason = "Phát hiện người chơi: " + playerThreat.getFormattedDescription();
+            }
+        }
+
+        // TRƯỜNG HỢP 2: LAVA (chỉ khi checkDanger bật)
+        if (dangerReason == null && checkDanger && inLava && lavaTicks >= 60) {
             dangerReason = "Rơi vào hồ LAVA liên tục quá 3 giây!";
         }
 
-        // TRƯỜNG HỢP 2: QUÁI ĐÁNH, ĐÓI, TÉ NGÃ, v.v. (Phải Hết Totem + Nửa thanh máu)
-        if (dangerReason == null) {
+        // TRƯỜNG HỢP 3: QUÁI ĐÁNH, ĐÓI, TÉ NGÃ, v.v. (Phải Hết Totem + Nửa thanh máu, chỉ khi checkDanger bật)
+        if (dangerReason == null && checkDanger) {
             int totemCount = getTotemCount();
             if (totemCount == 0) {
                 float health = ctx.player().getHealth();
                 float maxHealth = ctx.player().getMaxHealth();
-                boolean lowHealth = (health <= maxHealth * 0.5f) || (health <= 10.0f);
+                float threshold = Baritone.settings().autoLogoutHealthThreshold.value;
+                boolean lowHealth = (health <= maxHealth * threshold) || (health <= 10.0f);
                 if (lowHealth) {
                     String cause = detectDamageCause(ctx);
-                    dangerReason = cause + " (Máu còn: " + String.format("%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+                    dangerReason = cause + " (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
                 }
             }
         }
 
         if (dangerReason != null) {
-            String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
-            Helper.HELPER.logDirect(alert);
-            BaritoneFileLogger.warn(alert);
-
-            // DÙNG 1 LẦN DUY NHẤT: Tự động tắt tính năng đi để lần sau vào lại không bị logout!
-            Baritone.settings().autoLogoutOnDanger.value = false;
-            AutoMineScreen.optAutoLogout = false;
             lavaTicks = 0;
-
-            // Dừng toàn bộ tiến trình điều khiển và xóa phím bấm
-            baritone.getPathingControlManager().cancelEverything();
-            baritone.getMineProcess().cancel();
-            baritone.getInputOverrideHandler().clearAllKeys();
-
-            // Thực hiện ngắt kết nối an toàn với máy chủ
-            Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§eLý do: " + dangerReason + "\n§aĐã tự động ngắt kết nối bảo toàn trang bị thành công!\n§7(Tính năng đã tự động tắt cho lần vào lại sau)");
-            if (ctx.world() instanceof ClientLevel clientLevel) {
-                clientLevel.disconnect(kickReason);
-            } else if (Minecraft.getInstance().getConnection() != null) {
-                Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
-            }
+            AutoLogoutTracker.performAutoLogout(ctx, dangerReason);
         }
     }
 
@@ -217,10 +215,13 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
     @Override
     public void onWorldEvent(baritone.api.event.events.WorldEvent event) {
-        // Khi thoát thế giới hoặc disconnect: tự động tắt đi để lần sau vào lại game không bị kick
+        // Khi thoát thế giới hoặc disconnect: tự động tắt đi để lần sau vào lại game không bị kick lặp lại
         if (event.getWorld() == null) {
             Baritone.settings().autoLogoutOnDanger.value = false;
+            Baritone.settings().autoLogoutOnPlayer.value = false;
             AutoMineScreen.optAutoLogout = false;
+        } else {
+            AutoLogoutTracker.onWorldJoined();
         }
     }
 

@@ -50,4 +50,11 @@ public abstract class MixinScreen implements IGuiScreen {
         }
         ci.cancel();
     }
+
+    @Inject(method = "render", at = @At("RETURN"))
+    private void onRender(net.minecraft.client.gui.GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+        if ((Object) this instanceof net.minecraft.client.gui.screens.DisconnectedScreen disconnectedScreen) {
+            baritone.utils.AutoLogoutTracker.renderDisconnectedScreen(disconnectedScreen, guiGraphics, mouseX, mouseY);
+        }
+    }
 }

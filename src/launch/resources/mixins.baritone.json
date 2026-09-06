@@ -33,7 +33,8 @@
     "MixinPlayerRenderer",
     "MixinPlayerTabOverlay",
     "MixinChatComponent",
-    "MixinOptions"
+    "MixinOptions",
+    "MixinDisconnectedScreen"
   ],
   "mixins": [
   ]
