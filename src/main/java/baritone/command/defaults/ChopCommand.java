@@ -66,6 +66,7 @@ public class ChopCommand extends Command {
         Baritone.settings().autoEat.value = true;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = true;
+        Baritone.settings().autoLogoutOnDanger.value = true;
         Baritone.settings().avoidance.value = true;
         Baritone.settings().mobAvoidanceRadius.value = 14;
         Baritone.settings().mobAvoidanceCoefficient.value = 500.0;

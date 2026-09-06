@@ -63,6 +63,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optAutoTool = true;
     public static boolean optAutoEat = true;
     public static boolean optAutoTotem = true;
+    public static boolean optAutoLogout = true;
     public static boolean optAutoDrop = true;
     public static boolean optShulkerStorage = true;
     public static boolean optMobAvoid = true;
@@ -252,6 +253,10 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_PICKAXE), "Auto-Tool", "Tự động đổi công cụ tối ưu (Cúp, Rìu, Xẻng)", "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
         allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_CARROT), "Auto-Eat", "Tự động ăn thức ăn ngon nhất khi đói < 19", "SURVIVAL", 0xFF34D399, () -> optAutoEat, () -> optAutoEat = !optAutoEat));
         allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Auto-Totem", "Tự động lấy Totem of Undying ra tay phụ khi tụt máu", "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
+        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Auto-Logout", "Tự thoát game khi rơi Lava hoặc còn 50% máu mà hết Totem", "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
+            optAutoLogout = !optAutoLogout;
+            Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
+        }));
         allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Shulker Box", "Tự động đặt Shulker Box cất quặng khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
         allModules.add(new ModuleItem(new ItemStack(Items.LAVA_BUCKET), "Auto-Drop", "Tự vứt đá/đất/gravel đầy stack về sau hoặc vào lava", "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
         allModules.add(new ModuleItem(new ItemStack(Items.ZOMBIE_HEAD), "Mob Avoid", "Tự động né quái vật nguy hiểm và Spawner 14m", "SURVIVAL", 0xFFF87171, () -> optMobAvoid, () -> optMobAvoid = !optMobAvoid));
@@ -821,6 +826,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoEat.value = optAutoEat;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
+        Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
         Baritone.settings().avoidance.value = optMobAvoid;
         Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
         Baritone.settings().mobAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;
@@ -935,6 +941,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoEat.value = optAutoEat;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
+        Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
         Baritone.settings().autoShulkerStorage.value = optShulkerStorage;
         Baritone.settings().autoDrop.value = optAutoDrop;
         Baritone.settings().avoidance.value = optMobAvoid;

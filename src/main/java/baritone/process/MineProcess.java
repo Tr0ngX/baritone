@@ -32,8 +32,10 @@ import baritone.pathing.movement.MovementHelper;
 import baritone.utils.BaritoneProcessHelper;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.ToolSet;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.tags.ItemTags;
@@ -385,8 +387,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
-        if (Baritone.settings().autoTotem.value && tickCount % 20 == 0) {
+        if (Baritone.settings().autoTotem.value && (tickCount % 4 == 0 || (ctx.player() != null && (ctx.player().isInLava() || ctx.player().getHealth() <= 12.0f)))) {
             handleAutoTotem();
+        }
+
+        if (handleAutoLogout()) {
+            return null;
         }
 
         updateLoucaSystem();
@@ -3439,6 +3445,78 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 return;
             }
         }
+    }
+
+    private int getTotemCount() {
+        if (ctx.player() == null) return 0;
+        int count = 0;
+        ItemStack offhand = ctx.player().getItemBySlot(EquipmentSlot.OFFHAND);
+        if (!offhand.isEmpty() && offhand.is(Items.TOTEM_OF_UNDYING)) {
+            count += offhand.getCount();
+        }
+        ItemStack mainhand = ctx.player().getMainHandItem();
+        if (!mainhand.isEmpty() && mainhand.is(Items.TOTEM_OF_UNDYING)) {
+            count += mainhand.getCount();
+        }
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        for (ItemStack stack : inv) {
+            if (!stack.isEmpty() && stack.is(Items.TOTEM_OF_UNDYING)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    private boolean handleAutoLogout() {
+        if (!Baritone.settings().autoLogoutOnDanger.value) {
+            return false;
+        }
+        if (ctx.player() == null || ctx.world() == null) {
+            return false;
+        }
+        if (ctx.player().isCreative() || ctx.player().isSpectator()) {
+            return false;
+        }
+
+        int totemCount = getTotemCount();
+        if (totemCount > 0) {
+            return false;
+        }
+
+        boolean inLava = ctx.player().isInLava()
+                || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
+                || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
+
+        float health = ctx.player().getHealth();
+        float maxHealth = ctx.player().getMaxHealth();
+        float thresholdPct = Baritone.settings().autoLogoutHealthThreshold.value;
+        boolean lowHealth = (health <= maxHealth * thresholdPct) || (health <= 10.0f);
+
+        String dangerReason = null;
+        if (inLava) {
+            dangerReason = "Rơi vào hồ LAVA và ĐÃ HẾT TOTEM!";
+        } else if (lowHealth) {
+            dangerReason = "Máu tụt còn nửa thanh (" + String.format("%.1f", health) + "/" + (int)maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+        }
+
+        if (dangerReason != null) {
+            String alert = "§c[AutoLogout] KHẨN CẤP: " + dangerReason + " Tự động Logout ngay lập tức để bảo toàn tính mạng và trang bị!";
+            Helper.HELPER.logDirect(alert);
+            BaritoneFileLogger.warn(alert);
+
+            cancel();
+            baritone.getInputOverrideHandler().clearAllKeys();
+
+            Component kickReason = Component.literal("§c[Baritone AutoLogout]\n§e" + dangerReason + "\n§aĐã tự động ngắt kết nối an toàn!");
+            if (ctx.world() instanceof ClientLevel clientLevel) {
+                clientLevel.disconnect(kickReason);
+            } else if (Minecraft.getInstance().getConnection() != null) {
+                Minecraft.getInstance().getConnection().getConnection().disconnect(kickReason);
+            }
+            return true;
+        }
+
+        return false;
     }
 
     private Optional<BlockPos> findNearbyDescentOpening(int maxHorizontalRadius, int minDrop) {

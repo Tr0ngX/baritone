@@ -825,6 +825,16 @@ public final class Settings {
     public final Setting<Boolean> logToChat = new Setting<>(true);
 
     /**
+     * Tự động Logout / Ngắt kết nối khẩn cấp khi rơi vào Lava không còn Totem hoặc máu còn <= 50% không còn Totem
+     */
+    public final Setting<Boolean> autoLogoutOnDanger = new Setting<>(true);
+
+    /**
+     * Ngưỡng máu tối đa để kích hoạt tự động Logout khẩn cấp (mặc định 0.5F = 50% tức nửa thanh máu)
+     */
+    public final Setting<Float> autoLogoutHealthThreshold = new Setting<>(0.5F);
+
+    /**
      * Allow chat based control of Baritone. Most likely should be disabled when Baritone is imported for use in
      * something else
      */
