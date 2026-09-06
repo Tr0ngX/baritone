@@ -272,7 +272,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         int targetY = Baritone.settings().legitMineYLevel.value;
         if (ctx.playerFeet().y <= targetY) {
             hasReachedTargetY = true;
-        } else if (ctx.playerFeet().y > targetY + 3) {
+        } else if (ctx.playerFeet().y > targetY + 10) {
             hasReachedTargetY = false;
         }
         if (desiredQuantity > 0) {
@@ -1092,9 +1092,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         int currentY = ctx.playerFeet().y;
 
         // Đánh dấu đã chạm tới độ sâu targetY (hoặc xuất phát ngay tại tầng đào)
-        if (currentY <= targetY + 1) {
+        if (currentY <= targetY) {
             hasReachedTargetY = true;
-        } else if (currentY > targetY + 3) {
+        } else if (currentY > targetY + 10) {
             hasReachedTargetY = false;
         }
 
@@ -1160,15 +1160,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
-        // KHI CHƯA ĐẠT ĐỘ SÂU TARGET Y (currentY > targetY + 1 && !hasReachedTargetY):
-        if (currentY > targetY + 1 && !hasReachedTargetY) {
+        // KHI CHƯA ĐẠT ĐỘ SÂU TARGET Y (currentY > targetY && !hasReachedTargetY):
+        if (currentY > targetY && !hasReachedTargetY) {
             if (Baritone.settings().straightDownMine.value) {
                 // CHẾ ĐỘ SHAFT DOWN: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI TẠI VỊ TRÍ HIỆN TẠI
                 if (shaftOriginPos == null || forceReroute
                         || Math.abs(shaftOriginPos.getX() - ctx.playerFeet().x) > 2
                         || Math.abs(shaftOriginPos.getZ() - ctx.playerFeet().z) > 2
-                        || shaftOriginPos.getY() - currentY >= 6
-                        || (!baritone.getPathingBehavior().isPathing() && shaftOriginPos.getY() > currentY)) {
+                        || shaftOriginPos.getY() < currentY) {
                     shaftOriginPos = ctx.playerFeet();
                 }
                 if (tickCount % 40 == 0) {
@@ -4105,7 +4104,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.stairOriginPos = null;
         this.shaftOriginPos = null;
         this.pillarFailCount = 0;
-        this.hasReachedTargetY = ctx.player() != null && ctx.playerFeet().y <= Baritone.settings().legitMineYLevel.value + 1;
+        this.hasReachedTargetY = ctx.player() != null && ctx.playerFeet().y <= Baritone.settings().legitMineYLevel.value;
         this.activeMiningBlock = null;
         this.activeMiningTicks = 0;
         this.lockedTargetOre = null;
@@ -4277,7 +4276,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         if (ctx.isLookingAt(pos)) {
             return true;
         }
-        if (Baritone.settings().f5FreeLook.value) {
+        if (Baritone.settings().clientFreeLook.value || Baritone.settings().f5FreeLook.value) {
             return true;
         }
         if (targetRot != null) {
@@ -4376,7 +4375,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         @Override
         public boolean isInGoal(int x, int y, int z) {
             int horizDev = Math.abs(x - this.x) + Math.abs(z - this.z);
-            return (y <= targetY && horizDev <= 1) || ((startY - y) >= 6 && horizDev <= 1);
+            return y <= targetY && horizDev <= 1;
         }
 
         @Override

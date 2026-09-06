@@ -114,10 +114,12 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                     if (this.target.mode == Target.Mode.SERVER) {
                         ctx.player().setYRot(this.prevRotation.getYaw());
                         ctx.player().setXRot(this.prevRotation.getPitch());
-                        final Rotation actual = this.processor.peekRotation(this.target.rotation);
-                        ctx.player().setYHeadRot(actual.getYaw());
-                        ctx.player().yHeadRotO = actual.getYaw();
-                        ctx.player().setYBodyRot(actual.getYaw());
+                        if (!Baritone.settings().clientFreeLook.value) {
+                            final Rotation actual = this.processor.peekRotation(this.target.rotation);
+                            ctx.player().setYHeadRot(actual.getYaw());
+                            ctx.player().yHeadRotO = actual.getYaw();
+                            ctx.player().setYBodyRot(actual.getYaw());
+                        }
                     } else if (ctx.player().isFallFlying() ? Baritone.settings().elytraSmoothLook.value : Baritone.settings().smoothLook.value) {
                         ctx.player().setYRot((float) this.smoothYawBuffer.stream().mapToDouble(d -> d).average().orElse(this.prevRotation.getYaw()));
                         if (ctx.player().isFallFlying()) {
@@ -168,7 +170,7 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
     }
 
     public Optional<Rotation> getEffectiveRotation() {
-        if (Baritone.settings().freeLook.value || (Baritone.settings().f5FreeLook.value && isF5(ctx))) {
+        if (Baritone.settings().clientFreeLook.value || Baritone.settings().freeLook.value || (Baritone.settings().f5FreeLook.value && isF5(ctx))) {
             if (this.target != null && this.target.rotation != null) {
                 return Optional.of(this.target.rotation);
             }
@@ -349,6 +351,10 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                 final Settings settings = Baritone.settings();
                 final boolean antiCheat = settings.antiCheatCompatibility.value;
                 final boolean blockFreeLook = settings.blockFreeLook.value;
+
+                if (settings.clientFreeLook.value) {
+                    return SERVER;
+                }
 
                 if (settings.f5FreeLook.value && isF5(ctx)) {
                     return SERVER;

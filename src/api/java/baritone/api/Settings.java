@@ -948,6 +948,12 @@ public final class Settings {
     public final Setting<Boolean> f5FreeLook = new Setting<>(true);
 
     /**
+     * When enabled, the client camera and head can freely rotate without any snapping or jerking,
+     * while Baritone strictly forces its rotation angles server-side via movement packets.
+     */
+    public final Setting<Boolean> clientFreeLook = new Setting<>(false);
+
+    /**
      * Forces the client-sided yaw rotation to an average of the last {@link #smoothLookTicks} of server-sided rotations.
      */
     public final Setting<Boolean> smoothLook = new Setting<>(false);

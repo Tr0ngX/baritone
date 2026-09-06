@@ -166,7 +166,7 @@ public abstract class Movement implements IMovement, MovementHelper {
                 if (reachable.isPresent()) {
                     Rotation rotTowardsBlock = reachable.get();
                     state.setTarget(new MovementState.MovementTarget(rotTowardsBlock, true));
-                    if (ctx.isLookingAt(blockPos) || ctx.playerRotations().isCloseTo(rotTowardsBlock, 25.0F) || Baritone.settings().f5FreeLook.value) {
+                    if (ctx.isLookingAt(blockPos) || ctx.playerRotations().isCloseTo(rotTowardsBlock, 25.0F) || Baritone.settings().f5FreeLook.value || Baritone.settings().clientFreeLook.value) {
                         state.setInput(Input.CLICK_LEFT, true);
                     }
                     return false;
@@ -200,11 +200,9 @@ public abstract class Movement implements IMovement, MovementHelper {
             if (hitting != null && ctx.world() != null) {
                 net.minecraft.world.level.block.state.BlockState state = ctx.world().getBlockState(hitting);
                 if (baritone.getMineProcess().isActive() && !state.isAir()) {
-                    // Nếu đang đập quặng mục tiêu thật sự thì không cancel dở
-                    // Nếu đang đập đá/đất/deepslate đào hầm thì cho phép cancel ngay để bẻ lái sang quặng!
-                    if (baritone.getMineProcess().isTargetBlock(state)) {
-                        return false;
-                    }
+                    // Đang đập dở một block (kể cả quặng hay đá/deepslate đào hầm):
+                    // KHÔNG cancel giữa chừng để tránh reset tiến độ đào làm đập đi đập lại từ đầu!
+                    return false;
                 }
             }
         }

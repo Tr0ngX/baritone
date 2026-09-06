@@ -280,6 +280,9 @@ public class AutoMineScreen extends Screen implements Helper {
             optStrictOneDirection = !optStrictOneDirection;
             Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
         }));
+        allModules.add(new ModuleItem(new ItemStack(Items.SPYGLASS), "Client FreeLook", "Tự do quay camera client, server vẫn force theo Baritone", "MOVEMENT", 0xFF06B6D4, () -> Baritone.settings().clientFreeLook.value, () -> {
+            Baritone.settings().clientFreeLook.value = !Baritone.settings().clientFreeLook.value;
+        }));
 
         // 3. TAB SINH TỒN
         allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_PICKAXE), "Auto-Tool", "Tự động đổi công cụ tối ưu (Cúp, Rìu, Xẻng)", "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
