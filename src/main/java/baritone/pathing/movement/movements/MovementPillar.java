@@ -41,8 +41,18 @@ import java.util.Set;
 
 public class MovementPillar extends Movement {
 
+    private int placeAttempts = 0;
+    private int pillarTicks = 0;
+
     public MovementPillar(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
         super(baritone, start, end, new BetterBlockPos[]{start.above(2)}, start);
+    }
+
+    @Override
+    public void reset() {
+        super.reset();
+        placeAttempts = 0;
+        pillarTicks = 0;
     }
 
     @Override
@@ -56,6 +66,9 @@ public class MovementPillar extends Movement {
     }
 
     public static double cost(CalculationContext context, int x, int y, int z) {
+        if (context.crawlMode || context.noPillar) {
+            return COST_INF;
+        }
         BlockState fromState = context.get(x, y, z);
         Block from = fromState.getBlock();
         boolean ladder = MovementHelper.isClimbable(from);
@@ -178,6 +191,13 @@ public class MovementPillar extends Movement {
             state.setInput(Input.JUMP, true);
             return state;
         } else {
+            pillarTicks++;
+            if (pillarTicks > 60) {
+                // Kẹt hành động pillar quá 60 tick (3 giây) mà không leo lên được
+                logDebug("MovementPillar timeout (" + pillarTicks + " ticks). Failing movement.");
+                return state.setStatus(MovementStatus.FAILED);
+            }
+
             // Get ready to place a throwaway block
             if (!((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, src.x, src.y, src.z)) {
                 return state.setStatus(MovementStatus.UNREACHABLE);
@@ -190,33 +210,37 @@ public class MovementPillar extends Movement {
             double diffZ = ctx.player().position().z - (dest.getZ() + 0.5);
             double dist = Math.sqrt(diffX * diffX + diffZ * diffZ);
             double flatMotion = Math.sqrt(ctx.player().getDeltaMovement().x * ctx.player().getDeltaMovement().x + ctx.player().getDeltaMovement().z * ctx.player().getDeltaMovement().z);
-            if (dist > 0.17) {//why 0.17? because it seemed like a good number, that's why
-                //[explanation added after baritone port lol] also because it needs to be less than 0.2 because of the 0.3 sneak limit
-                //and 0.17 is reasonably less than 0.2
-
-                // If it's been more than forty ticks of trying to jump and we aren't done yet, go forward, maybe we are stuck
+            if (dist > 0.15) {
+                // Di chuyển vào đúng tâm block trước khi nhảy để tránh trôi dạt và đập đầu vào mép tường
                 state.setInput(Input.MOVE_FORWARD, true);
-
-                // revise our target to both yaw and pitch if we're going to be moving forward
                 state.setTarget(new MovementState.MovementTarget(rotation, true));
-            } else if (flatMotion < 0.05) {
-                // If our Y coordinate is above our goal, stop jumping
-                state.setInput(Input.JUMP, ctx.player().position().y < dest.getY());
+            } else {
+                // Đã đứng ngay tâm block -> Nhìn thẳng 90 độ xuống mặt sàn để đặt block chuẩn xác 100%
+                state.setTarget(new MovementState.MovementTarget(ctx.playerRotations().withPitch(90.0F), true));
+                if (flatMotion < 0.12) {
+                    // Giữ phím nhảy trong suốt pha đi lên để đạt độ cao tối đa (+1.25 block), chỉ thả khi đã lên đỉnh
+                    state.setInput(Input.JUMP, ctx.player().position().y < dest.getY() || ctx.player().onGround());
+                }
             }
-
 
             if (!blockIsThere) {
                 BlockState frState = BlockStateInterface.get(ctx, src);
                 Block fr = frState.getBlock();
                 // TODO: Evaluate usage of getMaterial().isReplaceable()
                 if (!(fr instanceof AirBlock || frState.canBeReplaced())) {
+                    if (placeAttempts > 2) {
+                        // Đã thử đặt block nhiều lần mà không leo lên được và giờ lại định đào xuống -> Dừng ngay vòng lặp đặt/đào!
+                        logDebug("Detected place-and-break pillar loop at " + src + ". Failing movement immediately.");
+                        return state.setStatus(MovementStatus.FAILED);
+                    }
                     RotationUtils.reachable(ctx, src, ctx.playerController().getBlockReachDistance())
                             .map(rot -> new MovementState.MovementTarget(rot, true))
                             .ifPresent(state::setTarget);
                     state.setInput(Input.JUMP, false); // breaking is like 5x slower when you're jumping
                     state.setInput(Input.CLICK_LEFT, true);
                     blockIsThere = false;
-                } else if (ctx.player().isCrouching() && (ctx.isLookingAt(src.below()) || ctx.isLookingAt(src)) && ctx.player().position().y > dest.getY() + 0.1) {
+                } else if (ctx.player().position().y >= dest.getY() && (ctx.isLookingAt(src.below()) || ctx.isLookingAt(src) || ctx.playerRotations().getPitch() >= 80.0F)) {
+                    placeAttempts++;
                     state.setInput(Input.CLICK_RIGHT, true);
                 }
             }

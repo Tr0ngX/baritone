@@ -166,7 +166,7 @@ public abstract class Movement implements IMovement, MovementHelper {
                 if (reachable.isPresent()) {
                     Rotation rotTowardsBlock = reachable.get();
                     state.setTarget(new MovementState.MovementTarget(rotTowardsBlock, true));
-                    if (ctx.isLookingAt(blockPos) || ctx.playerRotations().isReallyCloseTo(rotTowardsBlock)) {
+                    if (ctx.isLookingAt(blockPos) || ctx.playerRotations().isCloseTo(rotTowardsBlock, 25.0F) || Baritone.settings().f5FreeLook.value) {
                         state.setInput(Input.CLICK_LEFT, true);
                     }
                     return false;
@@ -194,6 +194,20 @@ public abstract class Movement implements IMovement, MovementHelper {
 
     @Override
     public boolean safeToCancel() {
+        if (baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
+                || (ctx.minecraft().gameMode != null && ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock())) {
+            BlockPos hitting = ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).getCurrentBlock();
+            if (hitting != null && ctx.world() != null) {
+                net.minecraft.world.level.block.state.BlockState state = ctx.world().getBlockState(hitting);
+                if (baritone.getMineProcess().isActive() && !state.isAir()) {
+                    // Nếu đang đập quặng mục tiêu thật sự thì không cancel dở
+                    // Nếu đang đập đá/đất/deepslate đào hầm thì cho phép cancel ngay để bẻ lái sang quặng!
+                    if (baritone.getMineProcess().isTargetBlock(state)) {
+                        return false;
+                    }
+                }
+            }
+        }
         return safeToCancel(currentState);
     }
 

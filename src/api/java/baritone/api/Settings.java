@@ -73,6 +73,60 @@ public final class Settings {
     public final Setting<Boolean> allowSprint = new Setting<>(true);
 
     /**
+     * Tự động liên tục nhảy (Bhop / Ceiling Sprint-Jump) khi đang chạy trong đường hầm 2 block.
+     * Khi đầu va vào trần hầm ở độ cao 2 block, nhân vật rơi xuống đất ngay lập tức và kích hoạt
+     * liên tục momentum boost (+0.2 speed mỗi cú nhảy), giúp chạy nhanh gấp 2-3 lần bình thường.
+     */
+    public final Setting<Boolean> tunnelSprintJump = new Setting<>(true);
+
+    /**
+     * Tự động loại bỏ độ trễ nhảy 10-tick của Minecraft vanilla (Fast Jump / Instant Bhop).
+     * Khi người chơi hoặc bot giữ phím Nhảy (hoặc khi chạy trong hầm 2 block / nhảy vượt chướng ngại),
+     * ngay khoảnh khắc chân vừa chạm đất (onGround), bot sẽ lập tức nhảy tiếp với độ trễ 0 tick thay vì
+     * phải chờ 10 tick (0.5 giây) như Minecraft mặc định, giúp spam nhảy cực nhanh và bứt tốc tối đa.
+     */
+    public final Setting<Boolean> fastJump = new Setting<>(true);
+
+    /**
+     * Ẩn animation vung cúp / vung tay phía client (No-Swing / Hide Pickaxe Swing).
+     * Khi bật, màn hình client sẽ không hiển thị hoạt ảnh vung cúp giật lắc, giúp tầm nhìn cực thoáng,
+     * mượt mà và tăng FPS khi đào quặng hoặc dọn hầm.
+     * Gói tin swing vẫn được gửi đầy đủ lên server để đảm bảo không bị Anti-Cheat nghi ngờ hay lỗi đào block.
+     */
+    public final Setting<Boolean> hideSwingAnimation = new Setting<>(false);
+
+    /**
+     * Chế độ ẩn thông tin Streamer (Streamer Mode / Privacy Mode).
+     * Khi bật, tự động kích hoạt cả ẩn bảng điểm bên phải (hideScoreboard)
+     * và ẩn/che tên người chơi (hidePlayerName) trên mọi thành phần giao diện.
+     */
+    public final Setting<Boolean> streamerMode = new Setting<>(false);
+
+    /**
+     * Ẩn hoàn toàn bảng điểm bên phải màn hình (Scoreboard Sidebar HUD).
+     * Giúp giao diện gọn gàng, thoáng mắt và bảo mật thông tin tài chính/stats của server.
+     */
+    public final Setting<Boolean> hideScoreboard = new Setting<>(false);
+
+    /**
+     * Ẩn / che tên của chính người chơi (Name Protect / Streamer Mode).
+     * Thay thế tên người chơi trong chat, bảng Tab list, nametag trên đầu bằng tên che bảo vệ.
+     */
+    public final Setting<Boolean> hidePlayerName = new Setting<>(false);
+
+    /**
+     * Tên hiển thị thay thế khi kích hoạt chế độ ẩn tên người chơi (mặc định: "Protected").
+     */
+    public final Setting<String> censoredPlayerName = new Setting<>("Protected");
+
+    /**
+     * Chế độ chỉ đào duy nhất một hướng thẳng tiến (Strict One-Direction Mining).
+     * Khi bật, bot tuyệt đối KHÔNG xoay 90 độ, KHÔNG quay đầu chạy ngược lại,
+     * chỉ tập trung đào thẳng về phía trước theo đúng 1 hướng đã khóa và bỏ qua mọi quặng phía sau.
+     */
+    public final Setting<Boolean> mineStrictOneDirection = new Setting<>(true);
+
+    /**
      * Allow Baritone to place blocks
      */
     public final Setting<Boolean> allowPlace = new Setting<>(true);
@@ -145,13 +199,19 @@ public final class Settings {
      * <p>
      * Enable if you have mods adding custom fluid physics.
      */
-    public final Setting<Boolean> strictLiquidCheck = new Setting<>(false);
+    public final Setting<Boolean> strictLiquidCheck = new Setting<>(true);
 
     /**
      * Allow Baritone to fall arbitrary distances and place a water bucket beneath it.
      * Reliability: questionable.
      */
     public final Setting<Boolean> allowWaterBucketFall = new Setting<>(true);
+
+    /**
+     * Prefer water bucket falls and natural drops over digging downwards.
+     * When enabled, heavily penalizes digging blocks downwards while discounting water bucket falls.
+     */
+    public final Setting<Boolean> preferWaterBucketOverDigging = new Setting<>(true);
 
     /**
      * Allow Baritone to assume it can walk on still water just like any other block.
@@ -215,7 +275,7 @@ public final class Settings {
      * <p>
      * Actually pretty safe, much safer than diagonal descend tbh
      */
-    public final Setting<Boolean> allowDiagonalAscend = new Setting<>(false);
+    public final Setting<Boolean> allowDiagonalAscend = new Setting<>(true);
 
     /**
      * Allow mining the block directly beneath its feet
@@ -225,11 +285,53 @@ public final class Settings {
     public final Setting<Boolean> allowDownward = new Setting<>(true);
 
     /**
+     * Crawl Mine Mode: Đào hầm 1 block cao bằng cách dùng trapdoor để kích hoạt tư thế bò (crawling).
+     * Khi bật, bot chỉ đào 1 block phía trước thay vì 2, giảm 50% thời gian đào hầm.
+     * Yêu cầu có trapdoor trong balo.
+     */
+    public final Setting<Boolean> crawlMineMode = new Setting<>(false);
+
+    /**
+     * Khi bật, A* sẽ KHÔNG chọn movement nhảy+đặt block dưới chân (pillar up).
+     * MineProcess tự động bật setting này khi phát hiện bot bị kẹt pillar loop,
+     * và tự động tắt khi di chuyển thành công.
+     */
+    public final Setting<Boolean> noPillar = new Setting<>(false);
+
+    /**
+     * Chế độ Đào thẳng đứng xuống (Shaft Down Mode):
+     * Khi chưa đạt tầng Y chỉ định (ví dụ Y=-58), đào thẳng đứng một mạch xuống tại đúng tọa độ (X, Z) hiện tại
+     * thay vì đào bậc thang chéo, giúp tiết kiệm thời gian và độ bền cuốc gấp 3-4 lần.
+     * Có thể bật/tắt trên menu F4 ("Shaft Down").
+     */
+    public final Setting<Boolean> straightDownMine = new Setting<>(true);
+
+    /**
+     * Chế độ Anti-Lava Only:
+     * Khi bật (mặc định true), Baritone CHỈ né Lava, tuyệt đối KHÔNG né Nước (Water).
+     * Cho phép bot tự do đào mượt mà qua các mạch nước ngầm, nước rơi hoặc quặng ngập nước mà không bị cản trở.
+     */
+    public final Setting<Boolean> antiLavaOnly = new Setting<>(true);
+
+    /**
+     * Chế độ Water Check (Né Nước):
+     * Mặc định = false (Chỉ né Lava, không né Nước).
+     * Khi người dùng BẬT trên menu F4 ("Water Check [ON]"), bot sẽ né cả nước khi đào.
+     */
+    public final Setting<Boolean> waterCheck = new Setting<>(true);
+
+    /**
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
      */
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(
             Blocks.DIRT.asItem(),
             Blocks.COBBLESTONE.asItem(),
+            Blocks.COBBLED_DEEPSLATE.asItem(),
+            Blocks.DEEPSLATE.asItem(),
+            Blocks.TUFF.asItem(),
+            Blocks.ANDESITE.asItem(),
+            Blocks.DIORITE.asItem(),
+            Blocks.GRANITE.asItem(),
             Blocks.NETHERRACK.asItem(),
             Blocks.STONE.asItem()
     )));
@@ -359,14 +461,14 @@ public final class Settings {
      * <p>
      * It also overshoots the landing pretty much always (making contact with the next block over), so be careful
      */
-    public final Setting<Boolean> allowParkour = new Setting<>(false);
+    public final Setting<Boolean> allowParkour = new Setting<>(true);
 
     /**
      * Actually pretty reliable.
      * <p>
      * Doesn't make it any more dangerous compared to just normal allowParkour th
      */
-    public final Setting<Boolean> allowParkourPlace = new Setting<>(false);
+    public final Setting<Boolean> allowParkourPlace = new Setting<>(true);
 
     /**
      * For example, if you have Mining Fatigue or Haste, adjust the costs of breaking blocks accordingly.
@@ -450,19 +552,16 @@ public final class Settings {
     /**
      * Toggle the following 4 settings
      * <p>
-     * They have a noticeable performance impact, so they default off
-     * <p>
-     * Specifically, building up the avoidance map on the main thread before pathing starts actually takes a noticeable
-     * amount of time, especially when there are a lot of mobs around, and your game jitters for like 200ms while doing so
+     * Avoid hostile mobs (Zombies, Skeletons, Creepers) and mob spawners
      */
-    public final Setting<Boolean> avoidance = new Setting<>(false);
+    public final Setting<Boolean> avoidance = new Setting<>(true);
 
     /**
      * Set to 1.0 to effectively disable this feature
      * <p>
      * Set below 1.0 to go out of your way to walk near mob spawners
      */
-    public final Setting<Double> mobSpawnerAvoidanceCoefficient = new Setting<>(2.0);
+    public final Setting<Double> mobSpawnerAvoidanceCoefficient = new Setting<>(100.0);
 
     /**
      * Distance to avoid mob spawners.
@@ -474,12 +573,27 @@ public final class Settings {
      * <p>
      * Set below 1.0 to go out of your way to walk near mobs
      */
-    public final Setting<Double> mobAvoidanceCoefficient = new Setting<>(1.5);
+    public final Setting<Double> mobAvoidanceCoefficient = new Setting<>(200.0);
 
     /**
-     * Distance to avoid mobs.
+     * Distance to avoid mobs (Zombies, Creepers, etc.).
      */
-    public final Setting<Integer> mobAvoidanceRadius = new Setting<>(8);
+    public final Setting<Integer> mobAvoidanceRadius = new Setting<>(14);
+
+    /**
+     * Automatically pause and eat food when hunger is low
+     */
+    public final Setting<Boolean> autoEat = new Setting<>(true);
+
+    /**
+     * Food level threshold to trigger auto-eat (e.g. 16 means eat when hunger drops below 8 drumsticks)
+     */
+    public final Setting<Integer> autoEatThreshold = new Setting<>(16);
+
+    /**
+     * Automatically equip Totem of Undying to offhand if available in inventory
+     */
+    public final Setting<Boolean> autoTotem = new Setting<>(true);
 
     /**
      * When running a goto towards a container block (chest, ender chest, furnace, etc),
@@ -535,7 +649,29 @@ public final class Settings {
     /**
      * Start planning the next path once the remaining movements tick estimates sum up to less than this value
      */
-    public final Setting<Integer> planningTickLookahead = new Setting<>(150);
+    public final Setting<Integer> planningTickLookahead = new Setting<>(400);
+
+    /**
+     * Use ARA* (Anytime Repairing A*) instead of standard A* for pathfinding.
+     * ARA* uses a weighted heuristic to find suboptimal paths extremely fast,
+     * allowing the bot to start moving immediately instead of waiting for the
+     * optimal path. The path quality is controlled by anytimeSearchEpsilon.
+     * <p>
+     * Benefits: Near-zero delay before bot starts moving.
+     * Tradeoff: Path may be up to epsilon times longer than optimal.
+     */
+    public final Setting<Boolean> useAnytimeSearch = new Setting<>(true);
+
+    /**
+     * Initial epsilon (heuristic weight) for ARA* pathfinding.
+     * Higher values = faster path computation but less optimal paths.
+     * <p>
+     * 1.0 = standard A* (optimal, slowest)
+     * 1.5 = paths up to 50% longer, ~3x faster computation
+     * 2.0 = paths up to 100% longer, ~5x faster computation (recommended)
+     * 3.0 = paths up to 200% longer, ~8x faster computation (for anti-stuck)
+     */
+    public final Setting<Double> anytimeSearchEpsilon = new Setting<>(2.0);
 
     /**
      * Default size of the Long2ObjectOpenHashMap used in pathing
@@ -560,7 +696,7 @@ public final class Settings {
      * How far are you allowed to fall onto solid ground (with a water bucket)?
      * It's not that reliable, so I've set it below what would kill an unarmored player (23)
      */
-    public final Setting<Integer> maxFallHeightBucket = new Setting<>(20);
+    public final Setting<Integer> maxFallHeightBucket = new Setting<>(40);
 
     /**
      * Is it okay to sprint through a descend followed by a diagonal?
@@ -588,31 +724,31 @@ public final class Settings {
     /**
      * If a movement takes this many ticks more than its initial cost estimate, cancel it
      */
-    public final Setting<Integer> movementTimeoutTicks = new Setting<>(100);
+    public final Setting<Integer> movementTimeoutTicks = new Setting<>(140);
 
     /**
      * Pathing ends after this amount of time, but only if a path has been found
      * <p>
      * If no valid path (length above the minimum) has been found, pathing continues up until the failure timeout
      */
-    public final Setting<Long> primaryTimeoutMS = new Setting<>(500L);
+    public final Setting<Long> primaryTimeoutMS = new Setting<>(2500L);
 
     /**
      * Pathing can never take longer than this, even if that means failing to find any path at all
      */
-    public final Setting<Long> failureTimeoutMS = new Setting<>(2000L);
+    public final Setting<Long> failureTimeoutMS = new Setting<>(4000L);
 
     /**
      * Planning ahead while executing a segment ends after this amount of time, but only if a path has been found
      * <p>
      * If no valid path (length above the minimum) has been found, pathing continues up until the failure timeout
      */
-    public final Setting<Long> planAheadPrimaryTimeoutMS = new Setting<>(4000L);
+    public final Setting<Long> planAheadPrimaryTimeoutMS = new Setting<>(2500L);
 
     /**
      * Planning ahead while executing a segment can never take longer than this, even if that means failing to find any path at all
      */
-    public final Setting<Long> planAheadFailureTimeoutMS = new Setting<>(5000L);
+    public final Setting<Long> planAheadFailureTimeoutMS = new Setting<>(4000L);
 
     /**
      * For debugging, consider nodes much much slower
@@ -677,6 +813,27 @@ public final class Settings {
      * Print all the debug messages to chat
      */
     public final Setting<Boolean> chatDebug = new Setting<>(false);
+
+    /**
+     * Ghi toàn bộ log, thông báo, gỡ lỗi và phát hiện kẹt vào tệp tin log chuyên biệt baritone.log
+     */
+    public final Setting<Boolean> logToFile = new Setting<>(true);
+
+    /**
+     * Hiển thị thông báo Baritone vào khung chat trong trò chơi
+     */
+    public final Setting<Boolean> logToChat = new Setting<>(true);
+
+    /**
+     * Tự động Logout ngắt kết nối khẩn cấp khi rơi xuống dưới Lava và không còn Totem.
+     * Mặc định là false (tắt) để khi đăng nhập lại vào game không bị lặp logout. Dùng 1 lần rồi tự động tắt.
+     */
+    public final Setting<Boolean> autoLogoutOnDanger = new Setting<>(false);
+
+    /**
+     * Ngưỡng máu tối đa để kích hoạt tự động Logout khẩn cấp (mặc định 0.5F = 50% tức nửa thanh máu)
+     */
+    public final Setting<Float> autoLogoutHealthThreshold = new Setting<>(0.5F);
 
     /**
      * Allow chat based control of Baritone. Most likely should be disabled when Baritone is imported for use in
@@ -765,6 +922,12 @@ public final class Settings {
      * Automatically elytra fly without having to force the client-sided rotations.
      */
     public final Setting<Boolean> elytraFreeLook = new Setting<>(true);
+
+    /**
+     * When in third-person view (F5), do not force/lock client camera angles,
+     * but silently send Baritone's desired look angles to the server.
+     */
+    public final Setting<Boolean> f5FreeLook = new Setting<>(true);
 
     /**
      * Forces the client-sided yaw rotation to an average of the last {@link #smoothLookTicks} of server-sided rotations.
@@ -911,10 +1074,10 @@ public final class Settings {
     public final Setting<Integer> pathHistoryCutoffAmount = new Setting<>(50);
 
     /**
-     * Rescan for the goal once every 5 ticks.
+     * Rescan for the goal once every 2 ticks for instant continuous pathing.
      * Set to 0 to disable.
      */
-    public final Setting<Integer> mineGoalUpdateInterval = new Setting<>(5);
+    public final Setting<Integer> mineGoalUpdateInterval = new Setting<>(2);
 
     /**
      * After finding this many instances of the target block in the cache, it will stop expanding outward the chunk search.
@@ -1221,6 +1384,18 @@ public final class Settings {
      * If true, only apply the previous setting if the block adjacent to the goal isn't air.
      */
     public final Setting<Boolean> internalMiningAirException = new Setting<>(true);
+
+    /**
+     * When inventory is full while mining, automatically place a Shulker Box from inventory,
+     * transfer ores and mined items into it, then mine it back up instead of dropping items on the floor.
+     */
+    public final Setting<Boolean> autoShulkerStorage = new Setting<>(true);
+
+    /**
+     * When inventory is full while mining, automatically drop junk items from inventory.
+     * Keeps tools, food, totem, shulker boxes, target ores, and 1 stack of building blocks, and drops all other items.
+     */
+    public final Setting<Boolean> autoDrop = new Setting<>(true);
 
     /**
      * The actual GoalNear is set this distance away from the entity you're following

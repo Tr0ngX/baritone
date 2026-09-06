@@ -74,6 +74,9 @@ public class CalculationContext {
     public final boolean allowDiagonalDescend;
     public final boolean allowDiagonalAscend;
     public final boolean allowDownward;
+    public final boolean crawlMode;
+    public final boolean noPillar;
+    public final boolean tunnelSprintJump;
     public int minFallHeight;
     public int maxFallHeightNoWater;
     public final int maxFallHeightBucket;
@@ -84,6 +87,7 @@ public class CalculationContext {
     public final double walkOnWaterOnePenalty;
     public final boolean allowWalkOnMagmaBlocks;
     public final BetterWorldBorder worldBorder;
+    public final boolean preferWaterBucketOverDigging;
 
     public final PrecomputedData precomputedData;
 
@@ -101,7 +105,12 @@ public class CalculationContext {
         this.bsi = new BlockStateInterface(baritone.getPlayerContext(), forUseOnAnotherThread);
         this.toolSet = new ToolSet(player);
         this.hasThrowaway = Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway();
-        this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value && Inventory.isHotbarSlot(player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER)) && world.dimension() != Level.NETHER;
+        int waterSlot = player.getInventory().findSlotMatchingItem(STACK_BUCKET_WATER);
+        boolean hasBucket = Inventory.isHotbarSlot(waterSlot)
+                || (Baritone.settings().allowInventory.value && waterSlot != -1)
+                || player.getOffhandItem().is(Items.WATER_BUCKET);
+        this.hasWaterBucket = Baritone.settings().allowWaterBucketFall.value && hasBucket && world.dimension() != Level.NETHER;
+        this.preferWaterBucketOverDigging = Baritone.settings().preferWaterBucketOverDigging.value;
         this.canSprint = Baritone.settings().allowSprint.value && player.getFoodData().getFoodLevel() > 6;
         this.placeBlockCost = Baritone.settings().blockPlacementPenalty.value;
         this.allowBreak = Baritone.settings().allowBreak.value;
@@ -129,6 +138,9 @@ public class CalculationContext {
         this.allowDiagonalDescend = Baritone.settings().allowDiagonalDescend.value;
         this.allowDiagonalAscend = Baritone.settings().allowDiagonalAscend.value;
         this.allowDownward = Baritone.settings().allowDownward.value;
+        this.crawlMode = Baritone.settings().crawlMineMode.value;
+        this.noPillar = Baritone.settings().noPillar.value;
+        this.tunnelSprintJump = Baritone.settings().tunnelSprintJump.value;
         this.minFallHeight = 3; // Minimum fall height used by MovementFall
         this.maxFallHeightNoWater = Baritone.settings().maxFallHeightNoWater.value;
         this.maxFallHeightBucket = Baritone.settings().maxFallHeightBucket.value;
@@ -207,10 +219,21 @@ public class CalculationContext {
         if (isPossiblyProtected(x, y, z)) {
             return COST_INF;
         }
-        return 1;
+        // HỆ THỐNG TƯ DUY THƯỞNG / PHẠT CHI PHÍ ĐÀO BLOCK (COST REWARD & PENALTY):
+        // 1. Quặng mục tiêu (Ore, Ancient Debris): Chi phí đào được chiết khấu cực rẻ (0.2x) -> A* khao khát đào quặng
+        // 2. Block thông thường (Đá, Deepslate, Đất, Sỏi): Chi phí bình thường (1.0x) + breakBlockAdditionalCost (phạt nhẹ)
+        // -> Buộc A* phải tư duy: ưu tiên đi qua hang động / khoảng trống có sẵn (cost 0), không phá đá bừa bãi!
+        String descId = current.getBlock().getDescriptionId().toLowerCase();
+        if (descId.contains("ore") || descId.contains("ancient_debris")) {
+            return 0.2;
+        }
+        return 1.0;
     }
 
     public double placeBucketCost() {
+        if (preferWaterBucketOverDigging && hasWaterBucket) {
+            return 0.5; // Chi phí cực rẻ cho xô nước để A* luôn ưu tiên nhảy đáp nước
+        }
         return placeBlockCost; // shrug
     }
 

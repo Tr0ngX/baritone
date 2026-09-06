@@ -17,6 +17,7 @@
 
 package baritone.utils;
 
+import baritone.Baritone;
 import baritone.api.utils.input.Input;
 import net.minecraft.client.player.ClientInput;
 import net.minecraft.world.phys.Vec2;
@@ -63,6 +64,10 @@ public class PlayerMovementInput extends ClientInput {
         this.moveVector = new Vec2(leftImpulse, forwardImpulse);
 
         boolean sprinting = handler.isInputForcedDown(Input.SPRINT);
+        // AUTO SPRINT: Tự động chạy nhanh khi tiến về phía trước
+        if (Baritone.settings().allowSprint.value && up && !sneaking) {
+            sprinting = true;
+        }
 
         this.keyPresses = new net.minecraft.world.entity.player.Input(up, down, left, right, jumping, sneaking, sprinting);
     }

@@ -58,6 +58,9 @@ public final class BaritonePlayerController implements IPlayerController {
 
     @Override
     public boolean onPlayerDamageBlock(BlockPos pos, Direction side) {
+        if (pos instanceof baritone.api.utils.BetterBlockPos) {
+            pos = new BlockPos(pos.getX(), pos.getY(), pos.getZ());
+        }
         return mc.gameMode.continueDestroyBlock(pos, side);
     }
 
@@ -79,6 +82,11 @@ public final class BaritonePlayerController implements IPlayerController {
     @Override
     public InteractionResult processRightClickBlock(LocalPlayer player, Level world, InteractionHand hand, BlockHitResult result) {
         // primaryplayercontroller is always in a ClientWorld so this is ok
+        // Ensure result does not contain a BetterBlockPos to prevent hash code desync in LevelChunk.blockEntities
+        if (result != null && result.getBlockPos() instanceof baritone.api.utils.BetterBlockPos) {
+            BlockPos pure = new BlockPos(result.getBlockPos().getX(), result.getBlockPos().getY(), result.getBlockPos().getZ());
+            result = new BlockHitResult(result.getLocation(), result.getDirection(), pure, result.isInside());
+        }
         return mc.gameMode.useItemOn(player, hand, result);
     }
 
@@ -89,6 +97,9 @@ public final class BaritonePlayerController implements IPlayerController {
 
     @Override
     public boolean clickBlock(BlockPos loc, Direction face) {
+        if (loc instanceof baritone.api.utils.BetterBlockPos) {
+            loc = new BlockPos(loc.getX(), loc.getY(), loc.getZ());
+        }
         return mc.gameMode.startDestroyBlock(loc, face);
     }
 

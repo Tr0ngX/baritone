@@ -114,6 +114,10 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                     if (this.target.mode == Target.Mode.SERVER) {
                         ctx.player().setYRot(this.prevRotation.getYaw());
                         ctx.player().setXRot(this.prevRotation.getPitch());
+                        final Rotation actual = this.processor.peekRotation(this.target.rotation);
+                        ctx.player().setYHeadRot(actual.getYaw());
+                        ctx.player().yHeadRotO = actual.getYaw();
+                        ctx.player().setYBodyRot(actual.getYaw());
                     } else if (ctx.player().isFallFlying() ? Baritone.settings().elytraSmoothLook.value : Baritone.settings().smoothLook.value) {
                         ctx.player().setYRot((float) this.smoothYawBuffer.stream().mapToDouble(d -> d).average().orElse(this.prevRotation.getYaw()));
                         if (ctx.player().isFallFlying()) {
@@ -158,8 +162,16 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         }
     }
 
+    public static boolean isF5(IPlayerContext ctx) {
+        return ctx != null && ctx.minecraft() != null && ctx.minecraft().options != null
+                && !ctx.minecraft().options.getCameraType().isFirstPerson();
+    }
+
     public Optional<Rotation> getEffectiveRotation() {
-        if (Baritone.settings().freeLook.value) {
+        if (Baritone.settings().freeLook.value || (Baritone.settings().f5FreeLook.value && isF5(ctx))) {
+            if (this.target != null && this.target.rotation != null) {
+                return Optional.of(this.target.rotation);
+            }
             return Optional.ofNullable(this.serverRotation);
         }
         // If freeLook isn't on, just defer to the player's actual rotations
@@ -337,6 +349,10 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                 final Settings settings = Baritone.settings();
                 final boolean antiCheat = settings.antiCheatCompatibility.value;
                 final boolean blockFreeLook = settings.blockFreeLook.value;
+
+                if (settings.f5FreeLook.value && isF5(ctx)) {
+                    return SERVER;
+                }
 
                 if (ctx.player().isFallFlying()) {
                     // always need to set angles while flying

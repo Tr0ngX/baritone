@@ -29,6 +29,7 @@ import baritone.api.utils.Helper;
 import baritone.api.utils.PathCalculationResult;
 import baritone.api.utils.interfaces.IGoalRenderPos;
 import baritone.pathing.calc.AStarPathFinder;
+import baritone.pathing.calc.ARAStarPathFinder;
 import baritone.pathing.calc.AbstractNodeCostSearch;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.MovementHelper;
@@ -334,9 +335,7 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
     @Override
     public boolean cancelEverything() {
         boolean doIt = isSafeToCancel();
-        if (doIt) {
-            secretInternalSegmentCancel();
-        }
+        secretInternalSegmentCancel();
         baritone.getPathingControlManager().cancelEverything(); // regardless of if we can stop the current segment, we can still stop the processes
         return doIt;
     }
@@ -571,6 +570,12 @@ public final class PathingBehavior extends Behavior implements IPathingBehavior,
         var sub = feet.subtract(realStart);
         if (feet.getY() == realStart.getY() && Math.abs(sub.getX()) <= 1 && Math.abs(sub.getZ()) <= 1) {
             realStart = feet;
+        }
+        // Use ARA* (Anytime Repairing A*) when enabled for faster initial path finding
+        if (Baritone.settings().useAnytimeSearch.value) {
+            double epsilon = Baritone.settings().anytimeSearchEpsilon.value;
+            return new ARAStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(),
+                    transformed, favoring, context, epsilon, 0.5);
         }
         return new AStarPathFinder(realStart, start.getX(), start.getY(), start.getZ(), transformed, favoring, context);
 

@@ -113,4 +113,23 @@ public interface IMineProcess extends IBaritoneProcess {
     default void cancel() {
         onLostControl();
     }
+
+    /**
+     * Kiểm tra xem có đang ở chế độ tự động chặt cây (Chop Wood / Lumberjack) hay không.
+     */
+    default boolean isChopMode() {
+        return false;
+    }
+
+    /**
+     * Thiết lập chế độ tự động chặt cây (Chop Wood / Lumberjack).
+     */
+    default void setChopMode(boolean chopMode) {}
+
+    /**
+     * Kiểm tra xem blockState có phải là block mục tiêu đang cần đào hay không.
+     */
+    default boolean isTargetBlock(net.minecraft.world.level.block.state.BlockState state) {
+        return false;
+    }
 }

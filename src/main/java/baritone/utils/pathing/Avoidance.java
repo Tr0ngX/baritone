@@ -19,17 +19,20 @@ package baritone.utils.pathing;
 
 import baritone.Baritone;
 import baritone.api.utils.BetterBlockPos;
+import baritone.api.utils.BlockUtils;
 import baritone.api.utils.IPlayerContext;
 import it.unimi.dsi.fastutil.longs.Long2DoubleOpenHashMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.EnderMan;
 import net.minecraft.world.entity.monster.spider.Spider;
 import net.minecraft.world.entity.monster.zombie.ZombifiedPiglin;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import net.minecraft.world.level.block.Blocks;
 
 public class Avoidance {
 
@@ -68,8 +71,37 @@ public class Avoidance {
         double mobSpawnerCoeff = Baritone.settings().mobSpawnerAvoidanceCoefficient.value;
         double mobCoeff = Baritone.settings().mobAvoidanceCoefficient.value;
         if (mobSpawnerCoeff != 1.0D) {
-            ctx.worldData().getCachedWorld().getLocationsOf("mob_spawner", 1, ctx.playerFeet().x, ctx.playerFeet().z, 2)
-                    .forEach(mobspawner -> res.add(new Avoidance(mobspawner, mobSpawnerCoeff, Baritone.settings().mobSpawnerAvoidanceRadius.value)));
+            int spawnerRadius = Baritone.settings().mobSpawnerAvoidanceRadius.value;
+            double coeff = Math.max(500.0D, mobSpawnerCoeff);
+            Set<BlockPos> spawnerPositions = new HashSet<>();
+            String spawnerName = BlockUtils.blockToString(Blocks.SPAWNER);
+            spawnerPositions.addAll(ctx.worldData().getCachedWorld().getLocationsOf(spawnerName, 1, ctx.playerFeet().x, ctx.playerFeet().z, 2));
+            spawnerPositions.addAll(ctx.worldData().getCachedWorld().getLocationsOf("mob_spawner", 1, ctx.playerFeet().x, ctx.playerFeet().z, 2));
+            spawnerPositions.addAll(ctx.worldData().getCachedWorld().getLocationsOf("trial_spawner", 1, ctx.playerFeet().x, ctx.playerFeet().z, 2));
+
+            // Quét thêm các lồng spawner trong các chunk đang load xung quanh người chơi
+            if (ctx.world() != null && ctx.player() != null) {
+                BetterBlockPos pf = ctx.playerFeet();
+                int scanDist = Math.max(spawnerRadius, 24);
+                int minChunkX = (pf.x - scanDist) >> 4;
+                int maxChunkX = (pf.x + scanDist) >> 4;
+                int minChunkZ = (pf.z - scanDist) >> 4;
+                int maxChunkZ = (pf.z + scanDist) >> 4;
+                for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+                    for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                        net.minecraft.world.level.chunk.LevelChunk chunk = ctx.world().getChunkSource().getChunk(cx, cz, false);
+                        if (chunk != null && !chunk.isEmpty()) {
+                            for (BlockPos bPos : chunk.getBlockEntitiesPos()) {
+                                if (ctx.world().getBlockState(bPos).is(Blocks.SPAWNER)) {
+                                    spawnerPositions.add(bPos);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            spawnerPositions.forEach(mobspawner -> res.add(new Avoidance(mobspawner, coeff, spawnerRadius)));
         }
         if (mobCoeff != 1.0D) {
             ctx.entitiesStream()
@@ -77,7 +109,30 @@ public class Avoidance {
                     .filter(entity -> (!(entity instanceof Spider)) || ctx.player().getLightLevelDependentMagicValue() < 0.5)
                     .filter(entity -> !(entity instanceof ZombifiedPiglin) || ((ZombifiedPiglin) entity).getLastHurtByMob() != null)
                     .filter(entity -> !(entity instanceof EnderMan) || ((EnderMan) entity).isCreepy())
-                    .forEach(entity -> res.add(new Avoidance(entity.blockPosition(), mobCoeff, Baritone.settings().mobAvoidanceRadius.value)));
+                    .forEach(entity -> {
+                        double coeff = mobCoeff;
+                        int rad = Baritone.settings().mobAvoidanceRadius.value;
+
+                        if (entity instanceof net.minecraft.world.entity.monster.warden.Warden) {
+                            // 1. WARDEN - Nguy hiểm bậc nhất tuyệt đối (Bán kính né 24 block, hệ số phạt 1000.0)
+                            coeff = 1000.0D;
+                            rad = 24;
+                        } else if (entity instanceof net.minecraft.world.entity.monster.Creeper) {
+                            // 2. CREEPER - Chống nổ tan xác (Bán kính né 16 block, hệ số phạt 500.0)
+                            coeff = 500.0D;
+                            rad = 16;
+                        } else if (entity instanceof net.minecraft.world.entity.monster.Zombie) {
+                            // 3. ZOMBIE - Đánh cận chiến đông đảo (Bán kính né 14 block, hệ số phạt 250.0)
+                            coeff = 250.0D;
+                            rad = 14;
+                        } else if (entity instanceof net.minecraft.world.entity.monster.AbstractSkeleton) {
+                            // 4. SKELETON - Bắn tỉa tầm xa (Bán kính né 16 block, hệ số phạt 200.0)
+                            coeff = 200.0D;
+                            rad = 16;
+                        }
+
+                        res.add(new Avoidance(entity.blockPosition(), coeff, rad));
+                    });
         }
         return res;
     }

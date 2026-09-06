@@ -149,6 +149,9 @@ public interface Helper {
      * @param message The message to display in chat
      */
     default void logDebug(String message) {
+        if (BaritoneAPI.getSettings().logToFile.value) {
+            BaritoneFileLogger.debug(message);
+        }
         if (!BaritoneAPI.getSettings().chatDebug.value) {
             //System.out.println("Suppressed debug message:");
             //System.out.println(message);
@@ -172,9 +175,15 @@ public interface Helper {
             component.append(Component.literal(" "));
         }
         Arrays.asList(components).forEach(component::append);
+
+        // Ghi vào file log chuyên biệt baritone.log
+        if (BaritoneAPI.getSettings().logToFile.value) {
+            BaritoneFileLogger.info(component.getString());
+        }
+
         if (logAsToast) {
             logToast(getPrefix(), component);
-        } else {
+        } else if (BaritoneAPI.getSettings().logToChat.value) {
             Minecraft.getInstance().execute(() -> BaritoneAPI.getSettings().logger.value.accept(component));
         }
     }
@@ -237,9 +246,12 @@ public interface Helper {
     }
 
     default void logUnhandledException(final Throwable exception) {
+        BaritoneFileLogger.error("Unhandled exception occurred: " + (exception != null ? exception.getMessage() : "null"), exception);
         HELPER.logDirect("An unhandled exception occurred. " +
                         "The error is in your game's log, please report this at https://github.com/cabaletta/baritone/issues",
                 ChatFormatting.RED);
-        exception.printStackTrace();
+        if (exception != null) {
+            exception.printStackTrace();
+        }
     }
 }

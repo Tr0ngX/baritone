@@ -36,6 +36,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.function.BiFunction;
 
@@ -186,6 +187,16 @@ public class MixinMinecraft {
             return null;
         }
         return instance.screen;
+    }
+
+    @Inject(method = "createTitle", at = @At("RETURN"), cancellable = true)
+    private void onCreateTitle(CallbackInfoReturnable<String> cir) {
+        if (baritone.utils.StreamerUtil.isHidePlayerNameActive()) {
+            String title = cir.getReturnValue();
+            if (title != null) {
+                cir.setReturnValue(baritone.utils.StreamerUtil.censorString(title));
+            }
+        }
     }
 
     // TODO

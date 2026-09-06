@@ -23,7 +23,10 @@ import baritone.api.event.events.TickEvent;
 import baritone.api.utils.IInputOverrideHandler;
 import baritone.api.utils.input.Input;
 import baritone.behavior.Behavior;
+import baritone.api.utils.Helper;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.player.KeyboardInput;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -45,6 +48,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
 
     private final BlockBreakHelper blockBreakHelper;
     private final BlockPlaceHelper blockPlaceHelper;
+    private boolean f4WasDown = false;
 
     public InputOverrideHandler(Baritone baritone) {
         super(baritone);
@@ -87,6 +91,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         if (event.getType() == TickEvent.Type.OUT) {
             return;
         }
+        checkF4Key();
         if (isInputForcedDown(Input.CLICK_LEFT)) {
             setInputForceState(Input.CLICK_RIGHT, false);
         }
@@ -104,6 +109,55 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         }
         // only set it if it was previously incorrect
         // gotta do it this way, or else it constantly thinks you're beginning a double tap W sprint lol
+    }
+
+    private void checkF4Key() {
+        if (ctx.minecraft() == null || ctx.minecraft().getWindow() == null || ctx.player() == null) {
+            return;
+        }
+        if (ctx.minecraft().screen != null) {
+            f4WasDown = true;
+            return;
+        }
+        try {
+            long window = ctx.minecraft().getWindow().getWindow();
+            boolean altDown = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT);
+            
+            // 1. Kiểm tra phím mở AutoMine Menu (qua KeyMapping tùy chỉnh trong Controls -> Key Binds)
+            boolean keyTriggered = BaritoneKeyBindings.KEY_AUTOMINE_GUI.consumeClick();
+            if (!keyTriggered && BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDefault()) {
+                boolean f4Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F4);
+                if (f4Down && !f4WasDown) {
+                    keyTriggered = true;
+                }
+                f4WasDown = f4Down;
+            } else {
+                f4WasDown = BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDown();
+            }
+
+            if (!altDown && keyTriggered) {
+                ctx.minecraft().setScreen(new AutoMineScreen(baritone));
+            }
+
+            // 2. Phím Hủy / Dừng Baritone (nếu người chơi có gán phím)
+            if (BaritoneKeyBindings.KEY_CANCEL.consumeClick()) {
+                baritone.getPathingBehavior().cancelEverything();
+                baritone.getPathingBehavior().forceCancel();
+                baritone.getMineProcess().cancel();
+                clearAllKeys();
+                blockBreakHelper.stopBreakingBlock();
+                if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
+                    ctx.player().closeContainer();
+                }
+                Helper.HELPER.logDirect("§c[Baritone] Đã hủy / dừng toàn bộ tiến trình!");
+            }
+
+            // 3. Phím Tạm dừng Baritone (nếu người chơi có gán phím)
+            if (BaritoneKeyBindings.KEY_PAUSE.consumeClick()) {
+                baritone.getPathingBehavior().requestPause();
+                Helper.HELPER.logDirect("§e[Baritone] Đã yêu cầu tạm dừng tiến trình!");
+            }
+        } catch (Throwable ignored) {}
     }
 
     private boolean inControl() {

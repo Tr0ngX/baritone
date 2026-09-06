@@ -1015,7 +1015,7 @@ public final class BuilderProcess extends BaritoneProcessHelper implements IBuil
                 .getBlock()
                 .getStateForPlacement(
                     new BlockPlaceContext(
-                        new UseOnContext(ctx.world(), ctx.player(), InteractionHand.MAIN_HAND, stack, new BlockHitResult(new Vec3(ctx.player().position().x, ctx.player().position().y, ctx.player().position().z), Direction.UP, ctx.playerFeet(), false)) {}
+                        new UseOnContext(ctx.world(), ctx.player(), InteractionHand.MAIN_HAND, stack, new BlockHitResult(new Vec3(ctx.player().position().x, ctx.player().position().y, ctx.player().position().z), Direction.UP, new BlockPos(ctx.playerFeet().getX(), ctx.playerFeet().getY(), ctx.playerFeet().getZ()), false)) {}
                     )
                 );
             if (itemState != null) {

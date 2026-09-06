@@ -55,7 +55,7 @@ public class MovementTraverse extends Movement {
     private boolean wasTheBridgeBlockAlwaysThere = true;
 
     public MovementTraverse(IBaritone baritone, BetterBlockPos from, BetterBlockPos to) {
-        super(baritone, from, to, new BetterBlockPos[]{to.above(), to}, to.below());
+        super(baritone, from, to, Baritone.settings().crawlMineMode.value ? new BetterBlockPos[]{to} : new BetterBlockPos[]{to.above(), to}, to.below());
     }
 
     @Override
@@ -108,13 +108,22 @@ public class MovementTraverse extends Movement {
             if (hardness1 >= COST_INF) {
                 return COST_INF;
             }
-            double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
+            // Crawl mode: chỉ cần clear 1 block ngang chân (y), không cần clear block trên đầu (y+1)
+            double hardness2 = context.crawlMode ? 0 : MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true);
             if (hardness1 == 0 && hardness2 == 0) {
                 if (!water && !sneaking && context.canSprint) {
                     // If there's nothing in the way, and this isn't water, and we aren't sneak placing
                     // We can sprint =D
                     // Don't check for soul sand, since we can sprint on that too
                     WC *= SPRINT_MULTIPLIER;
+                    if (context.tunnelSprintJump && !context.crawlMode) {
+                        BlockState ceil1 = context.get(x, y + 2, z);
+                        BlockState ceil2 = context.get(destX, y + 2, destZ);
+                        if (!ceil1.isAir() && (ceil1.blocksMotion() || MovementHelper.isBlockNormalCube(ceil1))
+                                && !ceil2.isAir() && (ceil2.blocksMotion() || MovementHelper.isBlockNormalCube(ceil2))) {
+                            WC *= 0.7; // Chạy nhảy hầm 2 block (bhop) nhanh hơn sprint thường
+                        }
+                    }
                 }
                 return WC;
             }
@@ -141,7 +150,7 @@ public class MovementTraverse extends Movement {
                 if (hardness1 >= COST_INF) {
                     return COST_INF;
                 }
-                double hardness2 = MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true); // only include falling on the upper block to break
+                double hardness2 = context.crawlMode ? 0 : MovementHelper.getMiningDurationTicks(context, destX, y + 1, destZ, pb0, true);
                 double WC = throughWater ? context.waterWalkSpeed : WALK_ONE_BLOCK_COST;
                 for (int i = 0; i < 5; i++) {
                     int againstX = destX + HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i].getStepX();
@@ -175,8 +184,8 @@ public class MovementTraverse extends Movement {
     @Override
     public MovementState updateState(MovementState state) {
         super.updateState(state);
-        BlockState pb0 = BlockStateInterface.get(ctx, positionsToBreak[0]);
-        BlockState pb1 = BlockStateInterface.get(ctx, positionsToBreak[1]);
+        BlockState pb0 = positionsToBreak.length > 1 ? BlockStateInterface.get(ctx, positionsToBreak[0]) : Blocks.AIR.defaultBlockState();
+        BlockState pb1 = BlockStateInterface.get(ctx, positionsToBreak[positionsToBreak.length - 1]);
         if (state.getStatus() != MovementStatus.RUNNING) {
             // if the setting is enabled
             if (!Baritone.settings().walkWhileBreaking.value) {
@@ -249,8 +258,8 @@ public class MovementTraverse extends Movement {
         BlockPos feet = ctx.playerFeet();
         if (feet.getY() != dest.getY() && !ladder) {
             logDebug("Wrong Y coordinate");
+            MovementHelper.moveTowards(ctx, state, dest);
             if (feet.getY() < dest.getY()) {
-                System.out.println("In movement traverse");
                 return state.setInput(Input.JUMP, true);
             }
             return state;
@@ -281,6 +290,29 @@ public class MovementTraverse extends Movement {
             if (feet.getY() != dest.getY() && ladder && MovementHelper.isClimbable(destDown.getBlock())) {
                 state.setInput(Input.JUMP, true);
             }
+
+            // TỰ ĐỘNG SPAM NHẢY KHI Ở ĐƯỜNG HẦM 2 BLOCK (Ceiling Sprint-Jump / Bhop)
+            if (Baritone.settings().tunnelSprintJump.value
+                    && !ladder
+                    && feet.getY() == dest.getY()
+                    && !MovementHelper.isLiquid(ctx, feet)
+                    && !ctx.player().isInWater()
+                    && !ctx.player().isCrouching()
+                    && !ctx.player().isSwimming()
+                    && !Baritone.settings().crawlMineMode.value
+                    && ctx.player().getFoodData().getFoodLevel() > 6) {
+
+                BlockPos ceilFeet = feet.above(2);
+                BlockState csFeet = BlockStateInterface.get(ctx, ceilFeet);
+                boolean hasCeilFeet = !csFeet.isAir() && (csFeet.blocksMotion() || MovementHelper.isBlockNormalCube(csFeet));
+                BlockState headFeet = BlockStateInterface.get(ctx, feet.above());
+
+                if (hasCeilFeet && !headFeet.blocksMotion()) {
+                    state.setInput(Input.SPRINT, true);
+                    state.setInput(Input.JUMP, true);
+                }
+            }
+
             MovementHelper.moveTowards(ctx, state, positionsToBreak[0]);
             return state;
         } else {
@@ -314,7 +346,7 @@ public class MovementTraverse extends Movement {
                             // but only if our attempted place is straight ahead
                             return state.setInput(Input.MOVE_FORWARD, true);
                         }
-                    } else if (ctx.playerRotations().isReallyCloseTo(state.getTarget().rotation)) {
+                    } else if (ctx.playerRotations().isCloseTo(state.getTarget().rotation, 20.0F) || Baritone.settings().f5FreeLook.value) {
                         // well i guess theres something in the way
                         return state.setInput(Input.CLICK_LEFT, true);
                     }
@@ -346,7 +378,7 @@ public class MovementTraverse extends Movement {
                     return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
                 }
                 // Out.log("Trying to look at " + goalLook + ", actually looking at" + Baritone.whatAreYouLookingAt());
-                if (ctx.playerRotations().isReallyCloseTo(state.getTarget().rotation)) {
+                if (ctx.playerRotations().isCloseTo(state.getTarget().rotation, 20.0F) || Baritone.settings().f5FreeLook.value) {
                     state.setInput(Input.CLICK_LEFT, true);
                 }
                 return state;

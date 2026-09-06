@@ -180,6 +180,14 @@ public class ExecutionControlCommands {
                     paused[0] = false;
                 }
                 baritone.getPathingBehavior().cancelEverything();
+                baritone.getPathingBehavior().forceCancel();
+                baritone.getInputOverrideHandler().clearAllKeys();
+                if (baritone instanceof baritone.Baritone b) {
+                    b.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+                }
+                if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
+                    ctx.player().closeContainer();
+                }
                 logDirect("ok canceled");
             }
 

@@ -28,7 +28,13 @@
     "MixinRenderPipelines",
     "MixinRenderType",
     "MixinScreen",
-    "MixinWorldRenderer"
+    "MixinWorldRenderer",
+    "MixinGui",
+    "MixinPlayerRenderer",
+    "MixinPlayerTabOverlay",
+    "MixinChatComponent",
+    "MixinOptions",
+    "MixinKeyMapping"
   ],
   "mixins": [
   ]

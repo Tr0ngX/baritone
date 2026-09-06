@@ -46,4 +46,15 @@ public abstract class MixinPlayerController implements IPlayerControllerMP {
     @Accessor("destroyDelay")
     @Override
     public abstract void setDestroyDelay(int destroyDelay);
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "destroyBlock", at = @org.spongepowered.asm.mixin.injection.At("HEAD"))
+    private void onDestroyBlock(BlockPos pos, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level != null && pos != null) {
+            net.minecraft.world.level.block.state.BlockState state = mc.level.getBlockState(pos);
+            if (!state.isAir()) {
+                baritone.utils.MiningStatsTracker.getInstance().onBlockBroken(state, pos);
+            }
+        }
+    }
 }

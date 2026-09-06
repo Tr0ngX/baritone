@@ -32,6 +32,10 @@ import baritone.utils.ToolSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
+import net.minecraft.core.NonNullList;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -72,8 +76,9 @@ public interface MovementHelper extends ActionCosts, Helper {
         }
         Block b = state.getBlock();
         return Baritone.settings().blocksToDisallowBreaking.value.contains(b)
-                || b == Blocks.ICE // ice becomes water, and water can mess up the path
                 || b instanceof InfestedBlock // obvious reasons
+                || b == Blocks.SPAWNER
+                || b instanceof SpawnerBlock
                 // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
                 || avoidAdjacentBreaking(bsi, x, y + 1, z, true)
                 || avoidAdjacentBreaking(bsi, x + 1, y, z, false)
@@ -95,20 +100,30 @@ public interface MovementHelper extends ActionCosts, Helper {
                 && FallingBlock.isFree(bsi.get0(x, y - 1, z))) { // and if it would fall (i.e. it's unsupported)
             return true; // dont break a block that is adjacent to unsupported gravel because it can cause really weird stuff
         }
-        // only pure liquids for now
-        // waterlogged blocks can have closed bottom sides and such
-        if (block instanceof LiquidBlock) {
-            if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
-                return true;
-            }
-            int level = state.getValue(LiquidBlock.LEVEL);
-            if (level == 0) {
-                return true; // source blocks like to flow horizontally
-            }
-            // everything else will prefer flowing down
-            return !(bsi.get0(x, y - 1, z).getBlock() instanceof LiquidBlock); // assume everything is in a static state
+
+        // LAVA: Luôn luôn né 100% để chống chết cháy & bảo vệ quặng
+        if (isLava(state)) {
+            return true;
         }
-        return !state.getFluidState().isEmpty();
+
+        // WATER CHECK (Bật/tắt được theo yêu cầu người dùng):
+        // Nếu BẬT (waterCheck = true) -> Né cả nước khi đào
+        // Nếu TẮT (waterCheck = false - Mặc định) -> Nước an toàn 100%, đào xuyên qua & cạnh nước thoải mái!
+        if (Baritone.settings().waterCheck.value) {
+            if (block instanceof LiquidBlock) {
+                if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
+                    return true;
+                }
+                int level = state.getValue(LiquidBlock.LEVEL);
+                if (level == 0) {
+                    return true;
+                }
+                return !(bsi.get0(x, y - 1, z).getBlock() instanceof LiquidBlock);
+            }
+            return !state.getFluidState().isEmpty();
+        }
+
+        return false;
     }
 
     static boolean canWalkThrough(IPlayerContext ctx, BetterBlockPos pos) {
@@ -659,7 +674,42 @@ public interface MovementHelper extends ActionCosts, Helper {
      */
     static void switchToBestToolFor(IPlayerContext ctx, BlockState b, ToolSet ts, boolean preferSilkTouch) {
         if (Baritone.settings().autoTool.value && !Baritone.settings().assumeExternalAutoTool.value) {
-            ctx.player().getInventory().setSelectedSlot(ts.getBestSlot(b.getBlock(), preferSilkTouch));
+            int bestHotbar = ts.getBestSlot(b.getBlock(), preferSilkTouch);
+            ItemStack hotbarStack = ctx.player().getInventory().getItem(bestHotbar);
+            double hotbarSpeed = ToolSet.calculateSpeedVsBlock(hotbarStack, b);
+            boolean hotbarIsUsable = !hotbarStack.isEmpty() && (!Baritone.settings().itemSaver.value || (hotbarStack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) < hotbarStack.getMaxDamage());
+
+            // Nếu trên hotbar không có tool hiệu quả (tốc độ <= 1.0 hoặc tool đã hỏng/bị cấm bởi itemSaver),
+            // tự động tìm trong Balo (slots 9-35) xem có tool nào phá block này nhanh hơn không:
+            if (ctx.player().containerMenu == ctx.player().inventoryMenu && (!hotbarIsUsable || hotbarSpeed <= 1.0)) {
+                NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+                int bestBaloSlot = -1;
+                double bestBaloSpeed = hotbarIsUsable ? hotbarSpeed : 1.0;
+                for (int i = 9; i < 36; i++) {
+                    ItemStack stack = inv.get(i);
+                    if (stack.isEmpty()) continue;
+                    if (Baritone.settings().itemSaver.value && (stack.getDamageValue() + Baritone.settings().itemSaverThreshold.value) >= stack.getMaxDamage() && stack.getMaxDamage() > 1) {
+                        continue;
+                    }
+                    double speed = ToolSet.calculateSpeedVsBlock(stack, b);
+                    if (speed > bestBaloSpeed) {
+                        bestBaloSpeed = speed;
+                        bestBaloSlot = i;
+                    }
+                }
+                if (bestBaloSlot != -1) {
+                    int targetHotbar = bestHotbar;
+                    if (baritone.process.MineProcess.isUsableMiningTool(inv.get(bestBaloSlot))) {
+                        targetHotbar = 0;
+                    } else if (targetHotbar == 0) {
+                        targetHotbar = 1;
+                    }
+                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, bestBaloSlot, targetHotbar, ClickType.SWAP, ctx.player());
+                    ctx.player().getInventory().setSelectedSlot(targetHotbar);
+                    return;
+                }
+            }
+            ctx.player().getInventory().setSelectedSlot(bestHotbar);
         }
     }
 
@@ -773,7 +823,7 @@ public interface MovementHelper extends ActionCosts, Helper {
                 || possiblyFlowing(bsi.get0(x, y, z - 1));
     }
 
-    static boolean isBlockNormalCube(BlockState state) {
+    public static boolean isBlockNormalCube(BlockState state) {
         Block block = state.getBlock();
         if (block instanceof BambooStalkBlock
                 || block instanceof MovingPistonBlock

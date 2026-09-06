@@ -192,9 +192,12 @@ public class PathingControlManager implements IPathingControlManager {
         // ties are broken by which was added to the beginning of the list first
         active.sort(Comparator.comparingDouble(IBaritoneProcess::priority).reversed());
 
-        Iterator<IBaritoneProcess> iterator = active.iterator();
-        while (iterator.hasNext()) {
-            IBaritoneProcess proc = iterator.next();
+        List<IBaritoneProcess> toExecute = new ArrayList<>(active);
+        for (int i = 0; i < toExecute.size(); i++) {
+            IBaritoneProcess proc = toExecute.get(i);
+            if (!proc.isActive()) {
+                continue;
+            }
 
             PathingCommand exec = proc.onTick(Objects.equals(proc, inControlLastTick) && baritone.getPathingBehavior().calcFailedLastTick(), baritone.getPathingBehavior().isSafeToCancel());
             if (exec == null) {
@@ -205,7 +208,9 @@ public class PathingControlManager implements IPathingControlManager {
             } else if (exec.commandType != PathingCommandType.DEFER) {
                 inControlThisTick = proc;
                 if (!proc.isTemporary()) {
-                    iterator.forEachRemaining(IBaritoneProcess::onLostControl);
+                    for (int j = i + 1; j < toExecute.size(); j++) {
+                        toExecute.get(j).onLostControl();
+                    }
                 }
                 return exec;
             }

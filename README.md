@@ -54,6 +54,9 @@
 
 A Minecraft pathfinder bot.
 
+> [!TIP]
+> 🇻🇳 **Xem tài liệu hướng dẫn tiếng Việt chi tiết & các tính năng cải tiến tại: [README_VI.md](README_VI.md)**
+
 Baritone is the pathfinding system used in [Impact](https://impactclient.net/) since 4.4. [Here's](https://www.youtube.com/watch?v=StquF69-_wI) a (very old!) video I made showing off what it can do.
 
 [**Baritone Discord Server**](http://discord.gg/s6fRBAUpmr)
