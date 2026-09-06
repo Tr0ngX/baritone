@@ -24,25 +24,26 @@ import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.Blocks;
+import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * NextGen High-Taste AutoMine Screen (F4)
- * Clean typography, modern card panels, hardware telemetry HUD,
- * custom color-coded ore toggles, and zero tacky unicode emojis.
+ * NextGen Tr0ngX ClickGUI (Inspired by LiquidBounce Nextgen & Meteor Client).
+ * Giao diện đồ họa tối tân: Tab Bar danh mục, Search Bar tìm kiếm tức thì,
+ * Card Modules bo viền neon, Pill Switches xúc giác thị giác, và Hardware Telemetry HUD.
  */
 public class AutoMineScreen extends Screen implements Helper {
 
     private final Baritone baritone;
 
-    // Trạng thái quặng đã chọn (Mặc định chuẩn theo giao diện)
+    // === TRẠNG THÁI CẤU HÌNH QUẶNG MỤC TIÊU ===
     public static boolean oreDiamond = true;
     public static boolean oreLapis = true;
     public static boolean oreRedstone = true;
@@ -54,7 +55,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean oreCoal = false;
     public static boolean oreQuartz = false;
 
-    // Trạng thái bảng thống kê & tùy chọn tự động
+    // === TRẠNG THÁI CẤU HÌNH TỰ ĐỘNG & SINH TỒN ===
     public static boolean optMiningStats = true;
     public static boolean optAutoTool = true;
     public static boolean optAutoEat = true;
@@ -82,29 +83,113 @@ public class AutoMineScreen extends Screen implements Helper {
 
     private static final int[] FPS_LEVELS = new int[]{260, 240, 144, 120, 60, 30};
 
-    // Responsive Layout Fields
-    private int panelTotalW;
-    private int panelHalfW;
-    private int colW;
-    private int leftCardX;
-    private int rightCardX;
-    private int btnW;
-    private int btnH;
-    private int startY;
-    private int gap;
-    private int leftSub1;
-    private int leftSub2;
-    private int rightSub1;
-    private int rightSub2;
-    private int panelBottom;
-    private int bottomY;
-    private int actionBtnW;
-    private int actionGap;
-    private int actionStartX;
+    // === TRẠNG THÁI TAB & TÌM KIẾM LIQUIDBOUNCE NEXTGEN ===
+    private static int activeTab = 0;
+    private static final String[] TAB_NAMES = new String[]{
+            "QUẶNG MỤC TIÊU",
+            "DI CHUYỂN & HẦM",
+            "SINH TỒN & BẢO VỆ",
+            "HIỂN THỊ & HUD",
+            "THỐNG KÊ & PHẦN CỨNG"
+    };
+    private static final String[] TAB_ICONS = new String[]{
+            "⛏",
+            "⚡",
+            "🛡",
+            "🎨",
+            "📊"
+    };
+
+    private String searchQuery = "";
+    private boolean searchFocused = false;
+    private int scrollOffset = 0;
+    private int maxScroll = 0;
+
+    // Định nghĩa Module hiển thị
+    private static class ModuleItem {
+        final String name;
+        final String desc;
+        final String category;
+        final int color;
+        final java.util.function.BooleanSupplier getter;
+        final Runnable toggle;
+
+        ModuleItem(String name, String desc, String category, int color, java.util.function.BooleanSupplier getter, Runnable toggle) {
+            this.name = name;
+            this.desc = desc;
+            this.category = category;
+            this.color = color;
+            this.getter = getter;
+            this.toggle = toggle;
+        }
+    }
+
+    private final List<ModuleItem> allModules = new ArrayList<>();
 
     public AutoMineScreen(Baritone baritone) {
-        super(Component.literal("BARITONE CONTROL PANEL"));
+        super(Component.literal("TR0NGX NEXTGEN CLICKGUI"));
         this.baritone = baritone;
+        initModuleRegistry();
+    }
+
+    private void initModuleRegistry() {
+        allModules.clear();
+
+        // 1. TAB QUẶNG
+        allModules.add(new ModuleItem("Kim Cương", "Khai thác quặng Diamond & Deepslate Diamond", "ORES", 0xFF38BDF8, () -> oreDiamond, () -> oreDiamond = !oreDiamond));
+        allModules.add(new ModuleItem("Lục Bảo", "Khai thác quặng Emerald quý hiếm trên núi", "ORES", 0xFF34D399, () -> oreEmerald, () -> oreEmerald = !oreEmerald));
+        allModules.add(new ModuleItem("Mảnh Vỡ Cổ Đại", "Ancient Debris tầng Netherite Y=15", "ORES", 0xFFC084FC, () -> oreDebris, () -> oreDebris = !oreDebris));
+        allModules.add(new ModuleItem("Vàng", "Quặng Gold thế giới thường và Nether Gold", "ORES", 0xFFFBBF24, () -> oreGold, () -> oreGold = !oreGold));
+        allModules.add(new ModuleItem("Sắt", "Quặng Iron & Deepslate Iron", "ORES", 0xFFE2E8F0, () -> oreIron, () -> oreIron = !oreIron));
+        allModules.add(new ModuleItem("Redstone", "Quặng Đá đỏ cung cấp năng lượng", "ORES", 0xFFF87171, () -> oreRedstone, () -> oreRedstone = !oreRedstone));
+        allModules.add(new ModuleItem("Lapis", "Ngọc Lưu Ly Lapis Lazuli phù phép", "ORES", 0xFF60A5FA, () -> oreLapis, () -> oreLapis = !oreLapis));
+        allModules.add(new ModuleItem("Đồng", "Quặng Copper & Deepslate Copper", "ORES", 0xFFFB923C, () -> oreCopper, () -> oreCopper = !oreCopper));
+        allModules.add(new ModuleItem("Than", "Quặng Coal cung cấp nhiên liệu", "ORES", 0xFF94A3B8, () -> oreCoal, () -> oreCoal = !oreCoal));
+        allModules.add(new ModuleItem("Thạch Anh", "Quặng Nether Quartz thế giới Nether", "ORES", 0xFFF1F5F9, () -> oreQuartz, () -> oreQuartz = !oreQuartz));
+
+        // 2. TAB DI CHUYỂN
+        allModules.add(new ModuleItem("ARA* Engine", "Tính toán đường đi Anytime Search 0ms phản xạ", "MOVEMENT", 0xFF38BDF8, () -> optZeroDelay, () -> optZeroDelay = !optZeroDelay));
+        allModules.add(new ModuleItem("Crawl 1-Block", "Đào hầm chui 1 block siêu tốc bằng trapdoor", "MOVEMENT", 0xFF60A5FA, () -> optCrawlMode, () -> optCrawlMode = !optCrawlMode));
+        allModules.add(new ModuleItem("Tunnel Bhop", "Nhảy liên hoàn trong đường hầm tăng tốc độ", "MOVEMENT", 0xFF34D399, () -> optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
+        allModules.add(new ModuleItem("Shaft Down", "Đào thẳng xuống tầng an toàn chống rơi tự do", "MOVEMENT", 0xFFFBBF24, () -> optShaftDown, () -> optShaftDown = !optShaftDown));
+        allModules.add(new ModuleItem("Parkour", "Tự động nhảy vượt chướng ngại vật & kê block", "MOVEMENT", 0xFFC084FC, () -> optParkour, () -> optParkour = !optParkour));
+        allModules.add(new ModuleItem("Auto-Sprint", "Tự động chạy nhanh khi bot di chuyển thẳng", "MOVEMENT", 0xFF38BDF8, () -> optAutoSprint, () -> optAutoSprint = !optAutoSprint));
+        allModules.add(new ModuleItem("Overshoot", "Cắt cua tốc độ cao ở các góc rẽ mà không dừng", "MOVEMENT", 0xFFFB923C, () -> optOvershoot, () -> optOvershoot = !optOvershoot));
+        allModules.add(new ModuleItem("Water Sprint", "Bơi nước tốc độ cao như trên cạn", "MOVEMENT", 0xFF60A5FA, () -> optWaterSprint, () -> optWaterSprint = !optWaterSprint));
+        allModules.add(new ModuleItem("Strict 1-Dir", "Khóa cố định 1 hướng đào không đổi hướng ngẫu nhiên", "MOVEMENT", 0xFFF87171, () -> optStrictOneDirection, () -> {
+            optStrictOneDirection = !optStrictOneDirection;
+            Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
+        }));
+
+        // 3. TAB SINH TỒN
+        allModules.add(new ModuleItem("Auto-Tool", "Tự động đổi công cụ tối ưu (Cúp, Rìu, Xẻng)", "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
+        allModules.add(new ModuleItem("Auto-Eat", "Tự động ăn thức ăn ngon nhất khi đói < 19", "SURVIVAL", 0xFF34D399, () -> optAutoEat, () -> optAutoEat = !optAutoEat));
+        allModules.add(new ModuleItem("Auto-Totem", "Tự động lấy Totem of Undying ra tay phụ khi tụt máu", "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
+        allModules.add(new ModuleItem("Shulker Box", "Tự động đặt Shulker Box cất quặng khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
+        allModules.add(new ModuleItem("Auto-Drop", "Tự vứt đá/đất/gravel đầy stack về sau hoặc vào lava", "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
+        allModules.add(new ModuleItem("Mob Avoid", "Tự động né quái vật nguy hiểm và Spawner 14m", "SURVIVAL", 0xFFF87171, () -> optMobAvoid, () -> optMobAvoid = !optMobAvoid));
+        allModules.add(new ModuleItem("Water Check", "Kiểm tra an toàn chất lỏng chống sặc nước / lava", "SURVIVAL", 0xFF60A5FA, () -> optWaterCheck, () -> optWaterCheck = !optWaterCheck));
+
+        // 4. TAB HIỂN THỊ
+        allModules.add(new ModuleItem("Stats HUD", "Bảng thống kê số block & quặng đào ở góc màn hình", "HUD", 0xFF38BDF8, () -> optMiningStats, () -> optMiningStats = !optMiningStats));
+        allModules.add(new ModuleItem("No-Swing", "Ẩn animation vung tay phía client chống giật màn hình", "HUD", 0xFF94A3B8, () -> optHideSwing, () -> optHideSwing = !optHideSwing));
+        allModules.add(new ModuleItem("FastPlace", "Đặt block tức thì 1-tick (0.05s) mượt mà", "HUD", 0xFF34D399, () -> optFastPlace, () -> optFastPlace = !optFastPlace));
+        allModules.add(new ModuleItem("Streamer Mode", "Chế độ Livestream ẩn toàn bộ thông tin nhạy cảm", "HUD", 0xFFC084FC, () -> optStreamerMode, () -> {
+            optStreamerMode = !optStreamerMode;
+            optHideScoreboard = optStreamerMode;
+            optHidePlayerName = optStreamerMode;
+            Baritone.settings().streamerMode.value = optStreamerMode;
+            Baritone.settings().hideScoreboard.value = optHideScoreboard;
+            Baritone.settings().hidePlayerName.value = optHidePlayerName;
+        }));
+        allModules.add(new ModuleItem("Hide Board", "Ẩn hoàn toàn bảng điểm Scoreboard bên phải", "HUD", 0xFF60A5FA, () -> optHideScoreboard, () -> {
+            optHideScoreboard = !optHideScoreboard;
+            Baritone.settings().hideScoreboard.value = optHideScoreboard;
+        }));
+        allModules.add(new ModuleItem("Hide Name", "Che tên người chơi trên Actionbar và thông báo", "HUD", 0xFFFBBF24, () -> optHidePlayerName, () -> {
+            optHidePlayerName = !optHidePlayerName;
+            Baritone.settings().hidePlayerName.value = optHidePlayerName;
+        }));
     }
 
     @Override
@@ -113,220 +198,9 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     @Override
-    public void resize(Minecraft minecraft, int width, int height) {
-        this.width = width;
-        this.height = height;
-        this.rebuildWidgets();
-    }
-
-    @Override
     protected void init() {
         super.init();
-        int cx = this.width / 2;
-
-        // Tự động thích ứng co giãn linh hoạt theo độ rộng cửa sổ (Responsive Width)
-        panelTotalW = Math.max(430, Math.min((int) (this.width * 0.85f), 700));
-        if (panelTotalW > this.width - 24) {
-            panelTotalW = this.width - 24;
-        }
-        panelHalfW = panelTotalW / 2;
-        int cardGap = 12;
-        colW = (panelTotalW - cardGap) / 2;
-
-        leftCardX = cx - panelHalfW;
-        rightCardX = leftCardX + colW + cardGap;
-
-        // Mỗi cột Card chứa 2 nút con cân đối
-        int btnPad = 6;
-        btnW = (colW - 16 - btnPad) / 2;
-        btnH = this.height < 320 ? 17 : 19;
-        gap = this.height < 320 ? 19 : 21;
-        startY = this.height < 320 ? 42 : 48;
-
-        optStreamerMode = Baritone.settings().streamerMode.value;
-        optHideScoreboard = Baritone.settings().hideScoreboard.value;
-        optHidePlayerName = Baritone.settings().hidePlayerName.value;
-
-        leftSub1 = leftCardX + 8;
-        leftSub2 = leftSub1 + btnW + btnPad;
-
-        rightSub1 = rightCardX + 8;
-        rightSub2 = rightSub1 + btnW + btnPad;
-
-        // CỘT 1: CHỌN QUẶNG (Color-coded Ore Buttons)
-        addRenderableWidget(createOreBtn(leftSub1, startY, btnW, btnH, "Diamond", 0x38BDF8, oreDiamond, () -> oreDiamond = !oreDiamond));
-        addRenderableWidget(createOreBtn(leftSub2, startY, btnW, btnH, "Lapis", 0x60A5FA, oreLapis, () -> oreLapis = !oreLapis));
-
-        addRenderableWidget(createOreBtn(leftSub1, startY + gap, btnW, btnH, "Redstone", 0xF87171, oreRedstone, () -> oreRedstone = !oreRedstone));
-        addRenderableWidget(createOreBtn(leftSub2, startY + gap, btnW, btnH, "Gold Ore", 0xFBBF24, oreGold, () -> oreGold = !oreGold));
-
-        addRenderableWidget(createOreBtn(leftSub1, startY + gap * 2, btnW, btnH, "Iron Ore", 0xE2E8F0, oreIron, () -> oreIron = !oreIron));
-        addRenderableWidget(createOreBtn(leftSub2, startY + gap * 2, btnW, btnH, "Emerald", 0x34D399, oreEmerald, () -> oreEmerald = !oreEmerald));
-
-        addRenderableWidget(createOreBtn(leftSub1, startY + gap * 3, btnW, btnH, "Debris", 0xC084FC, oreDebris, () -> oreDebris = !oreDebris));
-        addRenderableWidget(createOreBtn(leftSub2, startY + gap * 3, btnW, btnH, "Copper", 0xFB923C, oreCopper, () -> oreCopper = !oreCopper));
-
-        addRenderableWidget(createOreBtn(leftSub1, startY + gap * 4, btnW, btnH, "Coal Ore", 0x94A3B8, oreCoal, () -> oreCoal = !oreCoal));
-        addRenderableWidget(createOreBtn(leftSub2, startY + gap * 4, btnW, btnH, "Quartz", 0xF1F5F9, oreQuartz, () -> oreQuartz = !oreQuartz));
-
-        addRenderableWidget(Button.builder(Component.literal("[ ALL ]"), b -> {
-            oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = true;
-            this.rebuildWidgets();
-        }).bounds(leftSub1, startY + gap * 5, btnW, btnH).build());
-
-        addRenderableWidget(Button.builder(Component.literal("[ NONE ]"), b -> {
-            oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
-            this.rebuildWidgets();
-        }).bounds(leftSub2, startY + gap * 5, btnW, btnH).build());
-
-        addRenderableWidget(Button.builder(Component.literal("[ INVERT ]"), b -> {
-            oreDiamond = !oreDiamond;
-            oreLapis = !oreLapis;
-            oreRedstone = !oreRedstone;
-            oreGold = !oreGold;
-            oreIron = !oreIron;
-            oreEmerald = !oreEmerald;
-            oreDebris = !oreDebris;
-            oreCopper = !oreCopper;
-            oreCoal = !oreCoal;
-            oreQuartz = !oreQuartz;
-            this.rebuildWidgets();
-        }).bounds(leftSub1, startY + gap * 6, btnW, btnH).build());
-
-        addRenderableWidget(Button.builder(Component.literal("[ RESET ]"), b -> {
-            oreDiamond = true;
-            oreLapis = true;
-            oreRedstone = true;
-            oreGold = false;
-            oreIron = false;
-            oreEmerald = true;
-            oreDebris = false;
-            oreCopper = false;
-            oreCoal = false;
-            oreQuartz = false;
-            this.rebuildWidgets();
-        }).bounds(leftSub2, startY + gap * 6, btnW, btnH).build());
-
-        // Hàng 7 cột 1: Stats HUD & Overshoot
-        addRenderableWidget(createOptBtn(leftSub1, startY + gap * 7, btnW, btnH, "Stats HUD", optMiningStats, () -> optMiningStats = !optMiningStats));
-        addRenderableWidget(createOptBtn(leftSub2, startY + gap * 7, btnW, btnH, "Overshoot", optOvershoot, () -> optOvershoot = !optOvershoot));
-
-        // Hàng 8 cột 1: Hide Scoreboard & Hide Player Name
-        addRenderableWidget(createOptBtn(leftSub1, startY + gap * 8, btnW, btnH, "Hide Board", optHideScoreboard, () -> {
-            optHideScoreboard = !optHideScoreboard;
-            Baritone.settings().hideScoreboard.value = optHideScoreboard;
-            if (!optHideScoreboard && optStreamerMode) {
-                optStreamerMode = false;
-                Baritone.settings().streamerMode.value = false;
-            }
-        }));
-        addRenderableWidget(createOptBtn(leftSub2, startY + gap * 8, btnW, btnH, "Hide Name", optHidePlayerName, () -> {
-            optHidePlayerName = !optHidePlayerName;
-            Baritone.settings().hidePlayerName.value = optHidePlayerName;
-            if (!optHidePlayerName && optStreamerMode) {
-                optStreamerMode = false;
-                Baritone.settings().streamerMode.value = false;
-            }
-        }));
-
-
-        // CỘT 2: CÀI ĐẶT TỰ ĐỘNG & SINH TỒN (Bố cục đôi cân xứng)
-        addRenderableWidget(createOptBtn(rightSub1, startY, btnW, btnH, "Auto-Tool", optAutoTool, () -> optAutoTool = !optAutoTool));
-        addRenderableWidget(createOptBtn(rightSub2, startY, btnW, btnH, "Auto-Eat", optAutoEat, () -> optAutoEat = !optAutoEat));
-
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap, btnW, btnH, "Auto-Totem", optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap, btnW, btnH, "Shulker Box", optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
-
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 2, btnW, btnH, "Mob Avoid", optMobAvoid, () -> optMobAvoid = !optMobAvoid));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 2, btnW, btnH, "Parkour", optParkour, () -> optParkour = !optParkour));
-
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 3, btnW, btnH, "Crawl 1-Block", optCrawlMode, () -> optCrawlMode = !optCrawlMode));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 3, btnW, btnH, "ARA* Engine", optZeroDelay, () -> optZeroDelay = !optZeroDelay));
-
-        // Hàng 4 cột 2: Tầng Y và FPS Limit
-        String yLabel = optTargetY == 999 ? "Y-Level: Current" : "Y-Level: " + optTargetY;
-        addRenderableWidget(Button.builder(Component.literal(yLabel), b -> {
-            if (optTargetY == -54) optTargetY = -58;
-            else if (optTargetY == -58) optTargetY = 11;
-            else if (optTargetY == 11) optTargetY = 999;
-            else optTargetY = -54;
-            this.rebuildWidgets();
-        }).bounds(rightSub1, startY + gap * 4, btnW, btnH).build());
-
-        int currentLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
-        String fpsLimitText = currentLimit >= 260 ? "FPS: Unlimited" : "FPS: " + currentLimit;
-        addRenderableWidget(Button.builder(Component.literal(fpsLimitText), b -> {
-            int cur = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
-            int nextIndex = 0;
-            for (int i = 0; i < FPS_LEVELS.length; i++) {
-                if (FPS_LEVELS[i] == cur) {
-                    nextIndex = (i + 1) % FPS_LEVELS.length;
-                    break;
-                }
-            }
-            baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
-            this.rebuildWidgets();
-        }).bounds(rightSub2, startY + gap * 4, btnW, btnH).build());
-
-        // Hàng 5 cột 2: Tunnel Bhop & Shaft Down
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 5, btnW, btnH, "Tunnel Bhop", optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 5, btnW, btnH, "Shaft Down", optShaftDown, () -> optShaftDown = !optShaftDown));
-
-        // Hàng 6 cột 2: Water Check & Auto-Sprint
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 6, btnW, btnH, "Water Check", optWaterCheck, () -> optWaterCheck = !optWaterCheck));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 6, btnW, btnH, "Auto-Sprint", optAutoSprint, () -> optAutoSprint = !optAutoSprint));
-
-        // Hàng 7 cột 2: No-Swing & FastPlace
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 7, btnW, btnH, "No-Swing", optHideSwing, () -> optHideSwing = !optHideSwing));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 7, btnW, btnH, "FastPlace", optFastPlace, () -> optFastPlace = !optFastPlace));
-
-        // Hàng 8 cột 2: Streamer Mode & Strict 1-Dir (Chỉ đào 1 hướng thẳng tiến)
-        addRenderableWidget(createOptBtn(rightSub1, startY + gap * 8, btnW, btnH, "Streamer Mode", optStreamerMode, () -> {
-            optStreamerMode = !optStreamerMode;
-            optHideScoreboard = optStreamerMode;
-            optHidePlayerName = optStreamerMode;
-            Baritone.settings().streamerMode.value = optStreamerMode;
-            Baritone.settings().hideScoreboard.value = optHideScoreboard;
-            Baritone.settings().hidePlayerName.value = optHidePlayerName;
-        }));
-        addRenderableWidget(createOptBtn(rightSub2, startY + gap * 8, btnW, btnH, "Strict 1-Dir", optStrictOneDirection, () -> {
-            optStrictOneDirection = !optStrictOneDirection;
-            Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
-        }));
-
-
-        // HÀNG DƯỚI: NÚT THAO TÁC (Responsive Action Controls)
-        panelBottom = startY + gap * 9 + 4;
-        bottomY = panelBottom + 8;
-        actionGap = 6;
-        actionBtnW = (panelTotalW - (actionGap * 4)) / 5;
-        actionStartX = leftCardX;
-
-        addRenderableWidget(Button.builder(Component.literal("START MINING"), b -> {
-            startAutoMine();
-            this.onClose();
-        }).bounds(actionStartX, bottomY, actionBtnW, 22).build());
-
-        addRenderableWidget(Button.builder(Component.literal("CHOP WOOD \uD83E\uDE93"), b -> {
-            startAutoChop();
-            this.onClose();
-        }).bounds(actionStartX + (actionBtnW + actionGap), bottomY, actionBtnW, 22).build());
-
-        addRenderableWidget(Button.builder(Component.literal("STOP"), b -> {
-            stopAutoMine();
-            this.onClose();
-        }).bounds(actionStartX + (actionBtnW + actionGap) * 2, bottomY, actionBtnW, 22).build());
-
-        addRenderableWidget(Button.builder(Component.literal("RESET STATS"), b -> {
-            MiningStatsTracker.getInstance().reset();
-            Helper.HELPER.logDirect("§a[AutoMine] Đã reset toàn bộ thống kê đào khoáng!");
-            this.rebuildWidgets();
-        }).bounds(actionStartX + (actionBtnW + actionGap) * 3, bottomY, actionBtnW, 22).build());
-
-        String closeKeyName = BaritoneKeyBindings.KEY_AUTOMINE_GUI.getTranslatedKeyMessage().getString();
-        addRenderableWidget(Button.builder(Component.literal("CLOSE (" + closeKeyName + ")"), b -> {
-            this.onClose();
-        }).bounds(actionStartX + (actionBtnW + actionGap) * 4, bottomY, actionBtnW, 22).build());
+        scrollOffset = 0;
     }
 
     @Override
@@ -335,23 +209,459 @@ public class AutoMineScreen extends Screen implements Helper {
             this.onClose();
             return true;
         }
+
+        // Xử lý phím Search Input
+        if (searchFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                searchFocused = false;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!searchQuery.isEmpty()) {
+                    searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
+                    scrollOffset = 0;
+                }
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER) {
+                searchFocused = false;
+                return true;
+            }
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-    private Button createOreBtn(int x, int y, int w, int h, String name, int activeColor, boolean state, Runnable toggle) {
-        String label = (state ? "[ON] " : "[--] ") + name;
-        return Button.builder(Component.literal(label), b -> {
-            toggle.run();
-            this.rebuildWidgets();
-        }).bounds(x, y, w, h).build();
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (searchFocused) {
+            if (codePoint >= 32 && codePoint != 127) {
+                searchQuery += codePoint;
+                scrollOffset = 0;
+                return true;
+            }
+        }
+        return super.charTyped(codePoint, modifiers);
     }
 
-    private Button createOptBtn(int x, int y, int w, int h, String name, boolean state, Runnable toggle) {
-        String label = name + (state ? " [ON]" : " [--]");
-        return Button.builder(Component.literal(label), b -> {
-            toggle.run();
-            this.rebuildWidgets();
-        }).bounds(x, y, w, h).build();
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollY != 0) {
+            scrollOffset = (int) Mth.clamp(scrollOffset - scrollY * 24, 0, maxScroll);
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int cx = this.width / 2;
+        int panelW = Math.max(540, Math.min((int) (this.width * 0.88f), 780));
+        int panelHalfW = panelW / 2;
+        int panelX = cx - panelHalfW;
+
+        // 1. Kiểm tra Click vào Tab Bar
+        int tabY = 32;
+        int tabH = 22;
+        int tabW = panelW / TAB_NAMES.length;
+        for (int i = 0; i < TAB_NAMES.length; i++) {
+            int tx = panelX + i * tabW;
+            if (mouseX >= tx && mouseX <= tx + tabW && mouseY >= tabY && mouseY <= tabY + tabH) {
+                activeTab = i;
+                searchQuery = "";
+                searchFocused = false;
+                scrollOffset = 0;
+                return true;
+            }
+        }
+
+        // 2. Kiểm tra Click vào Search Bar
+        int searchY = 58;
+        int searchH = 20;
+        int searchW = panelW;
+        if (mouseX >= panelX && mouseX <= panelX + searchW && mouseY >= searchY && mouseY <= searchY + searchH) {
+            searchFocused = true;
+            return true;
+        } else {
+            searchFocused = false;
+        }
+
+        // 3. Kiểm tra Click vào các nút Quick Select Ores (nếu đang ở tab Ores hoặc tìm kiếm)
+        if (activeTab == 0 && searchQuery.isEmpty()) {
+            int quickY = 82;
+            int btnW = (panelW - 18) / 4;
+            for (int q = 0; q < 4; q++) {
+                int qx = panelX + q * (btnW + 6);
+                if (mouseX >= qx && mouseX <= qx + btnW && mouseY >= quickY && mouseY <= quickY + 18) {
+                    if (q == 0) { // ALL
+                        oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = true;
+                    } else if (q == 1) { // NONE
+                        oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
+                    } else if (q == 2) { // INVERT
+                        oreDiamond = !oreDiamond;
+                        oreLapis = !oreLapis;
+                        oreRedstone = !oreRedstone;
+                        oreGold = !oreGold;
+                        oreIron = !oreIron;
+                        oreEmerald = !oreEmerald;
+                        oreDebris = !oreDebris;
+                        oreCopper = !oreCopper;
+                        oreCoal = !oreCoal;
+                        oreQuartz = !oreQuartz;
+                    } else { // RESET DEFAULT
+                        oreDiamond = true;
+                        oreLapis = true;
+                        oreRedstone = true;
+                        oreGold = false;
+                        oreIron = false;
+                        oreEmerald = true;
+                        oreDebris = false;
+                        oreCopper = false;
+                        oreCoal = false;
+                        oreQuartz = false;
+                    }
+                    return true;
+                }
+            }
+        }
+
+        // 4. Kiểm tra Click vào Module Cards trong vùng nội dung
+        int contentY = (activeTab == 0 && searchQuery.isEmpty()) ? 104 : 84;
+        int contentBottom = this.height - 46;
+        if (mouseY >= contentY && mouseY <= contentBottom) {
+            List<ModuleItem> filtered = getFilteredModules();
+            int cardPad = 8;
+            int cardCols = panelW > 640 ? 2 : 1;
+            int colW = (panelW - (cardCols - 1) * cardPad) / cardCols;
+            int cardH = 34;
+
+            for (int i = 0; i < filtered.size(); i++) {
+                int col = i % cardCols;
+                int row = i / cardCols;
+                int cardX = panelX + col * (colW + cardPad);
+                int cardY = contentY + row * (cardH + 6) - scrollOffset;
+
+                if (cardY + cardH >= contentY && cardY <= contentBottom) {
+                    if (mouseX >= cardX && mouseX <= cardX + colW && mouseY >= cardY && mouseY <= cardY + cardH) {
+                        filtered.get(i).toggle.run();
+                        return true;
+                    }
+                }
+            }
+
+            // Click vào Setting đặc biệt trong Tab 3 (Target Y và FPS Limiter)
+            if (activeTab == 3 && searchQuery.isEmpty()) {
+                int extraRowY = contentY + ((filtered.size() + cardCols - 1) / cardCols) * (cardH + 6) - scrollOffset;
+                int halfColW = (panelW - 8) / 2;
+
+                // Nút Target Y
+                int yBtnX = panelX;
+                if (mouseX >= yBtnX && mouseX <= yBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + cardH) {
+                    if (optTargetY == -54) optTargetY = -58;
+                    else if (optTargetY == -58) optTargetY = 11;
+                    else if (optTargetY == 11) optTargetY = 999;
+                    else optTargetY = -54;
+                    return true;
+                }
+
+                // Nút FPS Limit
+                int fpsBtnX = panelX + halfColW + 8;
+                if (mouseX >= fpsBtnX && mouseX <= fpsBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + cardH) {
+                    int cur = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
+                    int nextIndex = 0;
+                    for (int f = 0; f < FPS_LEVELS.length; f++) {
+                        if (FPS_LEVELS[f] == cur) {
+                            nextIndex = (f + 1) % FPS_LEVELS.length;
+                            break;
+                        }
+                    }
+                    baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
+                    return true;
+                }
+            }
+        }
+
+        // 5. Kiểm tra Click vào Floating Bottom Action Bar
+        int actionBottomY = this.height - 34;
+        int actionGap = 6;
+        int actionCount = 5;
+        int actionW = (panelW - (actionCount - 1) * actionGap) / actionCount;
+
+        for (int a = 0; a < actionCount; a++) {
+            int ax = panelX + a * (actionW + actionGap);
+            if (mouseX >= ax && mouseX <= ax + actionW && mouseY >= actionBottomY && mouseY <= actionBottomY + 24) {
+                if (a == 0) { // START MINING
+                    startAutoMine();
+                    this.onClose();
+                } else if (a == 1) { // CHOP WOOD
+                    startAutoChop();
+                    this.onClose();
+                } else if (a == 2) { // STOP
+                    stopAutoMine();
+                    this.onClose();
+                } else if (a == 3) { // RESET STATS
+                    MiningStatsTracker.getInstance().reset();
+                    Helper.HELPER.logDirect("§a[Tr0ngX] Đã reset toàn bộ dữ liệu thống kê đào khoáng!");
+                } else { // CLOSE
+                    this.onClose();
+                }
+                return true;
+            }
+        }
+
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private List<ModuleItem> getFilteredModules() {
+        List<ModuleItem> result = new ArrayList<>();
+        String query = searchQuery.trim().toLowerCase();
+
+        for (ModuleItem item : allModules) {
+            if (!query.isEmpty()) {
+                if (item.name.toLowerCase().contains(query) || item.desc.toLowerCase().contains(query)) {
+                    result.add(item);
+                }
+            } else {
+                if (activeTab == 0 && item.category.equals("ORES")) result.add(item);
+                else if (activeTab == 1 && item.category.equals("MOVEMENT")) result.add(item);
+                else if (activeTab == 2 && item.category.equals("SURVIVAL")) result.add(item);
+                else if (activeTab == 3 && item.category.equals("HUD")) result.add(item);
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+        // 1. Nền tối mờ cao cấp chuẩn LiquidBounce Nextgen Dark Glass
+        graphics.fillGradient(0, 0, this.width, this.height, ClickGuiTheme.BG_SCREEN_TOP, ClickGuiTheme.BG_SCREEN_BOTTOM);
+
+        int cx = this.width / 2;
+        int panelW = Math.max(540, Math.min((int) (this.width * 0.88f), 780));
+        int panelHalfW = panelW / 2;
+        int panelX = cx - panelHalfW;
+
+        // 2. Header Bar với Logo Neon
+        graphics.fill(panelX, 6, panelX + panelW, 7, ClickGuiTheme.ACCENT_CYAN);
+        ClickGuiTheme.drawText(graphics, this.font, "TR0NGX NEXTGEN CLICKGUI", panelX + 6, 12, ClickGuiTheme.ACCENT_CYAN, true);
+        String versionTag = "v1.21.8 STABLE | ARA* ENGINE READY";
+        int vW = this.font.width(versionTag);
+        ClickGuiTheme.drawText(graphics, this.font, versionTag, panelX + panelW - vW - 6, 12, ClickGuiTheme.TEXT_MUTED, false);
+
+        // 3. LiquidBounce Nextgen Tab Bar
+        int tabY = 28;
+        int tabH = 24;
+        int tabW = panelW / TAB_NAMES.length;
+        graphics.fill(panelX, tabY, panelX + panelW, tabY + tabH, ClickGuiTheme.BG_CARD);
+        ClickGuiTheme.drawOutline(graphics, panelX, tabY, panelW, tabH, ClickGuiTheme.BORDER_CARD);
+
+        for (int i = 0; i < TAB_NAMES.length; i++) {
+            int tx = panelX + i * tabW;
+            boolean isTabActive = (activeTab == i && searchQuery.isEmpty());
+            boolean isTabHover = mouseX >= tx && mouseX <= tx + tabW && mouseY >= tabY && mouseY <= tabY + tabH;
+            ClickGuiTheme.drawTab(graphics, this.font, TAB_ICONS[i], TAB_NAMES[i], tx, tabY, tabW, tabH, isTabActive, isTabHover, ClickGuiTheme.ACCENT_CYAN);
+        }
+
+        // 4. Quick Search Bar
+        int searchY = 56;
+        int searchH = 20;
+        graphics.fill(panelX, searchY, panelX + panelW, searchY + searchH, ClickGuiTheme.BG_INPUT);
+        int searchBorder = searchFocused ? ClickGuiTheme.ACCENT_CYAN : ClickGuiTheme.BORDER_CARD;
+        ClickGuiTheme.drawOutline(graphics, panelX, searchY, panelW, searchH, searchBorder);
+
+        String searchPrompt = searchQuery.isEmpty() ? (searchFocused ? "" : "🔍 Tìm kiếm tính năng, quặng, phím tắt...") : searchQuery;
+        int searchColor = searchQuery.isEmpty() ? ClickGuiTheme.TEXT_DIM : ClickGuiTheme.TEXT_TITLE;
+        ClickGuiTheme.drawText(graphics, this.font, searchPrompt, panelX + 8, searchY + 6, searchColor, false);
+        if (searchFocused && (System.currentTimeMillis() / 400) % 2 == 0) {
+            int cursorX = panelX + 8 + this.font.width(searchQuery);
+            graphics.fill(cursorX, searchY + 4, cursorX + 1, searchY + searchH - 4, 0xFF38BDF8);
+        }
+
+        // 5. Nút Quick Actions cho Tab Ores
+        int contentY = 80;
+        if (activeTab == 0 && searchQuery.isEmpty()) {
+            int quickY = 80;
+            int btnW = (panelW - 18) / 4;
+            String[] qNames = new String[]{"[ TẤT CẢ ]", "[ BỎ CHỌN ]", "[ ĐẢO NGƯỢC ]", "[ MẶC ĐỊNH ]"};
+            int[] qColors = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_ROSE, ClickGuiTheme.ACCENT_PURPLE, ClickGuiTheme.ACCENT_AMBER};
+
+            for (int q = 0; q < 4; q++) {
+                int qx = panelX + q * (btnW + 6);
+                boolean qHover = mouseX >= qx && mouseX <= qx + btnW && mouseY >= quickY && mouseY <= quickY + 18;
+                ClickGuiTheme.drawActionButton(graphics, this.font, qNames[q], qx, quickY, btnW, 18, qColors[q], qHover);
+            }
+            contentY = 104;
+        }
+
+        // 6. Danh sách Card Modules (Tabs 0-3 hoặc Search Results)
+        int contentBottom = this.height - 44;
+        graphics.enableScissor(panelX - 4, contentY, panelX + panelW + 4, contentBottom);
+
+        if (activeTab == 4 && searchQuery.isEmpty()) {
+            // TAB 4: LIVE TELEMETRY & HARDWARE DASHBOARD
+            renderTelemetryDashboard(graphics, panelX, contentY - scrollOffset, panelW);
+        } else {
+            List<ModuleItem> filtered = getFilteredModules();
+            int cardPad = 8;
+            int cardCols = panelW > 640 ? 2 : 1;
+            int colW = (panelW - (cardCols - 1) * cardPad) / cardCols;
+            int cardH = 34;
+
+            int totalRows = (filtered.size() + cardCols - 1) / cardCols;
+            if (activeTab == 3 && searchQuery.isEmpty()) {
+                totalRows++; // Hàng thêm cho Y-Level và FPS
+            }
+            maxScroll = Math.max(0, totalRows * (cardH + 6) - (contentBottom - contentY));
+
+            for (int i = 0; i < filtered.size(); i++) {
+                int col = i % cardCols;
+                int row = i / cardCols;
+                int cardX = panelX + col * (colW + cardPad);
+                int cardY = contentY + row * (cardH + 6) - scrollOffset;
+
+                ModuleItem item = filtered.get(i);
+                boolean active = item.getter.getAsBoolean();
+                boolean hover = mouseX >= cardX && mouseX <= cardX + colW && mouseY >= cardY && mouseY <= cardY + cardH;
+
+                // Card Background & Neon Border
+                int cardBg = hover ? ClickGuiTheme.BG_CARD_HOVER : (active ? ClickGuiTheme.BG_CARD_ACTIVE : ClickGuiTheme.BG_CARD);
+                int cardBorder = hover ? ClickGuiTheme.BORDER_CARD_HOVER : (active ? (item.color | 0x80000000) : ClickGuiTheme.BORDER_CARD);
+                ClickGuiTheme.drawCard(graphics, cardX, cardY, colW, cardH, cardBg, cardBorder);
+
+                // Dấu gạch màu Accent bên cạnh trái Card
+                graphics.fill(cardX, cardY, cardX + 3, cardY + cardH, active ? item.color : 0x5064748B);
+
+                // Tên & Mô tả Module
+                ClickGuiTheme.drawText(graphics, this.font, item.name, cardX + 8, cardY + 5, active ? ClickGuiTheme.TEXT_TITLE : ClickGuiTheme.TEXT_MUTED, active);
+                ClickGuiTheme.drawText(graphics, this.font, item.desc, cardX + 8, cardY + 18, ClickGuiTheme.TEXT_DIM, false);
+
+                // Modern Pill Switch bên phải Card
+                int switchW = 34;
+                int switchH = 16;
+                int switchX = cardX + colW - switchW - 8;
+                int switchY = cardY + (cardH - switchH) / 2;
+                ClickGuiTheme.drawPillSwitch(graphics, this.font, switchX, switchY, switchW, switchH, active, hover);
+            }
+
+            // Thêm mục chọn Target Y & FPS trong Tab 3 (Display)
+            if (activeTab == 3 && searchQuery.isEmpty()) {
+                int extraRowY = contentY + ((filtered.size() + cardCols - 1) / cardCols) * (cardH + 6) - scrollOffset;
+                int halfColW = (panelW - 8) / 2;
+
+                // Target Y Card
+                int yBtnX = panelX;
+                boolean yHover = mouseX >= yBtnX && mouseX <= yBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + cardH;
+                int yBg = yHover ? ClickGuiTheme.BG_CARD_HOVER : ClickGuiTheme.BG_CARD;
+                ClickGuiTheme.drawCard(graphics, yBtnX, extraRowY, halfColW, cardH, yBg, ClickGuiTheme.BORDER_CARD);
+                graphics.fill(yBtnX, extraRowY, yBtnX + 3, extraRowY + cardH, ClickGuiTheme.ACCENT_CYAN);
+                String yLabel = optTargetY == 999 ? "Hiện tại (Current)" : "Y = " + optTargetY;
+                ClickGuiTheme.drawText(graphics, this.font, "Tầng Y Đào: " + yLabel, yBtnX + 8, extraRowY + 6, ClickGuiTheme.TEXT_TITLE, true);
+                ClickGuiTheme.drawText(graphics, this.font, "Click để chuyển đổi (-58, -54, 11, Hiện tại)", yBtnX + 8, extraRowY + 19, ClickGuiTheme.TEXT_DIM, false);
+
+                // FPS Limit Card
+                int fpsBtnX = panelX + halfColW + 8;
+                boolean fpsHover = mouseX >= fpsBtnX && mouseX <= fpsBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + cardH;
+                int fpsBg = fpsHover ? ClickGuiTheme.BG_CARD_HOVER : ClickGuiTheme.BG_CARD;
+                ClickGuiTheme.drawCard(graphics, fpsBtnX, extraRowY, halfColW, cardH, fpsBg, ClickGuiTheme.BORDER_CARD);
+                graphics.fill(fpsBtnX, extraRowY, fpsBtnX + 3, extraRowY + cardH, ClickGuiTheme.ACCENT_EMERALD);
+                int curFpsLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
+                String fpsStr = curFpsLimit >= 260 ? "Không giới hạn (Max)" : curFpsLimit + " FPS";
+                ClickGuiTheme.drawText(graphics, this.font, "Giới Hạn FPS: " + fpsStr, fpsBtnX + 8, extraRowY + 6, ClickGuiTheme.TEXT_TITLE, true);
+                ClickGuiTheme.drawText(graphics, this.font, "Click để chuyển đổi mức FPS mong muốn", fpsBtnX + 8, extraRowY + 19, ClickGuiTheme.TEXT_DIM, false);
+            }
+        }
+
+        graphics.disableScissor();
+
+        // 7. Vẽ bảng thống kê bên cạnh nếu màn hình có đủ chỗ trống và không phải Tab 4
+        if (activeTab != 4 && optMiningStats) {
+            boolean isMining = baritone.getMineProcess().isActive();
+            int statsW = 148;
+            if (this.width - (panelX + panelW) >= statsW + 12) {
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, panelX + panelW + 10, contentY, statsW, isMining);
+            } else if (panelX >= statsW + 12) {
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, panelX - statsW - 10, contentY, statsW, isMining);
+            }
+        }
+
+        // 8. Floating Bottom Action Bar
+        int actionBottomY = this.height - 36;
+        int actionGap = 6;
+        int actionCount = 5;
+        int actionW = (panelW - (actionCount - 1) * actionGap) / actionCount;
+
+        String[] aNames = new String[]{
+                "⛏ BẮT ĐẦU ĐÀO",
+                "🌲 CHẶT CÂY",
+                "⏹ DỪNG LẠI",
+                "↺ RESET STATS",
+                "✕ ĐÓNG (" + BaritoneKeyBindings.KEY_AUTOMINE_GUI.getTranslatedKeyMessage().getString() + ")"
+        };
+        int[] aColors = new int[]{
+                ClickGuiTheme.ACCENT_CYAN,
+                ClickGuiTheme.ACCENT_EMERALD,
+                ClickGuiTheme.ACCENT_ROSE,
+                ClickGuiTheme.ACCENT_AMBER,
+                ClickGuiTheme.TEXT_MUTED
+        };
+
+        for (int a = 0; a < actionCount; a++) {
+            int ax = panelX + a * (actionW + actionGap);
+            boolean aHover = mouseX >= ax && mouseX <= ax + actionW && mouseY >= actionBottomY && mouseY <= actionBottomY + 24;
+            ClickGuiTheme.drawActionButton(graphics, this.font, aNames[a], ax, actionBottomY, actionW, 24, aColors[a], aHover);
+        }
+
+        super.render(graphics, mouseX, mouseY, partialTicks);
+    }
+
+    private void renderTelemetryDashboard(GuiGraphics g, int x, int y, int w) {
+        long maxMem = Runtime.getRuntime().maxMemory() / (1024 * 1024);
+        long totalMem = Runtime.getRuntime().totalMemory() / (1024 * 1024);
+        long freeMem = Runtime.getRuntime().freeMemory() / (1024 * 1024);
+        long usedMem = totalMem - freeMem;
+        float memPct = (float) usedMem / Math.max(1, maxMem);
+        int cores = Runtime.getRuntime().availableProcessors();
+        String gpu = GL11.glGetString(GL11.GL_RENDERER);
+        if (gpu == null) gpu = "Dedicated GPU";
+        if (gpu.length() > 32) gpu = gpu.substring(0, 32) + "...";
+
+        int curFps = baritone.getPlayerContext().minecraft().getFps();
+        int fpsColor = curFps >= 60 ? ClickGuiTheme.ACCENT_EMERALD : (curFps >= 30 ? ClickGuiTheme.ACCENT_AMBER : ClickGuiTheme.ACCENT_ROSE);
+
+        int halfW = (w - 12) / 2;
+
+        // Card 1: Hardware Specs
+        ClickGuiTheme.drawCard(g, x, y, halfW, 110, ClickGuiTheme.BG_CARD, ClickGuiTheme.BORDER_CARD);
+        g.fill(x, y, x + halfW, y + 2, ClickGuiTheme.ACCENT_CYAN);
+        ClickGuiTheme.drawText(g, this.font, "PHẦN CỨNG & HIỆU NĂNG", x + 10, y + 8, ClickGuiTheme.ACCENT_CYAN, true);
+
+        ClickGuiTheme.drawText(g, this.font, "FPS: " + curFps, x + 10, y + 26, fpsColor, true);
+        ClickGuiTheme.drawText(g, this.font, "CPU: " + cores + " Luồng xử lý", x + 10, y + 42, ClickGuiTheme.TEXT_BODY, false);
+        ClickGuiTheme.drawText(g, this.font, "GPU: " + gpu, x + 10, y + 58, ClickGuiTheme.TEXT_MUTED, false);
+
+        ClickGuiTheme.drawText(g, this.font, "Bộ nhớ RAM (" + (int) (memPct * 100) + "%): " + usedMem + "MB / " + maxMem + "MB", x + 10, y + 74, ClickGuiTheme.TEXT_BODY, false);
+        ClickGuiTheme.drawProgressBar(g, x + 10, y + 90, halfW - 20, 8, memPct, ClickGuiTheme.ACCENT_EMERALD, 0xFF1E293B);
+
+        // Card 2: Mining Live Telemetry
+        int rx = x + halfW + 12;
+        ClickGuiTheme.drawCard(g, rx, y, halfW, 110, ClickGuiTheme.BG_CARD, ClickGuiTheme.BORDER_CARD);
+        g.fill(rx, y, rx + halfW, y + 2, ClickGuiTheme.ACCENT_EMERALD);
+        ClickGuiTheme.drawText(g, this.font, "THỐNG KÊ PHIÊN ĐÀO KHOÁNG", rx + 10, y + 8, ClickGuiTheme.ACCENT_EMERALD, true);
+
+        boolean isMining = baritone.getMineProcess().isActive();
+        String statusStr = isMining ? "§a● ĐANG HOẠT ĐỘNG" : "§7○ ĐANG NGHỈ";
+        ClickGuiTheme.drawText(g, this.font, "Trạng thái: " + statusStr, rx + 10, y + 26, ClickGuiTheme.TEXT_BODY, false);
+
+        String duration = MiningStatsTracker.getInstance().getFormattedDuration();
+        ClickGuiTheme.drawText(g, this.font, "Thời gian phiên: " + duration, rx + 10, y + 42, ClickGuiTheme.TEXT_BODY, false);
+
+        int totalBlocks = MiningStatsTracker.getInstance().getTotalBlocksMined();
+        int rate = MiningStatsTracker.getInstance().getBlocksPerHour();
+        ClickGuiTheme.drawText(g, this.font, "Đã đào: " + String.format("%,d block", totalBlocks), rx + 10, y + 58, ClickGuiTheme.ACCENT_AMBER, true);
+        ClickGuiTheme.drawText(g, this.font, "Tốc độ: " + String.format("%,d block/h", rate), rx + 10, y + 74, ClickGuiTheme.ACCENT_CYAN, false);
+
+        int totalDiamonds = MiningStatsTracker.getInstance().getOreCount(MiningStatsTracker.OreType.DIAMOND);
+        ClickGuiTheme.drawText(g, this.font, "Kim cương: " + totalDiamonds + " viên", rx + 10, y + 90, ClickGuiTheme.ACCENT_CYAN, true);
     }
 
     private void stopAutoMine() {
@@ -363,7 +673,7 @@ public class AutoMineScreen extends Screen implements Helper {
         if (baritone.getPlayerContext().player() != null && baritone.getPlayerContext().player().containerMenu != baritone.getPlayerContext().player().inventoryMenu) {
             baritone.getPlayerContext().player().closeContainer();
         }
-        Helper.HELPER.logDirect("§c[AutoMine] Đã dừng toàn bộ quá trình đào!");
+        Helper.HELPER.logDirect("§c[Tr0ngX] Đã dừng toàn bộ quá trình đào!");
     }
 
     private void startAutoChop() {
@@ -372,7 +682,6 @@ public class AutoMineScreen extends Screen implements Helper {
             return;
         }
 
-        // Tối ưu hóa các cài đặt cho tự động chặt cây (Lumberjack)
         Baritone.settings().autoTool.value = optAutoTool;
         Baritone.settings().assumeExternalAutoTool.value = false;
         Baritone.settings().allowInventory.value = true;
@@ -383,7 +692,6 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().allowPlaceInFluidsSource.value = true;
         Baritone.settings().allowPlaceInFluidsFlow.value = true;
 
-        // Sinh tồn & Né quái
         Baritone.settings().autoEat.value = optAutoEat;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
@@ -391,7 +699,6 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
         Baritone.settings().mobAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;
 
-        // Parkour để leo cành cây/nhảy qua lá
         Baritone.settings().allowParkour.value = optParkour;
         Baritone.settings().allowParkourPlace.value = optParkour;
         Baritone.settings().allowParkourAscend.value = optParkour;
@@ -407,14 +714,12 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().maxCachedWorldScanCount.value = 1000;
         Baritone.settings().extendCacheOnThreshold.value = true;
 
-        // CẤU HÌNH TIMEOUT CHO 1 LẦN TÍNH TOÁN SIÊU DÀI QUA NHIỀU CÂY:
         Baritone.settings().primaryTimeoutMS.value = 20000L;
         Baritone.settings().failureTimeoutMS.value = 30000L;
         Baritone.settings().planAheadPrimaryTimeoutMS.value = 10000L;
         Baritone.settings().planAheadFailureTimeoutMS.value = 15000L;
 
         List<BlockOptionalMeta> boms = new ArrayList<>();
-        // Tất cả loại gỗ thân cây trong Minecraft (Logs & Stems)
         boms.add(new BlockOptionalMeta(Blocks.OAK_LOG));
         boms.add(new BlockOptionalMeta(Blocks.BIRCH_LOG));
         boms.add(new BlockOptionalMeta(Blocks.SPRUCE_LOG));
@@ -426,7 +731,6 @@ public class AutoMineScreen extends Screen implements Helper {
         boms.add(new BlockOptionalMeta(Blocks.CRIMSON_STEM));
         boms.add(new BlockOptionalMeta(Blocks.WARPED_STEM));
 
-        // Các khối gỗ 6 mặt (Wood)
         boms.add(new BlockOptionalMeta(Blocks.OAK_WOOD));
         boms.add(new BlockOptionalMeta(Blocks.BIRCH_WOOD));
         boms.add(new BlockOptionalMeta(Blocks.SPRUCE_WOOD));
@@ -436,7 +740,6 @@ public class AutoMineScreen extends Screen implements Helper {
         boms.add(new BlockOptionalMeta(Blocks.CHERRY_WOOD));
         boms.add(new BlockOptionalMeta(Blocks.MANGROVE_WOOD));
 
-        // Gỗ đã lột vỏ (Stripped Logs & Stems)
         boms.add(new BlockOptionalMeta(Blocks.STRIPPED_OAK_LOG));
         boms.add(new BlockOptionalMeta(Blocks.STRIPPED_BIRCH_LOG));
         boms.add(new BlockOptionalMeta(Blocks.STRIPPED_SPRUCE_LOG));
@@ -449,7 +752,7 @@ public class AutoMineScreen extends Screen implements Helper {
         boms.add(new BlockOptionalMeta(Blocks.STRIPPED_WARPED_STEM));
 
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
-        Helper.HELPER.logDirect("§a[AutoChop] Đã bắt đầu TỰ ĐỘNG CHẶT CÂY (Tất cả loại gỗ: Sồi, Bạch Dương, Thông, Sồi Sẫm, Keo, Rừng, Anh Đào, Đước...)!");
+        Helper.HELPER.logDirect("§a[AutoChop] Đã bắt đầu TỰ ĐỘNG CHẶT CÂY!");
 
         baritone.getMineProcess().setChopMode(true);
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
@@ -458,11 +761,10 @@ public class AutoMineScreen extends Screen implements Helper {
     private void startAutoMine() {
         IPlayerContext playerCtx = baritone.getPlayerContext();
 
-        // === CẤU HÌNH TỐI ƯU CHO SERVER (BYPASS ANTI-CHEAT KINGMC) ===
         Baritone.settings().autoTool.value = optAutoTool;
-        Baritone.settings().assumeExternalAutoTool.value = false; // TẮT giả lập mod ngoài để Baritone tự động đổi cúp/xẻng/rìu
+        Baritone.settings().assumeExternalAutoTool.value = false;
         Baritone.settings().allowInventory.value = true;
-        Baritone.settings().ticksBetweenInventoryMoves.value = 1; // 1 tick để server đồng bộ balo
+        Baritone.settings().ticksBetweenInventoryMoves.value = 1;
         Baritone.settings().strictLiquidCheck.value = true;
         Baritone.settings().antiLavaOnly.value = true;
         Baritone.settings().waterCheck.value = optWaterCheck;
@@ -473,41 +775,37 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().allowPlaceInFluidsFlow.value = true;
         Baritone.settings().allowSprint.value = optAutoSprint;
         Baritone.settings().sprintAscends.value = optAutoSprint;
-        Baritone.settings().overshootTraverse.value = optOvershoot; // BẬT CẮT CUA TỐC ĐỘ CAO
-        Baritone.settings().sprintInWater.value = optWaterSprint; // BẬT SPRINT TRONG NƯỚC
-        Baritone.settings().assumeStep.value = false; // TẮT Step Hack để server không giật lùi (Far away from path)
+        Baritone.settings().overshootTraverse.value = optOvershoot;
+        Baritone.settings().sprintInWater.value = optWaterSprint;
+        Baritone.settings().assumeStep.value = false;
         Baritone.settings().allowWaterBucketFall.value = true;
 
-        // X-Ray & World Scanning toàn bộ chunk
-        Baritone.settings().legitMine.value = false; // X-Ray quặng
+        Baritone.settings().legitMine.value = false;
         Baritone.settings().exploreForBlocks.value = true;
         Baritone.settings().mineScanDroppedItems.value = true;
         Baritone.settings().blacklistClosestOnFailure.value = true;
         Baritone.settings().mineMaxOreLocationsCount.value = 64;
         Baritone.settings().maxCachedWorldScanCount.value = 64;
         Baritone.settings().extendCacheOnThreshold.value = true;
-        Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L; // Chờ 200ms để quặng rơi hút vào balo
+        Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L;
 
-        // Tốc độ đập block chuẩn gốc Minecraft & Baritone (6 ticks)
         Baritone.settings().blockBreakSpeed.value = 6;
-        Baritone.settings().rightClickSpeed.value = optFastPlace ? 1 : 4; // 1 tick đặt block tức thì (0.05s)
+        Baritone.settings().rightClickSpeed.value = optFastPlace ? 1 : 4;
         Baritone.settings().hideSwingAnimation.value = optHideSwing;
         Baritone.settings().blockBreakAdditionalPenalty.value = 2.0;
         Baritone.settings().blockPlacementPenalty.value = 0.0;
         Baritone.settings().jumpPenalty.value = 0.0;
 
-        // ARA* Siêu tốc & Lookahead liên tục
         Baritone.settings().useAnytimeSearch.value = true;
-        Baritone.settings().anytimeSearchEpsilon.value = 2.0; // Xuất phát 0ms, đường đi ổn định
-        Baritone.settings().planningTickLookahead.value = 400; // Tính trước liên tục
-        Baritone.settings().mineGoalUpdateInterval.value = 5; // 5 ticks chuẩn gốc Baritone (chống giật cục và chống đổi hướng nửa chừng)
-        Baritone.settings().primaryTimeoutMS.value = 2500L; // 2.5s timeout nhanh nhạy, phản xạ tức thì
+        Baritone.settings().anytimeSearchEpsilon.value = 2.0;
+        Baritone.settings().planningTickLookahead.value = 400;
+        Baritone.settings().mineGoalUpdateInterval.value = 5;
+        Baritone.settings().primaryTimeoutMS.value = 2500L;
         Baritone.settings().failureTimeoutMS.value = 4000L;
         Baritone.settings().planAheadPrimaryTimeoutMS.value = 2500L;
         Baritone.settings().planAheadFailureTimeoutMS.value = 4000L;
-        Baritone.settings().movementTimeoutTicks.value = 140; // 7s (140 ticks) cho mỗi movement
+        Baritone.settings().movementTimeoutTicks.value = 140;
 
-        // Sinh tồn & Né quái vật (God Mode)
         Baritone.settings().autoEat.value = optAutoEat;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
@@ -522,7 +820,6 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().mobSpawnerAvoidanceRadius.value = optMobAvoid ? 16 : 0;
         Baritone.settings().mobSpawnerAvoidanceCoefficient.value = optMobAvoid ? 500.0 : 1.0;
 
-        // Parkour & Leo dốc chéo
         Baritone.settings().allowParkour.value = optParkour;
         Baritone.settings().allowParkourPlace.value = optParkour;
         Baritone.settings().allowParkourAscend.value = optParkour;
@@ -535,7 +832,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().straightDownMine.value = optShaftDown;
         Baritone.settings().preferWaterBucketOverDigging.value = true;
         Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
-        
+
         int targetY = optTargetY == 999 ? -54 : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;
         Baritone.settings().exploreMaintainY.value = targetY;
@@ -601,80 +898,8 @@ public class AutoMineScreen extends Screen implements Helper {
 
         baritone.getPathingBehavior().cancelSegmentIfSafe();
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
-        Helper.HELPER.logDirect("§a[AutoMine] Đã bắt đầu đào: " + String.join(", ", oreNames) + " (Tầng Y mục tiêu: " + targetY + ")");
+        Helper.HELPER.logDirect("§a[Tr0ngX] Bắt đầu đào: " + String.join(", ", oreNames) + " (Tầng Y: " + targetY + ")");
 
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
-    }
-
-    @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
-        // Nền tối mờ chuẩn Sleek Dark (0xD8080C14)
-        graphics.fillGradient(0, 0, this.width, this.height, 0xD8080C14, 0xEE0B0F17);
-
-        int cx = this.width / 2;
-
-        // Tiêu đề Header với thanh viền neon responsive
-        graphics.fill(cx - panelHalfW, 6, cx + panelHalfW, 7, 0xFF38BDF8);
-        graphics.drawCenteredString(this.font, "BARITONE NEXTGEN CONTROL PANEL", cx, 10, 0xFFFFFFFF);
-
-        // Hardware Telemetry HUD (RAM / CPU / GPU / FPS)
-        long maxMem = Runtime.getRuntime().maxMemory() / (1024 * 1024);
-        long totalMem = Runtime.getRuntime().totalMemory() / (1024 * 1024);
-        long freeMem = Runtime.getRuntime().freeMemory() / (1024 * 1024);
-        long usedMem = totalMem - freeMem;
-        int usedPct = (int) (usedMem * 100 / Math.max(1, maxMem));
-        int cores = Runtime.getRuntime().availableProcessors();
-        String gpu = GL11.glGetString(GL11.GL_RENDERER);
-        if (gpu == null || gpu.trim().isEmpty()) {
-            gpu = "Unknown GPU";
-        }
-        if (gpu.length() > 24) {
-            gpu = gpu.substring(0, 24) + "..";
-        }
-        int curFps = baritone.getPlayerContext().minecraft().getFps();
-        int curLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
-        String limitStr = curLimit >= 260 ? "Unlimited" : curLimit + " FPS";
-
-        // Vẽ Telemetry Card với viền kính mỏng co giãn responsive
-        graphics.fill(cx - panelHalfW, 23, cx + panelHalfW, 41, 0x900F172A);
-        drawOutline(graphics, cx - panelHalfW, 23, panelTotalW, 18, 0x3038BDF8);
-
-        String perfLine = "RAM: " + usedMem + "/" + maxMem + "MB (" + usedPct + "%) | CPU: " + cores + " Cores | GPU: " + gpu + " | " + curFps + " FPS (" + limitStr + ")";
-        graphics.drawCenteredString(this.font, perfLine, cx, 28, 0xFF34D399);
-
-        // Khối Card Cột Trái (TARGET ORES)
-        graphics.fill(leftCardX, 47, leftCardX + colW, panelBottom, 0x600F172A);
-        drawOutline(graphics, leftCardX, 47, colW, panelBottom - 47, 0x20FFFFFF);
-        graphics.fill(leftCardX, 47, leftCardX + colW, 48, 0xFF38BDF8); // Cyan Accent Header Line
-        graphics.drawString(this.font, "TARGET ORES & VEINS", leftCardX + 10, 51, 0xFF38BDF8);
-
-        // Khối Card Cột Phải (AUTOMATION & SAFETY)
-        graphics.fill(rightCardX, 47, rightCardX + colW, panelBottom, 0x600F172A);
-        drawOutline(graphics, rightCardX, 47, colW, panelBottom - 47, 0x20FFFFFF);
-        graphics.fill(rightCardX, 47, rightCardX + colW, 48, 0xFF10B981); // Emerald Accent Header Line
-        graphics.drawString(this.font, "AUTOMATION & RAGE ENGINE", rightCardX + 10, 51, 0xFF34D399);
-
-        // Bảng Thống Kê Bên Cạnh (Stats Side Panel) nếu màn hình có đủ khoảng trống:
-        if (optMiningStats) {
-            boolean isMining = baritone.getMineProcess().isActive();
-            if (this.width - (rightCardX + colW) >= 155) {
-                MiningStatsTracker.getInstance().renderCard(graphics, this.font, rightCardX + colW + 8, 47, 148, isMining);
-            } else if (leftCardX >= 155) {
-                MiningStatsTracker.getInstance().renderCard(graphics, this.font, leftCardX - 156, 47, 148, isMining);
-            }
-        }
-
-        // Footer Telemetry Status Line
-        String footerStatus = "STATUS: RAGE ENGINE READY | ARA* ANYTIME (EPS=3.0) | ANTI-LAVA 100% | 0ms DELAY";
-        graphics.drawCenteredString(this.font, footerStatus, cx, this.height - 14, 0xFF64748B);
-
-        super.render(graphics, mouseX, mouseY, partialTicks);
-    }
-
-    private void drawOutline(GuiGraphics graphics, int x, int y, int width, int height, int color) {
-        graphics.fill(x, y, x + width, y + 1, color);
-        graphics.fill(x, y + height - 1, x + width, y + height, color);
-        graphics.fill(x, y, x + 1, y + height, color);
-        graphics.fill(x + width - 1, y, x + width, y + height, color);
     }
 }
