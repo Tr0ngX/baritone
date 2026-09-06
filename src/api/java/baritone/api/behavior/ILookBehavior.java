@@ -47,4 +47,13 @@ public interface ILookBehavior extends IBehavior {
      * @see IAimProcessor#fork
      */
     IAimProcessor getAimProcessor();
+
+    /**
+     * Checks if the look behavior currently has a target rotation set for this tick.
+     *
+     * @return {@code true} if a target rotation is currently set
+     */
+    default boolean hasTarget() {
+        return false;
+    }
 }

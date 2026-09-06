@@ -34,6 +34,7 @@ import baritone.utils.AutoLogoutTracker;
 import baritone.utils.AutoMineScreen;
 import baritone.utils.BaritoneProcessHelper;
 import baritone.utils.BlockStateInterface;
+import baritone.utils.MiningStatsTracker.WoodType;
 import baritone.utils.ToolSet;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -554,6 +555,19 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         boolean canDirectMine = (ctx.player().onGround() || ctx.player().isInWater())
                 && !baritone.getInputOverrideHandler().isInputForcedDown(Input.JUMP);
         if (canDirectMine) {
+            // Trong chế độ chặt cây (Chop Mode): Nếu có gỗ rơi trên mặt đất quanh người (> 1.5 block),
+            // tạm ngưng đào thêm cây mới để ưu tiên nhặt sạch toàn bộ gỗ rơi trước!
+            if (isChopMode) {
+                List<BlockPos> drops = droppedItemsScan();
+                if (!drops.isEmpty() && ctx.player() != null && ctx.player().getInventory().getFreeSlot() != -1) {
+                    boolean hasPendingDrops = drops.stream().anyMatch(d -> ctx.playerFeet().distSqr(d) > 2.25);
+                    if (hasPendingDrops) {
+                        canDirectMine = false;
+                    }
+                }
+            }
+        }
+        if (canDirectMine) {
             // Nếu vừa đào vỡ block che chắn: chờ 3 tick chuyển góc nhìn mượt mà sang quặng, KHÔNG vung cúp vội!
             if (obstructingTransitionTicks > 0) {
                 obstructingTransitionTicks--;
@@ -822,32 +836,35 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return null;
         }
 
-        // === ƯU TIÊN SỐ 1: BẮT BUỘC HÚT SẠCH 100% KIM CƯƠNG / QUẶNG RƠI TRÊN SÀN TRƯỚC KHI ĐI TIẾP ===
-        // Trong chế độ chặt cây, nếu đang di chuyển trên tour thì không huỷ tour giữa chừng để nhặt gỗ
-        if (!isChopMode || !baritone.getPathingBehavior().isPathing()) {
-            boolean isInvFull = ctx.player() != null && ctx.player().getInventory().getFreeSlot() == -1;
-            List<BlockPos> droppedItems = droppedItemsScan();
-            if (!droppedItems.isEmpty() && !isInvFull) {
-                // Lọc bỏ những item rơi nếu ở quá xa phía sau (chỉ bỏ qua nếu > 6 block)
-                List<BlockPos> validDrops = droppedItems.stream().filter(dropPos -> {
-                    // QUY TẮC CỐT LÕI: Item rơi ở cự ly gần (<= 6 block) quanh người TUYỆT ĐỐI BẮT BUỘC HÚT SẠCH 100%!
-                    if (ctx.playerFeet().distSqr(dropPos) <= 36.0) {
-                        return true;
-                    }
-                    if (tunnelDirection != null) {
-                        int dot = (dropPos.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (dropPos.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
-                        if (Baritone.settings().mineStrictOneDirection.value) {
-                            if (dot < 0) return false;
-                            int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
-                                    ? Math.abs(dropPos.getX() - ctx.playerFeet().getX())
-                                    : Math.abs(dropPos.getZ() - ctx.playerFeet().getZ());
-                            if (perpDist > 4) return false;
-                        } else if (dot < 0 && ctx.playerFeet().distSqr(dropPos) > 16.0) {
-                            return false;
-                        }
-                    }
+        // === ƯU TIÊN SỐ 1: BẮT BUỘC HÚT SẠCH 100% KIM CƯƠNG / QUẶNG / GỖ RƠI TRÊN SÀN TRƯỚC KHI ĐI TIẾP ===
+        // ƯU TIÊN NHẶT GỖ RƠI: Trong chế độ chặt cây hoặc đào quặng, nếu có item rơi quanh người thì luôn hút sạch trước khi chặt tiếp cây!
+        boolean isInvFull = ctx.player() != null && ctx.player().getInventory().getFreeSlot() == -1;
+        List<BlockPos> droppedItems = droppedItemsScan();
+        if (!droppedItems.isEmpty() && !isInvFull) {
+            // Lọc bỏ những item rơi nếu ở quá xa phía sau (chỉ bỏ qua nếu > 6 block trong đào thẳng 1 hướng)
+            List<BlockPos> validDrops = droppedItems.stream().filter(dropPos -> {
+                // Trong chế độ chặt cây (Chop Mode): Nhặt TOÀN BỘ gỗ rơi trong phạm vi bán kính 16 block xung quanh!
+                if (isChopMode) {
                     return true;
-                }).collect(Collectors.toList());
+                }
+                // QUY TẮC CỐT LÕI: Item rơi ở cự ly gần (<= 6 block) quanh người TUYỆT ĐỐI BẮT BUỘC HÚT SẠCH 100%!
+                if (ctx.playerFeet().distSqr(dropPos) <= 36.0) {
+                    return true;
+                }
+                if (tunnelDirection != null) {
+                    int dot = (dropPos.getX() - ctx.playerFeet().getX()) * tunnelDirection.getStepX() + (dropPos.getZ() - ctx.playerFeet().getZ()) * tunnelDirection.getStepZ();
+                    if (Baritone.settings().mineStrictOneDirection.value) {
+                        if (dot < 0) return false;
+                        int perpDist = (tunnelDirection.getAxis() == net.minecraft.core.Direction.Axis.Z)
+                                ? Math.abs(dropPos.getX() - ctx.playerFeet().getX())
+                                : Math.abs(dropPos.getZ() - ctx.playerFeet().getZ());
+                        if (perpDist > 4) return false;
+                    } else if (dot < 0 && ctx.playerFeet().distSqr(dropPos) > 16.0) {
+                        return false;
+                    }
+                }
+                return true;
+            }).collect(Collectors.toList());
 
                 if (!validDrops.isEmpty()) {
                     Optional<BlockPos> closestDrop = validDrops.stream()
@@ -882,7 +899,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 dropAttemptPos = null;
                 dropAttemptTicks = 0;
             }
-        }
 
         // Phát hiện nhanh quặng lộ ra ngay trước mặt hoặc các vách xung quanh khi di chuyển (phạm vi 5x4x5 quanh người):
         BlockPos feetPos = ctx.playerFeet();
@@ -1378,7 +1394,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 ItemEntity ei = (ItemEntity) entity;
                 ItemStack stack = ei.getItem();
                 Item item = stack.getItem();
-                if (isShulkerBox(stack) || isTargetOre(stack) || ORE_DROPS.contains(item) || (filter != null && filter.has(stack)) || item.getDescriptionId().contains("ore") || item.getDescriptionId().contains("raw")) {
+                if (isShulkerBox(stack) || isTargetOre(stack) || ORE_DROPS.contains(item)
+                        || (isChopMode && isWoodDrop(stack))
+                        || (filter != null && filter.has(stack))
+                        || item.getDescriptionId().contains("ore")
+                        || item.getDescriptionId().contains("raw")
+                        || (isChopMode && (item.getDescriptionId().contains("log") || item.getDescriptionId().contains("wood") || item.getDescriptionId().contains("stem")))) {
                     BlockPos pos = entity.blockPosition();
                     if (!ignoredDrops.containsKey(pos) && pos.distSqr(pf) <= 256) { // Trong bán kính 16 block
                         ret.add(pos);
@@ -1387,6 +1408,29 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
         return ret;
+    }
+
+    public static boolean isWoodDrop(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        Item item = stack.getItem();
+        if (item == Items.STICK || item == Items.APPLE) {
+            return true;
+        }
+        for (WoodType wt : WoodType.values()) {
+            if (wt.getItemStack().getItem() == item) {
+                return true;
+            }
+        }
+        String desc = item.getDescriptionId().toLowerCase();
+        return desc.contains("log")
+                || desc.contains("wood")
+                || desc.contains("stem")
+                || desc.contains("hyphae")
+                || desc.contains("bamboo")
+                || desc.contains("sapling")
+                || desc.contains("propagule");
     }
 
     private final List<Integer> pendingDropSlots = new ArrayList<>();
@@ -1428,7 +1472,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return true;
         }
 
-        // 2. Nếu không có filter cụ thể (mine tự do): giữ các quặng quý thông thường
+        // 2. Chế độ chặt cây (Chop Mode): Giữ tất cả gỗ rơi
+        if (isChopMode && isWoodDrop(stack)) {
+            return true;
+        }
+
+        // 3. Nếu không có filter cụ thể (mine tự do): giữ các quặng quý thông thường
         if (filter == null) {
             return item == Items.LAPIS_LAZULI
                     || item == Items.REDSTONE
@@ -1439,7 +1488,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     || item == Items.AMETHYST_SHARD;
         }
 
-        // 3. Nếu CÓ filter: kiểm tra xem item hoặc block có khớp với mục tiêu đào của người chơi không
+        // 4. Nếu CÓ filter: kiểm tra xem item hoặc block có khớp với mục tiêu đào của người chơi không
         if (filter.has(stack)) {
             return true;
         }

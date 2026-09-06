@@ -292,6 +292,12 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.PLAYER_HEAD), "Anti-Player", "Tự ngắt kết nối khi phát hiện người chơi (kể cả tàng hình / invis)", "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
             Baritone.settings().autoLogoutOnPlayer.value = !Baritone.settings().autoLogoutOnPlayer.value;
         }));
+        allModules.add(new ModuleItem(new ItemStack(Items.CROSSBOW), "Anti-Aim", "Tự xoay đầu Spin Right 90° & UpDown 90° đánh lừa đối thủ", "SURVIVAL", 0xFFF43F5E, () -> Baritone.settings().antiAim.value, () -> {
+            Baritone.settings().antiAim.value = !Baritone.settings().antiAim.value;
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.SPYGLASS), "Silent Anti-Aim", "Không quay góc nhìn Client-side (chống chóng mặt), Server thực chất vẫn quay", "SURVIVAL", 0xFF38BDF8, () -> Baritone.settings().antiAimSilent.value, () -> {
+            Baritone.settings().antiAimSilent.value = !Baritone.settings().antiAimSilent.value;
+        }));
         allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Shulker Box", "Tự động đặt Shulker Box cất quặng khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
         allModules.add(new ModuleItem(new ItemStack(Items.LAVA_BUCKET), "Auto-Drop", "Tự vứt đá/đất/gravel đầy stack về sau hoặc vào lava", "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
         allModules.add(new ModuleItem(new ItemStack(Items.ZOMBIE_HEAD), "Mob Avoid", "Tự động né quái vật nguy hiểm và Spawner 14m", "SURVIVAL", 0xFFF87171, () -> optMobAvoid, () -> optMobAvoid = !optMobAvoid));
@@ -541,7 +547,8 @@ public class AutoMineScreen extends Screen implements Helper {
 
                 if (cardY + l.cardH >= l.contentY && cardY <= l.contentBottom) {
                     if (mouseX >= cardX && mouseX <= cardX + l.colW && mouseY >= cardY && mouseY <= cardY + l.cardH) {
-                        filtered.get(i).toggle.run();
+                        ModuleItem item = filtered.get(i);
+                        item.toggle.run();
                         return true;
                     }
                 }
@@ -740,6 +747,10 @@ public class AutoMineScreen extends Screen implements Helper {
                                 AutoLogoutTracker.getLastX(),
                                 AutoLogoutTracker.getLastY(),
                                 AutoLogoutTracker.getLastZ());
+                    } else if (item.name.equals("Anti-Aim")) {
+                        desc = String.format(java.util.Locale.ROOT, "Yaw: %s | Pitch: %s (R-Click)",
+                                Baritone.settings().antiAimYawMode.value,
+                                Baritone.settings().antiAimPitchMode.value);
                     }
                     if (this.font.width(desc) > textMaxW) {
                         desc = this.font.plainSubstrByWidth(desc, Math.max(10, textMaxW - 6)) + "..";
@@ -859,7 +870,8 @@ public class AutoMineScreen extends Screen implements Helper {
         ClickGuiTheme.drawText(g, this.font, "THỐNG KÊ PHIÊN ĐÀO", rx + 8, ry + 6, ClickGuiTheme.ACCENT_EMERALD, true);
 
         boolean isMining = baritone.getMineProcess().isActive();
-        String statusStr = isMining ? "§a● ĐANG ĐÀO" : "§7○ NGHỈ";
+        boolean isChop = baritone.getMineProcess().isChopMode();
+        String statusStr = isMining ? (isChop ? "§a● ĐANG CHẶT CÂY" : "§a● ĐANG ĐÀO") : "§7○ NGHỈ";
         ClickGuiTheme.drawText(g, this.font, "Trạng thái: " + statusStr, rx + 8, ry + 22, ClickGuiTheme.TEXT_BODY, false);
 
         String duration = MiningStatsTracker.getInstance().getFormattedDuration();
@@ -867,11 +879,18 @@ public class AutoMineScreen extends Screen implements Helper {
 
         int totalBlocks = MiningStatsTracker.getInstance().getTotalBlocksMined();
         int rate = MiningStatsTracker.getInstance().getBlocksPerHour();
-        ClickGuiTheme.drawText(g, this.font, "Đã đào: " + String.format("%,d block", totalBlocks), rx + 8, ry + 50, ClickGuiTheme.ACCENT_AMBER, true);
-        ClickGuiTheme.drawText(g, this.font, "Tốc độ: " + String.format("%,d block/h", rate), rx + 8, ry + 64, ClickGuiTheme.ACCENT_CYAN, false);
+        String blockLabel = isChop ? "Đã chặt: " : "Đã đào: ";
+        String unit = isChop ? " log" : " block";
+        ClickGuiTheme.drawText(g, this.font, blockLabel + String.format("%,d%s", totalBlocks, unit), rx + 8, ry + 50, ClickGuiTheme.ACCENT_AMBER, true);
+        ClickGuiTheme.drawText(g, this.font, "Tốc độ: " + String.format("%,d%s/h", rate, unit), rx + 8, ry + 64, ClickGuiTheme.ACCENT_CYAN, false);
 
-        int totalDiamonds = MiningStatsTracker.getInstance().getOreCount(MiningStatsTracker.OreType.DIAMOND);
-        ClickGuiTheme.drawText(g, this.font, "Kim cương: " + totalDiamonds + " viên", rx + 8, ry + 78, ClickGuiTheme.ACCENT_CYAN, true);
+        if (isChop) {
+            int totalWood = MiningStatsTracker.getInstance().getTotalWoodMined();
+            ClickGuiTheme.drawText(g, this.font, "Gỗ khai thác: " + totalWood + " khúc", rx + 8, ry + 78, 0xFF34D399, true);
+        } else {
+            int totalDiamonds = MiningStatsTracker.getInstance().getOreCount(MiningStatsTracker.OreType.DIAMOND);
+            ClickGuiTheme.drawText(g, this.font, "Kim cương: " + totalDiamonds + " viên", rx + 8, ry + 78, ClickGuiTheme.ACCENT_CYAN, true);
+        }
     }
 
     private void stopAutoMine() {
@@ -1005,6 +1024,7 @@ public class AutoMineScreen extends Screen implements Helper {
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
         Helper.HELPER.logDirect("§a[AutoChop] Đã bắt đầu TỰ ĐỘNG CHẶT CÂY!");
 
+        MiningStatsTracker.getInstance().reset();
         baritone.getMineProcess().setChopMode(true);
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }

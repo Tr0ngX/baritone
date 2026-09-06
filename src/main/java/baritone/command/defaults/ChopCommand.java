@@ -25,6 +25,7 @@ import baritone.api.command.argument.IArgConsumer;
 import baritone.api.command.exception.CommandException;
 import baritone.api.utils.BlockOptionalMeta;
 import baritone.utils.AutoMineScreen;
+import baritone.utils.MiningStatsTracker;
 import net.minecraft.world.level.block.Blocks;
 
 import java.util.ArrayList;
@@ -115,6 +116,7 @@ public class ChopCommand extends Command {
         logDirect("§a[AutoChop] Đã bắt đầu chế độ TỰ ĐỘNG CHẶT CÂY (Lumberjack)!");
         logDirect("§a  ✔ Mục tiêu: Sồi, Bạch Dương, Thông, Sồi Sẫm, Keo, Rừng, Anh Đào, Đước...");
         logDirect("§a  ✔ Tự đổi Rìu (Auto-Tool) & tự động gom gỗ rơi rớt!");
+        MiningStatsTracker.getInstance().reset();
         baritone.getMineProcess().setChopMode(true);
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }
