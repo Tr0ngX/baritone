@@ -19,6 +19,7 @@ package baritone;
 
 import baritone.api.IBaritone;
 import baritone.api.IBaritoneProvider;
+import baritone.api.utils.BaritoneFileLogger;
 import baritone.api.cache.IWorldScanner;
 import baritone.api.command.ICommandSystem;
 import baritone.api.schematic.ISchematicSystem;
@@ -42,6 +43,7 @@ public final class BaritoneProvider implements IBaritoneProvider {
     private final List<IBaritone> allView;
 
     public BaritoneProvider() {
+        BaritoneFileLogger.init();
         this.all = new CopyOnWriteArrayList<>();
         this.allView = Collections.unmodifiableList(this.all);
 

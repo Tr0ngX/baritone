@@ -815,6 +815,16 @@ public final class Settings {
     public final Setting<Boolean> chatDebug = new Setting<>(false);
 
     /**
+     * Ghi toàn bộ log, thông báo, gỡ lỗi và phát hiện kẹt vào tệp tin log chuyên biệt baritone.log
+     */
+    public final Setting<Boolean> logToFile = new Setting<>(true);
+
+    /**
+     * Hiển thị thông báo Baritone vào khung chat trong trò chơi
+     */
+    public final Setting<Boolean> logToChat = new Setting<>(true);
+
+    /**
      * Allow chat based control of Baritone. Most likely should be disabled when Baritone is imported for use in
      * something else
      */

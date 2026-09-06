@@ -20,6 +20,7 @@ package baritone.utils;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * NextGen ClickGUI Theme Engine (Inspired by LiquidBounce Nextgen & Meteor Client).
@@ -102,18 +103,20 @@ public final class ClickGuiTheme {
 
         g.fill(thumbX, thumbY, thumbX + thumbW, thumbY + thumbH, thumbColor);
 
-        // Nhãn chữ nhỏ ON / OFF
-        String label = active ? "ON" : "OFF";
-        int labelColor = active ? 0xFFFFFFFF : 0xFF64748B;
-        int labelX = active ? (x + 4) : (x + w - font.width(label) - 4);
-        int labelY = y + (h - 8) / 2;
-        drawText(g, font, label, labelX, labelY, labelColor, false);
+        // Nhãn chữ nhỏ ON / OFF (chỉ vẽ khi bề rộng switch đủ hiển thị)
+        if (w >= 30) {
+            String label = active ? "ON" : "OFF";
+            int labelColor = active ? 0xFFFFFFFF : 0xFF64748B;
+            int labelX = active ? (x + 3) : (x + w - font.width(label) - 3);
+            int labelY = y + (h - 8) / 2;
+            drawText(g, font, label, labelX, labelY, labelColor, false);
+        }
     }
 
     /**
-     * Vẽ thanh Tab danh mục trên đỉnh màn hình (LiquidBounce Nextgen Tab Bar).
+     * Vẽ thanh Tab danh mục trên đỉnh màn hình kèm Minecraft Item Icon thật (LiquidBounce & Meteor Style).
      */
-    public static void drawTab(GuiGraphics g, Font font, String icon, String title, int x, int y, int w, int h, boolean active, boolean hover, int accentColor) {
+    public static void drawTab(GuiGraphics g, Font font, ItemStack iconItem, String label, int x, int y, int w, int h, boolean active, boolean hover, int accentColor) {
         int bg = active ? 0x4038BDF8 : (hover ? 0x2038BDF8 : 0x00000000);
         if (bg != 0) {
             g.fill(x, y, x + w, y + h, bg);
@@ -124,13 +127,29 @@ public final class ClickGuiTheme {
             g.fill(x, y + h - 2, x + w, y + h, accentColor);
         }
 
-        String fullText = icon + " " + title;
-        int textW = font.width(fullText);
-        int textX = x + (w - textW) / 2;
-        int textY = y + (h - 8) / 2;
         int textColor = active ? 0xFFFFFFFF : (hover ? 0xFFCBD5E1 : 0xFF94A3B8);
+        boolean hasIcon = (iconItem != null && !iconItem.isEmpty());
+        int labelW = font.width(label);
 
-        drawText(g, font, fullText, textX, textY, textColor, active);
+        if (hasIcon) {
+            int iconY = y + (h - 16) / 2;
+            if (label.isEmpty() || w < labelW + 24) {
+                // Không đủ chỗ cho cả chữ và icon: Vẽ Item Icon thật 16x16 căn giữa
+                int iconX = x + (w - 16) / 2;
+                g.renderFakeItem(iconItem, iconX, iconY);
+            } else {
+                // Đủ chỗ: Vẽ cả Item Icon và nhãn chữ
+                int totalW = 16 + 4 + labelW;
+                int startX = x + (w - totalW) / 2;
+                g.renderFakeItem(iconItem, startX, iconY);
+                int textY = y + (h - 8) / 2;
+                drawText(g, font, label, startX + 20, textY, textColor, active);
+            }
+        } else {
+            int textX = x + (w - labelW) / 2;
+            int textY = y + (h - 8) / 2;
+            drawText(g, font, label, textX, textY, textColor, active);
+        }
     }
 
     /**
@@ -146,9 +165,9 @@ public final class ClickGuiTheme {
     }
 
     /**
-     * Vẽ nút bấm hành động (Action Button) với gradient và hiệu ứng hover phản hồi xúc giác thị giác.
+     * Vẽ nút bấm hành động (Action Button) với icon vật phẩm Minecraft thật và hiệu ứng hover phản hồi.
      */
-    public static void drawActionButton(GuiGraphics g, Font font, String text, int x, int y, int w, int h, int accentColor, boolean hover) {
+    public static void drawActionButton(GuiGraphics g, Font font, ItemStack iconItem, String text, int x, int y, int w, int h, int accentColor, boolean hover) {
         int bgTop = hover ? (accentColor | 0x80000000) : 0xB00F172A;
         int bgBottom = hover ? (accentColor | 0xC0000000) : 0xD00B0F17;
         g.fillGradient(x, y, x + w, y + h, bgTop, bgBottom);
@@ -160,10 +179,28 @@ public final class ClickGuiTheme {
             g.fill(x + 1, y + 1, x + w - 1, y + 2, accentColor);
         }
 
-        int textW = font.width(text);
-        int textX = x + (w - textW) / 2;
-        int textY = y + (h - 8) / 2;
         int textColor = hover ? 0xFFFFFFFF : 0xFFE2E8F0;
-        drawText(g, font, text, textX, textY, textColor, true);
+        boolean hasIcon = (iconItem != null && !iconItem.isEmpty());
+        int textW = font.width(text);
+
+        if (hasIcon) {
+            int iconY = y + (h - 16) / 2;
+            if (text.isEmpty() || w < textW + 24) {
+                // Nút hẹp: Chỉ vẽ Item Icon căn giữa
+                int iconX = x + (w - 16) / 2;
+                g.renderFakeItem(iconItem, iconX, iconY);
+            } else {
+                // Đủ rộng: Vẽ Icon + Chữ
+                int totalW = 16 + 4 + textW;
+                int startX = x + (w - totalW) / 2;
+                g.renderFakeItem(iconItem, startX, iconY);
+                int textY = y + (h - 8) / 2;
+                drawText(g, font, text, startX + 20, textY, textColor, true);
+            }
+        } else {
+            int textX = x + (w - textW) / 2;
+            int textY = y + (h - 8) / 2;
+            drawText(g, font, text, textX, textY, textColor, true);
+        }
     }
 }
