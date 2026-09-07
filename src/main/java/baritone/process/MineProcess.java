@@ -1921,6 +1921,36 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
 
+        // 3. Kiểm tra DataComponents.CUSTOM_DATA (Paper/Spigot custom plugins)
+        var customData = stack.get(DataComponents.CUSTOM_DATA);
+        if (customData != null) {
+            CompoundTag tag = customData.copyTag();
+            if (tag != null) {
+                java.util.Optional<ListTag> listOpt = tag.getList("Items");
+                if (listOpt != null && listOpt.isPresent()) {
+                    return listOpt.get().size();
+                }
+                var betOpt = tag.getCompound("BlockEntityTag");
+                if (betOpt != null && betOpt.isPresent()) {
+                    var betList = betOpt.get().getList("Items");
+                    if (betList != null && betList.isPresent()) {
+                        return betList.get().size();
+                    }
+                }
+            }
+        }
+
+        // 4. Kiểm tra qua Lore / Display nếu server KingMC hiển thị số ô hoặc nội dung trong Lore
+        var lore = stack.get(DataComponents.LORE);
+        if (lore != null && !lore.lines().isEmpty()) {
+            for (net.minecraft.network.chat.Component line : lore.lines()) {
+                String str = line.getString();
+                if (str.contains("27/27")) {
+                    return 27;
+                }
+            }
+        }
+
         return 0; // null component & null NBT = Shulker Box hoàn toàn trống 100%!
     }
 
@@ -1943,6 +1973,27 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     public static boolean isShulkerBoxFull(ItemStack stack) {
         return isShulkerBox(stack) && getShulkerOccupiedSlots(stack) >= 27;
+    }
+
+    public static boolean isShulkerBoxWithItems(ItemStack stack) {
+        return isShulkerBox(stack) && getShulkerOccupiedSlots(stack) > 0;
+    }
+
+    private int countShulkerBoxesWithItemsInInventory() {
+        if (ctx.player() == null) return 0;
+        int count = 0;
+        NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
+        for (int i = 0; i < 36; i++) {
+            ItemStack s = inv.get(i);
+            if (isShulkerBoxWithItems(s)) {
+                count += s.getCount();
+            }
+        }
+        ItemStack offhand = ctx.player().getOffhandItem();
+        if (isShulkerBoxWithItems(offhand)) {
+            count += offhand.getCount();
+        }
+        return count;
     }
 
     public static boolean isEnderChest(ItemStack stack) {
@@ -2648,12 +2699,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             }
 
-            // ƯU TIÊN SỐ 0: Khi có từ 3 Shulker Box đầy đồ (27/27 ô) trong người -> Tự động đặt Rương Ender để cất 3 Shulker Box đó
+            // ƯU TIÊN SỐ 0: Khi có từ 3 Shulker Box (đầy đồ 27/27 hoặc có đồ) trong người -> Tự động đặt Rương Ender để cất 3 Shulker Box đó
             int fullShulkerCount = countFullShulkerBoxesInInventory();
-            if (fullShulkerCount >= 3 && enderChestCooldownTicks <= 0) {
+            int usedShulkerCount = countShulkerBoxesWithItemsInInventory();
+            int totalShulkerCount = countShulkerBoxesInInventory();
+            boolean triggerEnderChest = (fullShulkerCount >= 3 || usedShulkerCount >= 3 || (totalShulkerCount >= 3 && (fullShulkerCount > 0 || usedShulkerCount >= 2)));
+            if (triggerEnderChest && enderChestCooldownTicks <= 0) {
                 int ecSlot = findEnderChestSlot();
+                int displayCount = Math.max(fullShulkerCount, usedShulkerCount);
+                if (displayCount == 0) displayCount = totalShulkerCount;
                 if (ecSlot != -1) {
-                    logDirect("§a[AutoEnderChest] Phát hiện " + fullShulkerCount + " Shulker Box đầy (27/27)! Đã có Rương Ender trong người (slot " + ecSlot + "), tiến hành đặt ra để cất 3 Shulker Box đầy...");
+                    logDirect("§a[AutoEnderChest] Phát hiện " + displayCount + " Shulker Box (đầy/có đồ)! Đã có Rương Ender trong người (slot " + ecSlot + "), tiến hành đặt ra để cất 3 Shulker Box...");
                     if (isNearLava(ctx.playerFeet(), 5)) {
                         logDirect("§e[AutoEnderChest] Phát hiện dung nham gần đó (<= 5 block)! Bỏ qua đào mở rộng 3x3 để đảm bảo an toàn.");
                         shulkerState = ShulkerStorageState.ENDER_CHEST_SWAP_TO_HOTBAR;
@@ -2668,7 +2724,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     baritone.getInputOverrideHandler().clearAllKeys();
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 } else if (Baritone.settings().autoBuyShulker.value) {
-                    logDirect("§e[AutoShop] Phát hiện " + fullShulkerCount + " Shulker Box đầy (27/27) nhưng chưa có Rương Ender! Tự động mở /shop để mua Rương Ender...");
+                    logDirect("§e[AutoShop] Phát hiện " + displayCount + " Shulker Box (đầy/có đồ) nhưng chưa có Rương Ender! Tự động mở /shop để mua Rương Ender...");
                     shopRetryCount = 0;
                     shopActionCooldown = 0;
                     enderChestShopPurchasedCountBefore = countEnderChestsInInventory();
@@ -4914,9 +4970,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 if (ctx.player().containerMenu instanceof net.minecraft.world.inventory.ChestMenu || (ctx.player().containerMenu != ctx.player().inventoryMenu && ctx.player().containerMenu.slots.size() >= 63)) {
                     shulkerState = ShulkerStorageState.ENDER_CHEST_TRANSFER_SHULKERS;
                     shulkerStateTicks = 0;
-                    shulkerTransferCooldown = 0;
+                    shulkerTransferCooldown = 10; // Đợi 10 tick (0.5s) để server gửi toàn bộ packet nội dung container
                     enderChestTransferredCount = 0;
-                } else if (shulkerStateTicks > 25) {
+                } else if (shulkerStateTicks > 35) {
                     logDirect("§c[AutoEnderChest] Không thể mở Rương Ender! Đang đào thu hồi lại...");
                     shulkerState = ShulkerStorageState.ENDER_CHEST_MINE;
                     shulkerStateTicks = 0;
@@ -4936,35 +4992,50 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
 
+                // Kiểm tra xem dữ liệu menu từ server đã đồng bộ về client chưa
+                boolean hasAnyPlayerItem = false;
+                for (int slotId = 27; slotId < 63; slotId++) {
+                    if (!ctx.player().containerMenu.getSlot(slotId).getItem().isEmpty()) {
+                        hasAnyPlayerItem = true;
+                        break;
+                    }
+                }
+                if (!hasAnyPlayerItem && shulkerStateTicks < 40) {
+                    // Chưa nhận được packet nội dung từ server, tiếp tục chờ
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
                 int containerId = ctx.player().containerMenu.containerId;
 
                 // Kiểm tra xem Rương Ender còn chỗ trống không (ô 0 đến 26)
-                boolean enderChestHasSpace = false;
+                int firstEmptyEnderSlot = -1;
                 for (int b = 0; b < 27; b++) {
                     ItemStack boxItem = ctx.player().containerMenu.getSlot(b).getItem();
                     if (boxItem.isEmpty()) {
-                        enderChestHasSpace = true;
+                        firstEmptyEnderSlot = b;
                         break;
                     }
                 }
 
-                if (!enderChestHasSpace) {
+                if (firstEmptyEnderSlot == -1) {
                     logDirect("§6[AutoEnderChest] Rương Ender đã đầy chỗ (27/27 ô)! Đã cất " + enderChestTransferredCount + " Shulker Box.");
                     shulkerState = ShulkerStorageState.ENDER_CHEST_CLOSE_CONTAINER;
                     shulkerStateTicks = 0;
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
 
-                // Chuyển tối đa 3 Shulker Box đầy vào Rương Ender theo yêu cầu
+                // Chuyển tối đa 3 Shulker Box vào Rương Ender theo yêu cầu
                 if (enderChestTransferredCount >= 3) {
-                    logDirect("§a[AutoEnderChest] Đã cất đủ 3 Shulker Box đầy vào Rương Ender thành công!");
+                    logDirect("§a[AutoEnderChest] Đã cất đủ 3 Shulker Box vào Rương Ender thành công!");
                     shulkerState = ShulkerStorageState.ENDER_CHEST_CLOSE_CONTAINER;
                     shulkerStateTicks = 0;
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
 
-                // Tìm Shulker Box ĐẦY (27/27) trong balo/hotbar (slot 27 đến 62)
+                // Tìm Shulker Box để chuyển vào Rương Ender (slot 27 đến 62)
                 int transferSlot = -1;
+
+                // 1. Ưu tiên 1: Shulker Box ĐẦY (27/27)
                 for (int slotId = 27; slotId < 63; slotId++) {
                     ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
                     if (!stack.isEmpty() && isShulkerBoxFull(stack)) {
@@ -4973,25 +5044,73 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     }
                 }
 
+                // 2. Ưu tiên 2: Shulker Box có đồ bên trong (> 0 ô chứa)
+                if (transferSlot == -1) {
+                    for (int slotId = 27; slotId < 63; slotId++) {
+                        ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
+                        if (!stack.isEmpty() && isShulkerBox(stack) && getShulkerOccupiedSlots(stack) > 0) {
+                            transferSlot = slotId;
+                            break;
+                        }
+                    }
+                }
+
+                // 3. Ưu tiên 3: Bất kỳ Shulker Box nào nếu người chơi có từ 2 Shulker Box trở lên trong người
+                if (transferSlot == -1) {
+                    int totalShulkersInMenu = 0;
+                    for (int slotId = 27; slotId < 63; slotId++) {
+                        ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
+                        if (!stack.isEmpty() && isShulkerBox(stack)) {
+                            totalShulkersInMenu += stack.getCount();
+                        }
+                    }
+                    if (totalShulkersInMenu >= 2) {
+                        for (int slotId = 27; slotId < 63; slotId++) {
+                            ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
+                            if (!stack.isEmpty() && isShulkerBox(stack)) {
+                                transferSlot = slotId;
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 if (transferSlot != -1) {
                     ItemStack before = ctx.player().containerMenu.getSlot(transferSlot).getItem().copy();
+                    // Thử chuyển bằng QUICK_MOVE (Shift-Click)
                     ctx.playerController().windowClick(containerId, transferSlot, 0, ClickType.QUICK_MOVE, ctx.player());
                     ItemStack after = ctx.player().containerMenu.getSlot(transferSlot).getItem();
-                    if (before.getCount() != after.getCount()) {
+                    if (before.getCount() != after.getCount() || after.isEmpty()) {
                         enderChestTransferredCount++;
-                        logDirect("§a[AutoEnderChest] Đã cất Shulker Box đầy thứ " + enderChestTransferredCount + "/3 vào Rương Ender!");
-                    } else {
-                        logDirect("§6[AutoEnderChest] Không thể chuyển thêm Shulker Box vào Rương Ender!");
-                        shulkerState = ShulkerStorageState.ENDER_CHEST_CLOSE_CONTAINER;
-                        shulkerStateTicks = 0;
+                        logDirect("§a[AutoEnderChest] Đã cất Shulker Box thứ " + enderChestTransferredCount + "/3 vào Rương Ender!");
+                        shulkerTransferCooldown = 4; // Nhịp 4 tick mượt mà chống kick
                         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                    } else if (firstEmptyEnderSlot != -1) {
+                        // Dự phòng: QUICK_MOVE bị server từ chối -> Thao tác thủ công Click nhặt rồi đặt vào ô trống Rương Ender
+                        ctx.playerController().windowClick(containerId, transferSlot, 0, ClickType.PICKUP, ctx.player());
+                        ctx.playerController().windowClick(containerId, firstEmptyEnderSlot, 0, ClickType.PICKUP, ctx.player());
+                        ItemStack enderSlotItem = ctx.player().containerMenu.getSlot(firstEmptyEnderSlot).getItem();
+                        if (!enderSlotItem.isEmpty() && isShulkerBox(enderSlotItem)) {
+                            enderChestTransferredCount++;
+                            logDirect("§a[AutoEnderChest] Đã cất thủ công Shulker Box thứ " + enderChestTransferredCount + "/3 vào ô " + firstEmptyEnderSlot + " của Rương Ender!");
+                            shulkerTransferCooldown = 4;
+                            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                        } else {
+                            logDirect("§6[AutoEnderChest] Không thể chuyển thêm Shulker Box vào Rương Ender!");
+                            shulkerState = ShulkerStorageState.ENDER_CHEST_CLOSE_CONTAINER;
+                            shulkerStateTicks = 0;
+                            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                        }
                     }
-                    shulkerTransferCooldown = 3; // Nhịp 3 tick mượt mà chống kick
+                }
+
+                // Đảm bảo đã chờ ít nhất 15 tick để dữ liệu đồng bộ chắc chắn trước khi kết luận không còn Shulker Box
+                if (shulkerStateTicks < 15) {
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
 
-                // Không còn Shulker Box đầy nào trong balo nữa
-                logDirect("§a[AutoEnderChest] Đã hoàn tất cất toàn bộ Shulker Box đầy vào Rương Ender (Tổng: " + enderChestTransferredCount + ")!");
+                // Không còn Shulker Box nào cần chuyển nữa
+                logDirect("§a[AutoEnderChest] Đã hoàn tất cất toàn bộ Shulker Box vào Rương Ender (Tổng: " + enderChestTransferredCount + ")!");
                 shulkerState = ShulkerStorageState.ENDER_CHEST_CLOSE_CONTAINER;
                 shulkerStateTicks = 0;
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
