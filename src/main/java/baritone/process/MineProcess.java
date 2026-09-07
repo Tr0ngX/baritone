@@ -228,6 +228,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int shulkerTransferredCount = 0;
     private boolean shulkerClearingInProgress = false;
     private int consecutiveCalcFailures = 0;
+    private int shaftConsecutiveFailures = 0;
     private int shulkerCooldownTicks = 0;
     private boolean isChopMode = false;
     private final Map<BlockPos, Long> ignoredDrops = new HashMap<>();
@@ -270,9 +271,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.tickCount++;
         this.lastCalcFailed = calcFailed;
         int targetY = Baritone.settings().legitMineYLevel.value;
-        if (ctx.playerFeet().y <= targetY) {
+        if (ctx.playerFeet().y <= targetY + 1) {
             hasReachedTargetY = true;
-        } else if (ctx.playerFeet().y > targetY + 10) {
+        } else if (ctx.playerFeet().y > targetY + 3) {
             hasReachedTargetY = false;
         }
         if (desiredQuantity > 0) {
@@ -286,6 +287,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
         if (calcFailed) {
+            int currentY = ctx.playerFeet().y;
+            if (currentY > targetY && !hasReachedTargetY) {
+                shaftConsecutiveFailures++;
+                if (shaftConsecutiveFailures == 3) {
+                    logDirect("§6[AutoMine] Đào thẳng đứng (Shaft Down) không thể tìm đường sau 3 lần thử! Tự động chuyển sang đào dốc bậc thang...");
+                    forceReroute = true;
+                }
+            }
             boolean isMining = activeMiningBlock != null
                     || baritone.getInputOverrideHandler().isInputForcedDown(Input.CLICK_LEFT)
                     || ((baritone.utils.accessor.IPlayerControllerMP) ctx.minecraft().gameMode).isHittingBlock();
@@ -330,7 +339,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 // Nếu thất bại liên tiếp >= 3 lần (bị kẹt quanh các quặng không thể tới):
                 // Lập tức giải phóng toàn bộ quặng đang kẹt, buộc bot đào hầm tiến lên phía trước!
                 if (consecutiveCalcFailures >= 3) {
-                    logDirect("§e[Mine] Không thể tìm đường tới các quặng xung quanh sau " + consecutiveCalcFailures + " lần thử! Tạm bỏ qua và tiếp tục đào hầm tiến lên phía trước...");
+                    if (currentY > targetY && !hasReachedTargetY) {
+                        logDirect("§e[Mine] Không thể tìm đường đào dốc xuống sau " + consecutiveCalcFailures + " lần thử! Tạm đổi trục và tiếp tục...");
+                    } else {
+                        logDirect("§e[Mine] Không thể tìm đường tới các quặng xung quanh sau " + consecutiveCalcFailures + " lần thử! Tạm bỏ qua và tiếp tục đào hầm tiến lên phía trước...");
+                    }
                     for (BlockPos p : knownOreLocations) {
                         blacklist.add(p);
                         oreMemory.remove(p);
@@ -369,6 +382,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         } else {
             if (baritone.getPathingBehavior().isPathing()) {
                 consecutiveCalcFailures = 0;
+                shaftConsecutiveFailures = 0;
             }
         }
 
@@ -758,6 +772,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         lastStuckCheckPos = null;
         stuckTicks = 0;
         stuckRetries = 0;
+        shaftConsecutiveFailures = 0;
         activeMiningBlock = null;
         activeMiningBlockIsObstructing = false;
         pendingOreAfterObstructing = null;
@@ -1092,9 +1107,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         int currentY = ctx.playerFeet().y;
 
         // Đánh dấu đã chạm tới độ sâu targetY (hoặc xuất phát ngay tại tầng đào)
-        if (currentY <= targetY) {
+        if (currentY <= targetY + 1) {
             hasReachedTargetY = true;
-        } else if (currentY > targetY + 10) {
+        } else if (currentY > targetY + 3) {
             hasReachedTargetY = false;
         }
 
@@ -1162,12 +1177,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         // KHI CHƯA ĐẠT ĐỘ SÂU TARGET Y (currentY > targetY && !hasReachedTargetY):
         if (currentY > targetY && !hasReachedTargetY) {
-            if (Baritone.settings().straightDownMine.value) {
+            if (Baritone.settings().straightDownMine.value && shaftConsecutiveFailures < 3) {
                 // CHẾ ĐỘ SHAFT DOWN: ĐÀO THẲNG ĐỨNG XUỐNG DƯỚI TẠI VỊ TRÍ HIỆN TẠI
                 if (shaftOriginPos == null || forceReroute
                         || Math.abs(shaftOriginPos.getX() - ctx.playerFeet().x) > 2
                         || Math.abs(shaftOriginPos.getZ() - ctx.playerFeet().z) > 2
-                        || shaftOriginPos.getY() < currentY) {
+                        || shaftOriginPos.getY() - currentY >= 5
+                        || (!baritone.getPathingBehavior().isPathing() && shaftOriginPos.getY() > currentY)) {
                     shaftOriginPos = ctx.playerFeet();
                 }
                 if (tickCount % 40 == 0) {
@@ -1178,6 +1194,13 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 forceReroute = false;
                 Goal shaftGoal = new GoalShaftDown(shaftOriginPos.getX(), shaftOriginPos.getY(), shaftOriginPos.getZ(), targetY);
                 return new PathingCommand(shaftGoal, fr ? PathingCommandType.FORCE_REVALIDATE_GOAL_AND_PATH : PathingCommandType.REVALIDATE_GOAL_AND_PATH);
+            }
+
+            // Nếu Shaft Down bị kẹt/nghẽn >= 3 lần: Thông báo và tự động chuyển sang đào dốc bậc thang (Staircase Descent)
+            if (Baritone.settings().straightDownMine.value && shaftConsecutiveFailures >= 3) {
+                if (tickCount % 60 == 0) {
+                    logDirect("§6[AutoMine] Đào thẳng đứng bị nghẽn! Tự động chuyển sang đào dốc bậc thang (Staircase Descent) xuống Y=" + targetY + "...");
+                }
             }
 
             // ƯU TIÊN SỐ 1 KHI Ở TRÊN CAO (KHÔNG BẬT SHAFT DOWN): DÙNG XÔ NƯỚC (WATER BUCKET) ĐỂ TỤT XUỐNG THAY VÌ ĐÀO XUỐNG
@@ -4103,8 +4126,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         this.stairOriginPos = null;
         this.shaftOriginPos = null;
+        this.shaftConsecutiveFailures = 0;
         this.pillarFailCount = 0;
-        this.hasReachedTargetY = ctx.player() != null && ctx.playerFeet().y <= Baritone.settings().legitMineYLevel.value;
+        this.hasReachedTargetY = ctx.player() != null && ctx.playerFeet().y <= Baritone.settings().legitMineYLevel.value + 1;
         this.activeMiningBlock = null;
         this.activeMiningTicks = 0;
         this.lockedTargetOre = null;
@@ -4375,14 +4399,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         @Override
         public boolean isInGoal(int x, int y, int z) {
             int horizDev = Math.abs(x - this.x) + Math.abs(z - this.z);
-            return y <= targetY && horizDev <= 1;
+            return (y <= targetY && horizDev <= 1) || ((startY - y) >= 5 && horizDev <= 1);
         }
 
         @Override
         public double heuristic(int x, int y, int z) {
             int horizDev = Math.abs(x - this.x) + Math.abs(z - this.z);
             int remainingDrop = Math.max(0, y - targetY);
-            return remainingDrop * 100.0 + horizDev * 2000.0;
+            return remainingDrop * 5.0 + horizDev * 30.0;
         }
 
         @Override

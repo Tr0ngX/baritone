@@ -74,7 +74,7 @@ public class GoalStrictDirection implements Goal {
                 return forward >= 1 && lateral <= 1;
             }
             int dropped = this.y - y;
-            return (forward >= 6 && dropped >= 2 && lateral <= 1) || (forward >= targetDistance && lateral <= 1);
+            return (forward >= 5 && dropped >= 1 && lateral <= 1) || (forward >= targetDistance && lateral <= 1);
         }
         int vertical = Math.abs(y - (targetY != null ? targetY : this.y));
         // Đã đào thông tới cự ly mục tiêu trong hành lang hầm mà không lệch quá 1 block
@@ -86,14 +86,21 @@ public class GoalStrictDirection implements Goal {
         int forward = (x - this.x) * dx + (z - this.z) * dz;
         int lateral = Math.abs((x - this.x) * dz) + Math.abs((z - this.z) * dx);
 
-        int targetYEffective;
+        double verticalPenalty;
         if (targetY != null && this.y > targetY) {
-            // Đang đào dốc: hạ dần độ cao theo mỗi bước tiến tới trước
-            targetYEffective = Math.max(targetY, this.y - Math.max(1, forward));
+            // Đang đào dốc hạ độ cao xuống tầng targetY
+            if (y > this.y) {
+                verticalPenalty = (y - this.y) * 1000.0;
+            } else if (y < targetY) {
+                verticalPenalty = (targetY - y) * 1000.0;
+            } else {
+                int dropped = this.y - y;
+                verticalPenalty = -dropped * 80.0;
+            }
         } else {
-            targetYEffective = (targetY != null ? targetY : this.y);
+            int vertical = Math.abs(y - (targetY != null ? targetY : this.y));
+            verticalPenalty = vertical * 2000.0;
         }
-        int vertical = Math.abs(y - targetYEffective);
 
         double heuristic;
         if (forward <= 0) {
@@ -107,8 +114,8 @@ public class GoalStrictDirection implements Goal {
         // PHẠT LỆCH HÀNG (LATERAL): Phạt 1500 điểm cho mỗi block lệch sang 2 bên
         heuristic += lateral * 1500.0;
 
-        // PHẠT LỆCH TẦNG Y (VERTICAL): Phạt 2000 điểm cho mỗi block lệch độ cao
-        heuristic += vertical * 2000.0;
+        // PHẠT LỆCH TẦNG Y (VERTICAL):
+        heuristic += verticalPenalty;
 
         // ĐIỂM THƯỞNG QUẶNG: Nếu node này ở gần quặng mục tiêu phía trước, thưởng điểm cực lớn
         if (targetOres != null && !targetOres.isEmpty()) {
