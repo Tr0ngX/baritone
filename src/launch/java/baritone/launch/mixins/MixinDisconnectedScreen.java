@@ -51,6 +51,8 @@ public abstract class MixinDisconnectedScreen extends Screen {
             baritone.Baritone.settings().autoLogoutOnDanger.value = false;
             baritone.Baritone.settings().autoLogoutOnPlayer.value = false;
             baritone.utils.AutoMineScreen.optAutoLogout = false;
+            baritone.utils.AutoMineConfig.save();
+            baritone.api.utils.SettingsUtil.save(baritone.Baritone.settings());
         }
     }
 

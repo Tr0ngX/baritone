@@ -19,7 +19,11 @@ package baritone.utils;
 
 import baritone.Baritone;
 import baritone.api.utils.input.Input;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.ClientInput;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec2;
 
 public class PlayerMovementInput extends ClientInput {
@@ -67,6 +71,23 @@ public class PlayerMovementInput extends ClientInput {
         // AUTO SPRINT: Tự động chạy nhanh khi tiến về phía trước
         if (Baritone.settings().allowSprint.value && up && !sneaking) {
             sprinting = true;
+        }
+
+        // ULTRA-FAST TUNNEL BUNNY HOP (Không delay, cứ tiếp đất là nhảy tiếp)
+        if (Baritone.settings().tunnelSprintJump.value && up && !sneaking) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && mc.level != null) {
+                LocalPlayer p = mc.player;
+                if (!p.isInWater() && !p.isSwimming() && !p.isCrouching() && !Baritone.settings().crawlMineMode.value && p.getFoodData().getFoodLevel() > 6) {
+                    BlockPos pFeet = BlockPos.containing(p.getX(), p.getBoundingBox().minY + 0.1, p.getZ());
+                    BlockState ceil = mc.level.getBlockState(pFeet.above(2));
+                    BlockState head = mc.level.getBlockState(pFeet.above());
+                    if (!ceil.isAir() && ceil.blocksMotion() && !head.blocksMotion()) {
+                        jumping = true;
+                        sprinting = true;
+                    }
+                }
+            }
         }
 
         this.keyPresses = new net.minecraft.world.entity.player.Input(up, down, left, right, jumping, sneaking, sprinting);

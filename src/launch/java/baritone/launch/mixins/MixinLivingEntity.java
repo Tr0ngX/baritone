@@ -72,6 +72,16 @@ public abstract class MixinLivingEntity extends Entity {
     }
 
     @Inject(
+            method = "aiStep",
+            at = @At("TAIL")
+    )
+    private void onAiStepFastJumpTail(CallbackInfo ci) {
+        if (this.getBaritone().isPresent() && Baritone.settings().fastJump.value) {
+            this.noJumpDelay = 0;
+        }
+    }
+
+    @Inject(
             method = "jumpFromGround",
             at = @At("RETURN")
     )

@@ -277,6 +277,8 @@ public final class AutoLogoutTracker {
         Baritone.settings().autoLogoutOnDanger.value = false;
         Baritone.settings().autoLogoutOnPlayer.value = false;
         AutoMineScreen.optAutoLogout = false;
+        AutoMineConfig.save();
+        baritone.api.utils.SettingsUtil.save(Baritone.settings());
 
         // Dừng mọi hành vi điều khiển của Baritone
         try {

@@ -44,6 +44,7 @@ public final class BaritoneProvider implements IBaritoneProvider {
 
     public BaritoneProvider() {
         BaritoneFileLogger.init();
+        baritone.utils.AutoMineConfig.load();
         this.all = new CopyOnWriteArrayList<>();
         this.allView = Collections.unmodifiableList(this.all);
 

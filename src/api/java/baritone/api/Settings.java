@@ -1422,6 +1422,18 @@ public final class Settings {
     public final Setting<Boolean> autoBuyShulker = new Setting<>(true);
 
     /**
+     * When autoEat is enabled but no food remains in hotbar or backpack,
+     * automatically buy Cooked Beef (Thịt Bò Nướng) via /shop menu navigation.
+     */
+    public final Setting<Boolean> autoBuyFood = new Setting<>(true);
+
+    /**
+     * When autoTotem is enabled but no totem remains in offhand or backpack,
+     * automatically buy Totem of Undying (Vật tổ trường sinh) via /shop menu navigation.
+     */
+    public final Setting<Boolean> autoBuyTotem = new Setting<>(true);
+
+    /**
      * When inventory is full while mining, automatically drop junk items from inventory.
      * Keeps tools, food, totem, shulker boxes, target ores, and 1 stack of building blocks, and drops all other items.
      */

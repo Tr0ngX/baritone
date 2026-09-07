@@ -236,6 +236,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public AutoMineScreen(Baritone baritone) {
         super(Component.literal("TR0NGX NEXTGEN CLICKGUI"));
         this.baritone = baritone;
+        AutoMineConfig.ensureLoaded();
         initModuleRegistry();
     }
 
@@ -287,7 +288,7 @@ public class AutoMineScreen extends Screen implements Helper {
         // 3. TAB SINH TỒN
         allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_PICKAXE), "Auto-Tool", "Tự động đổi công cụ tối ưu (Cúp, Rìu, Xẻng)", "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
         allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_CARROT), "Auto-Eat", "Tự động ăn thức ăn ngon nhất khi đói < 19", "SURVIVAL", 0xFF34D399, () -> optAutoEat, () -> optAutoEat = !optAutoEat));
-        allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Auto-Totem", "Tự động lấy Totem of Undying ra tay phụ khi tụt máu", "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
+        allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Auto-Totem", "Tự động lấy Totem ra tay phụ & mua /shop khi hết", "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
         allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Auto-Logout", "Tự thoát game khi gặp nguy hiểm (Lava, hết Totem, phát hiện Player/Invis)", "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
             optAutoLogout = !optAutoLogout;
             Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
@@ -331,6 +332,12 @@ public class AutoMineScreen extends Screen implements Helper {
     protected void init() {
         super.init();
         scrollOffset = 0;
+    }
+
+    @Override
+    public void onClose() {
+        AutoMineConfig.save();
+        super.onClose();
     }
 
     private String getResponsiveTabTitle(int i, int tabW) {
@@ -528,6 +535,7 @@ public class AutoMineScreen extends Screen implements Helper {
                             woodWarped = false;
                         }
                     }
+                    AutoMineConfig.save();
                     return true;
                 }
             }
@@ -546,6 +554,7 @@ public class AutoMineScreen extends Screen implements Helper {
                     if (mouseX >= cardX && mouseX <= cardX + l.colW && mouseY >= cardY && mouseY <= cardY + l.cardH) {
                         ModuleItem item = filtered.get(i);
                         item.toggle.run();
+                        AutoMineConfig.save();
                         return true;
                     }
                 }
@@ -562,6 +571,7 @@ public class AutoMineScreen extends Screen implements Helper {
                     else if (optTargetY == -58) optTargetY = 11;
                     else if (optTargetY == 11) optTargetY = 999;
                     else optTargetY = -54;
+                    AutoMineConfig.save();
                     return true;
                 }
 
@@ -901,6 +911,7 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private void startAutoChop() {
+        AutoMineConfig.save();
         IPlayerContext playerCtx = baritone.getPlayerContext();
         if (playerCtx.player() == null) {
             return;
@@ -919,6 +930,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoEat.value = optAutoEat;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
+        Baritone.settings().autoBuyTotem.value = optAutoTotem;
         Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
         Baritone.settings().avoidance.value = optMobAvoid;
         Baritone.settings().mobAvoidanceRadius.value = optMobAvoid ? 14 : 0;
@@ -1025,6 +1037,7 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private void startAutoMine() {
+        AutoMineConfig.save();
         IPlayerContext playerCtx = baritone.getPlayerContext();
 
         Baritone.settings().autoTool.value = optAutoTool;
@@ -1073,8 +1086,10 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().movementTimeoutTicks.value = 140;
 
         Baritone.settings().autoEat.value = optAutoEat;
+        Baritone.settings().autoBuyFood.value = optAutoEat;
         Baritone.settings().autoEatThreshold.value = 19;
         Baritone.settings().autoTotem.value = optAutoTotem;
+        Baritone.settings().autoBuyTotem.value = optAutoTotem;
         Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
         Baritone.settings().autoShulkerStorage.value = optShulkerStorage;
         Baritone.settings().autoBuyShulker.value = optShulkerStorage;

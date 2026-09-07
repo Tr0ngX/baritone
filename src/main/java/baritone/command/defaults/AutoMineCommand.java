@@ -98,6 +98,7 @@ public class AutoMineCommand extends Command {
         Baritone.settings().autoLogoutOnDanger.value = AutoMineScreen.optAutoLogout;
         Baritone.settings().autoShulkerStorage.value = true;
         Baritone.settings().autoBuyShulker.value = true;
+        Baritone.settings().autoBuyFood.value = true;
         Baritone.settings().autoDrop.value = true;
 
         Baritone.settings().allowParkour.value = true;

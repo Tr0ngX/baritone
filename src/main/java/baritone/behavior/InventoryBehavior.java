@@ -32,10 +32,13 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EnderChestBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -131,9 +134,33 @@ public final class InventoryBehavior extends Behavior implements Helper {
         return true;
     }
 
+    public static boolean isForbiddenThrowaway(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return true;
+        Item item = stack.getItem();
+        if (item.equals(Items.ENDER_CHEST) || item.equals(Items.SHULKER_BOX)) return true;
+        if (stack.is(net.minecraft.tags.ItemTags.SHULKER_BOXES)) return true;
+        if (item instanceof BlockItem bi) {
+            Block b = bi.getBlock();
+            if (b instanceof EnderChestBlock || b instanceof ShulkerBoxBlock) {
+                return true;
+            }
+        }
+        String desc = item.getDescriptionId();
+        if (desc != null) {
+            String lower = desc.toLowerCase();
+            if (lower.contains("ender_chest") || lower.contains("shulker")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private int firstValidThrowaway() { // TODO offhand idk
         NonNullList<ItemStack> invy = ctx.player().getInventory().getNonEquipmentItems();
         for (int i = 0; i < invy.size(); i++) {
+            if (isForbiddenThrowaway(invy.get(i))) {
+                continue;
+            }
             if (Baritone.settings().acceptableThrowawayItems.value.contains(invy.get(i).getItem())) {
                 return i;
             }
@@ -166,7 +193,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
     public boolean hasGenericThrowaway() {
         for (Item item : Baritone.settings().acceptableThrowawayItems.value) {
-            if (throwaway(false, stack -> item.equals(stack.getItem()))) {
+            if (throwaway(false, stack -> !isForbiddenThrowaway(stack) && item.equals(stack.getItem()))) {
                 return true;
             }
         }
@@ -175,14 +202,14 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
     public boolean selectThrowawayForLocation(boolean select, int x, int y, int z) {
         BlockState maybe = baritone.getBuilderProcess().placeAt(x, y, z, baritone.bsi.get0(x, y, z));
-        if (maybe != null && throwaway(select, stack -> stack.getItem() instanceof BlockItem && maybe.equals(((BlockItem) stack.getItem()).getBlock().getStateForPlacement(new BlockPlaceContext(new UseOnContext(ctx.world(), ctx.player(), InteractionHand.MAIN_HAND, stack, new BlockHitResult(new Vec3(ctx.player().position().x, ctx.player().position().y, ctx.player().position().z), Direction.UP, new BlockPos(ctx.playerFeet().getX(), ctx.playerFeet().getY(), ctx.playerFeet().getZ()), false)) {}))))) {
+        if (maybe != null && throwaway(select, stack -> !isForbiddenThrowaway(stack) && stack.getItem() instanceof BlockItem && maybe.equals(((BlockItem) stack.getItem()).getBlock().getStateForPlacement(new BlockPlaceContext(new UseOnContext(ctx.world(), ctx.player(), InteractionHand.MAIN_HAND, stack, new BlockHitResult(new Vec3(ctx.player().position().x, ctx.player().position().y, ctx.player().position().z), Direction.UP, new BlockPos(ctx.playerFeet().getX(), ctx.playerFeet().getY(), ctx.playerFeet().getZ()), false)) {}))))) {
             return true; // gotem
         }
-        if (maybe != null && throwaway(select, stack -> stack.getItem() instanceof BlockItem && ((BlockItem) stack.getItem()).getBlock().equals(maybe.getBlock()))) {
+        if (maybe != null && throwaway(select, stack -> !isForbiddenThrowaway(stack) && stack.getItem() instanceof BlockItem && ((BlockItem) stack.getItem()).getBlock().equals(maybe.getBlock()))) {
             return true;
         }
         for (Item item : Baritone.settings().acceptableThrowawayItems.value) {
-            if (throwaway(select, stack -> item.equals(stack.getItem()))) {
+            if (throwaway(select, stack -> !isForbiddenThrowaway(stack) && item.equals(stack.getItem()))) {
                 return true;
             }
         }
@@ -198,6 +225,9 @@ public final class InventoryBehavior extends Behavior implements Helper {
         NonNullList<ItemStack> inv = p.getInventory().getNonEquipmentItems();
         for (int i = 0; i < 9; i++) {
             ItemStack item = inv.get(i);
+            if (isForbiddenThrowaway(item)) {
+                continue;
+            }
             // this usage of settings() is okay because it's only called once during pathing
             // (while creating the CalculationContext at the very beginning)
             // and then it's called during execution
@@ -210,7 +240,7 @@ public final class InventoryBehavior extends Behavior implements Helper {
                 return true;
             }
         }
-        if (desired.test(p.getItemBySlot(EquipmentSlot.OFFHAND))) {
+        if (!isForbiddenThrowaway(p.getItemBySlot(EquipmentSlot.OFFHAND)) && desired.test(p.getItemBySlot(EquipmentSlot.OFFHAND))) {
             // main hand takes precedence over off hand
             // that means that if we have block A selected in main hand and block B in off hand, right clicking places block B
             // we've already checked above ^ and the main hand can't possible have an acceptablethrowawayitem
@@ -229,7 +259,11 @@ public final class InventoryBehavior extends Behavior implements Helper {
 
         if (allowInventory) {
             for (int i = 9; i < 36; i++) {
-                if (desired.test(inv.get(i))) {
+                ItemStack item = inv.get(i);
+                if (isForbiddenThrowaway(item)) {
+                    continue;
+                }
+                if (desired.test(item)) {
                     if (select) {
                         requestSwapWithHotBar(i, 7);
                         p.getInventory().setSelectedSlot(7);

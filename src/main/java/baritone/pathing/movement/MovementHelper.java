@@ -158,7 +158,7 @@ public interface MovementHelper extends ActionCosts, Helper {
         if (block instanceof AirBlock) {
             return YES;
         }
-        if (block instanceof BaseFireBlock || block == Blocks.COBWEB || block == Blocks.END_PORTAL || block == Blocks.COCOA || block instanceof AbstractSkullBlock || block == Blocks.BUBBLE_COLUMN || block instanceof ShulkerBoxBlock || block instanceof SlabBlock || block instanceof TrapDoorBlock || block == Blocks.HONEY_BLOCK || block == Blocks.END_ROD || block == Blocks.SWEET_BERRY_BUSH || block == Blocks.POINTED_DRIPSTONE || block instanceof AmethystClusterBlock || block instanceof AzaleaBlock) {
+        if (block instanceof BaseFireBlock || block == Blocks.COBWEB || block == Blocks.END_PORTAL || block == Blocks.COCOA || block instanceof AbstractSkullBlock || block == Blocks.BUBBLE_COLUMN || block instanceof ShulkerBoxBlock || block instanceof EnderChestBlock || block instanceof SlabBlock || block instanceof TrapDoorBlock || block == Blocks.HONEY_BLOCK || block == Blocks.END_ROD || block == Blocks.SWEET_BERRY_BUSH || block == Blocks.POINTED_DRIPSTONE || block instanceof AmethystClusterBlock || block instanceof AzaleaBlock) {
             return NO;
         }
         if (block == Blocks.BIG_DRIPLEAF) {
@@ -265,7 +265,8 @@ public interface MovementHelper extends ActionCosts, Helper {
                 || block instanceof TrapDoorBlock
                 || block instanceof EndPortalBlock
                 || block instanceof SkullBlock
-                || block instanceof ShulkerBoxBlock) {
+                || block instanceof ShulkerBoxBlock
+                || block instanceof EnderChestBlock) {
             return NO;
         }
         // door, fence gate, liquid, trapdoor have been accounted for, nothing else uses the world or pos parameters
@@ -829,6 +830,7 @@ public interface MovementHelper extends ActionCosts, Helper {
                 || block instanceof MovingPistonBlock
                 || block instanceof ScaffoldingBlock
                 || block instanceof ShulkerBoxBlock
+                || block instanceof EnderChestBlock
                 || block instanceof PointedDripstoneBlock
                 || block instanceof AmethystClusterBlock) {
             return false;

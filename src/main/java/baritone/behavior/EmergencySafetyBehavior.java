@@ -21,7 +21,9 @@ import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.BaritoneFileLogger;
 import baritone.api.utils.Helper;
+import baritone.api.utils.SettingsUtil;
 import baritone.utils.AutoLogoutTracker;
+import baritone.utils.AutoMineConfig;
 import baritone.utils.AutoMineScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -220,6 +222,8 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             Baritone.settings().autoLogoutOnDanger.value = false;
             Baritone.settings().autoLogoutOnPlayer.value = false;
             AutoMineScreen.optAutoLogout = false;
+            AutoMineConfig.save();
+            SettingsUtil.save(Baritone.settings());
         } else {
             AutoLogoutTracker.onWorldJoined();
         }
