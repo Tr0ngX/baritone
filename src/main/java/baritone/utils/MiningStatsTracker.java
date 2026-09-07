@@ -369,8 +369,8 @@ public final class MiningStatsTracker {
         } catch (Exception ignored) {
         }
 
-        // Chỉ hiển thị khi đang chạy mine/chop hoặc đã đào/chặt được block
-        if (!isMining && totalBlocksMined.get() == 0) {
+        // Chỉ hiển thị khi đang chạy mine/chop (đã ấn Start):
+        if (!isMining) {
             return;
         }
 

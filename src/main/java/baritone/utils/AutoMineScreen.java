@@ -295,7 +295,7 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.PLAYER_HEAD), "Anti-Player", "Tự ngắt kết nối khi phát hiện người chơi (kể cả tàng hình / invis)", "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
             Baritone.settings().autoLogoutOnPlayer.value = !Baritone.settings().autoLogoutOnPlayer.value;
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Shulker Box", "Tự động đặt Shulker Box cất quặng khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
+        allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Shulker Box", "Tự động đặt & mua Shulker Box qua /shop khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
         allModules.add(new ModuleItem(new ItemStack(Items.LAVA_BUCKET), "Auto-Drop", "Tự vứt đá/đất/gravel đầy stack về sau hoặc vào lava", "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
         allModules.add(new ModuleItem(new ItemStack(Items.ZOMBIE_HEAD), "Mob Avoid", "Tự động né quái vật nguy hiểm và Spawner 14m", "SURVIVAL", 0xFFF87171, () -> optMobAvoid, () -> optMobAvoid = !optMobAvoid));
         allModules.add(new ModuleItem(new ItemStack(Items.WATER_BUCKET), "Water Check", "Kiểm tra an toàn chất lỏng chống sặc nước / lava", "SURVIVAL", 0xFF60A5FA, () -> optWaterCheck, () -> optWaterCheck = !optWaterCheck));
@@ -793,14 +793,16 @@ public class AutoMineScreen extends Screen implements Helper {
             graphics.fill(scrollX, scrollThumbY, scrollX + 2, scrollThumbY + scrollThumbH, ClickGuiTheme.ACCENT_CYAN);
         }
 
-        // 7. Thẻ thống kê bên cạnh chỉ hiển thị khi màn hình còn đủ chỗ trống
+        // 7. Thẻ thống kê bên cạnh chỉ hiển thị khi đã ấn Start và màn hình còn đủ chỗ trống
         if (activeTab != 4 && optMiningStats) {
             boolean isMining = baritone.getMineProcess().isActive();
-            int statsW = 148;
-            if (this.width - (l.panelX + l.panelW) >= statsW + 10) {
-                MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX + l.panelW + 8, l.contentY, statsW, isMining);
-            } else if (l.panelX >= statsW + 10) {
-                MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX - statsW - 8, l.contentY, statsW, isMining);
+            if (isMining) {
+                int statsW = 148;
+                if (this.width - (l.panelX + l.panelW) >= statsW + 10) {
+                    MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX + l.panelW + 8, l.contentY, statsW, isMining);
+                } else if (l.panelX >= statsW + 10) {
+                    MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX - statsW - 8, l.contentY, statsW, isMining);
+                }
             }
         }
 
@@ -1075,6 +1077,7 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoTotem.value = optAutoTotem;
         Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
         Baritone.settings().autoShulkerStorage.value = optShulkerStorage;
+        Baritone.settings().autoBuyShulker.value = optShulkerStorage;
         Baritone.settings().autoDrop.value = optAutoDrop;
         Baritone.settings().avoidance.value = optMobAvoid;
         Baritone.settings().streamerMode.value = optStreamerMode;

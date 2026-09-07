@@ -1416,6 +1416,12 @@ public final class Settings {
     public final Setting<Boolean> autoShulkerStorage = new Setting<>(true);
 
     /**
+     * When autoShulkerStorage is enabled but no shulker box remains or all shulkers in inventory are full,
+     * automatically buy a new Shulker Box via /shop menu navigation.
+     */
+    public final Setting<Boolean> autoBuyShulker = new Setting<>(true);
+
+    /**
      * When inventory is full while mining, automatically drop junk items from inventory.
      * Keeps tools, food, totem, shulker boxes, target ores, and 1 stack of building blocks, and drops all other items.
      */

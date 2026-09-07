@@ -192,6 +192,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
     private enum ShulkerStorageState {
         IDLE,
+        SHOP_PREPARE_SLOT,
+        SHOP_SEND_CMD,
+        SHOP_WAIT_MAIN_MENU,
+        SHOP_WAIT_END_MENU,
+        SHOP_WAIT_CONFIRM_MENU,
+        SHOP_WAIT_RECEIVE,
         CLEAR_SPACE,
         SWAP_TO_HOTBAR,
         SELECT_SLOT,
@@ -227,6 +233,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private final Set<Integer> shulkerUntransferableSlots = new HashSet<>();
     private int shulkerTransferredCount = 0;
     private boolean shulkerClearingInProgress = false;
+    private int shopRetryCount = 0;
+    private int shopActionCooldown = 0;
+    private int shopPurchasedCountBefore = 0;
     private int consecutiveCalcFailures = 0;
     private int shaftConsecutiveFailures = 0;
     private int shulkerCooldownTicks = 0;
@@ -799,6 +808,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             shulkerClearingInProgress = false;
             shulkerMode = ShulkerMode.DEPOSIT;
             shulkerCooldownTicks = 0;
+            shopRetryCount = 0;
+            shopActionCooldown = 0;
+            shopPurchasedCountBefore = 0;
         }
         shulkerCooldownTicks = 0;
         if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
@@ -2459,18 +2471,35 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 baritone.getInputOverrideHandler().clearAllKeys();
                 return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             } else if (transferableSlots > 0 && emptySlots <= 2) {
-                // Nếu người chơi có Shulker nhưng tất cả đều đã đầy (27/27)
-                boolean hasAnyShulker = false;
-                for (int i = 0; i < 36; i++) {
-                    if (isShulkerBox(inv.get(i))) {
-                        hasAnyShulker = true;
-                        break;
+                // Kiểm tra điều kiện mua Shulker Box từ /shop:
+                // "thêm nếu ko còn shuker nào hoặc ko còn shuker nào trống thì dùng /shop..."
+                if (Baritone.settings().autoBuyShulker.value && shulkerSlot == -1 && shulkerCooldownTicks <= 0) {
+                    int totalShulkers = countShulkerBoxesInInventory();
+                    String reason = (totalShulkers == 0)
+                            ? "Không còn Shulker Box nào trong balo"
+                            : "Toàn bộ " + totalShulkers + " Shulker Box trong balo đều đã đầy (27/27)";
+                    logDirect("§e[AutoShop] " + reason + " và balo sắp đầy (" + emptySlots + " ô trống)! Tự động dùng /shop để mua Shulker Box mới...");
+                    shopRetryCount = 0;
+                    shopActionCooldown = 0;
+                    shopPurchasedCountBefore = totalShulkers;
+                    shulkerState = ShulkerStorageState.SHOP_PREPARE_SLOT;
+                    shulkerStateTicks = 0;
+                    baritone.getPathingBehavior().cancelSegmentIfSafe();
+                    baritone.getInputOverrideHandler().clearAllKeys();
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                } else {
+                    boolean hasAnyShulker = false;
+                    for (int i = 0; i < 36; i++) {
+                        if (isShulkerBox(inv.get(i))) {
+                            hasAnyShulker = true;
+                            break;
+                        }
                     }
-                }
-                if (hasAnyShulker && (System.currentTimeMillis() - lastShulkerFullWarningTime > 20000)) {
-                    logDirect("§c[AutoShulker] Toàn bộ Shulker Box trong balo đều đã đầy (27/27 ô)! Không thể cất thêm đồ.");
-                    lastShulkerFullWarningTime = System.currentTimeMillis();
-                    shulkerCooldownTicks = 400; // Cooldown 20s để bot tiếp tục đào và dùng AutoDrop
+                    if (hasAnyShulker && (System.currentTimeMillis() - lastShulkerFullWarningTime > 20000)) {
+                        logDirect("§c[AutoShulker] Toàn bộ Shulker Box trong balo đều đã đầy (27/27 ô)! Không thể cất thêm đồ.");
+                        lastShulkerFullWarningTime = System.currentTimeMillis();
+                        shulkerCooldownTicks = 400; // Cooldown 20s để bot tiếp tục đào và dùng AutoDrop
+                    }
                 }
             }
             return null;
@@ -2482,6 +2511,322 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         shulkerStateTicks++;
 
         switch (shulkerState) {
+            case SHOP_PREPARE_SLOT -> {
+                // YÊU CẦU: "nhớ dành 1 ô trống để cho shuker box vào"
+                NonNullList<ItemStack> currentInv = ctx.player().getInventory().getNonEquipmentItems();
+                int emptyCount = 0;
+                for (int i = 0; i < 36; i++) {
+                    if (currentInv.get(i).isEmpty()) emptyCount++;
+                }
+
+                if (emptyCount >= 1) {
+                    // Đã có ít nhất 1 ô trống sẵn sàng đón nhận Shulker Box
+                    shulkerState = ShulkerStorageState.SHOP_SEND_CMD;
+                    shulkerStateTicks = 0;
+                    shopActionCooldown = 2;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Nếu emptyCount == 0 (balo đầy 100%): Cần vứt bớt 1 stack rác để chừa đúng 1 ô trống!
+                if (shopActionCooldown > 0) {
+                    shopActionCooldown--;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                int trashSlot = -1;
+                // Ưu tiên 1: Tìm rác không được bảo vệ (không phải đồ quý, không phải shulker)
+                for (int i = 1; i < 36; i++) {
+                    ItemStack s = currentInv.get(i);
+                    if (!s.isEmpty() && !isProtectedFromDrop(s)) {
+                        trashSlot = i;
+                        break;
+                    }
+                }
+                // Ưu tiên 2: Tìm block xây dựng thừa
+                if (trashSlot == -1) {
+                    for (int i = 1; i < 36; i++) {
+                        ItemStack s = currentInv.get(i);
+                        if (!s.isEmpty() && isBuildingBlock(s) && !isShulkerBox(s)) {
+                            trashSlot = i;
+                            break;
+                        }
+                    }
+                }
+                // Ưu tiên 3: Vật phẩm bất kỳ ngoại trừ Shulker Box, Tool, Totem, Đồ ăn
+                if (trashSlot == -1) {
+                    for (int i = 1; i < 36; i++) {
+                        ItemStack s = currentInv.get(i);
+                        if (!s.isEmpty() && !isShulkerBox(s) && !isToolOrEssential(s) && !isGoodFood(s) && !s.is(Items.TOTEM_OF_UNDYING)) {
+                            trashSlot = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (trashSlot != -1) {
+                    int windowSlot = (trashSlot < 9) ? (trashSlot + 36) : trashSlot;
+                    logDirect("§e[AutoShop] Balo đầy 100%! Đang vứt 1 stack rác (" + currentInv.get(trashSlot).getHoverName().getString() + ") tại ô " + trashSlot + " để dành 1 ô trống nhận Shulker Box...");
+                    Rotation dropRot = findBestDropRotation();
+                    if (dropRot != null) {
+                        baritone.getLookBehavior().updateTarget(dropRot, true);
+                        if (!LookBehavior.isF5(ctx)) {
+                            ctx.player().setYRot(dropRot.getYaw());
+                            ctx.player().setXRot(dropRot.getPitch());
+                        }
+                    }
+                    ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, windowSlot, 1, ClickType.THROW, ctx.player());
+                    shopActionCooldown = 5;
+                    shulkerStateTicks = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (shulkerStateTicks > 20) {
+                    shulkerState = ShulkerStorageState.SHOP_SEND_CMD;
+                    shulkerStateTicks = 0;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case SHOP_SEND_CMD -> {
+                if (shopActionCooldown > 0) {
+                    shopActionCooldown--;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (ctx.player().containerMenu != ctx.player().inventoryMenu) {
+                    ctx.player().closeContainer();
+                    shopActionCooldown = 5;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (ctx.player().connection != null) {
+                    logDirect("§a[AutoShop] Gửi lệnh /shop...");
+                    ctx.player().connection.sendCommand("shop");
+                }
+                shulkerState = ShulkerStorageState.SHOP_WAIT_MAIN_MENU;
+                shulkerStateTicks = 0;
+                shopActionCooldown = 6;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case SHOP_WAIT_MAIN_MENU -> {
+                if (shopActionCooldown > 0) {
+                    shopActionCooldown--;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                boolean isContainerOpen = ctx.player().containerMenu != ctx.player().inventoryMenu;
+                if (!isContainerOpen) {
+                    if (shulkerStateTicks > 60) {
+                        shopRetryCount++;
+                        if (shopRetryCount <= 2) {
+                            logDirect("§e[AutoShop] Chờ menu SHOP quá 3s! Gửi lại lệnh /shop (lần " + shopRetryCount + ")...");
+                            shulkerState = ShulkerStorageState.SHOP_SEND_CMD;
+                            shulkerStateTicks = 0;
+                        } else {
+                            logDirect("§c[AutoShop] Máy chủ không mở menu SHOP! Hủy quy trình mua Shulker.");
+                            shulkerState = ShulkerStorageState.IDLE;
+                            shulkerCooldownTicks = 300;
+                        }
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Menu SHOP đã mở (Hình 1):
+                // YÊU CẦU: "click vào ô thứ 12" -> slot index 11 (End Stone)
+                int targetSlot = 11;
+                int containerSize = ctx.player().containerMenu.slots.size();
+                ItemStack s11 = containerSize > 11 ? ctx.player().containerMenu.getSlot(11).getItem() : ItemStack.EMPTY;
+                if (!s11.is(Items.END_STONE)) {
+                    for (int i = 0; i < Math.min(27, containerSize); i++) {
+                        ItemStack s = ctx.player().containerMenu.getSlot(i).getItem();
+                        if (s.is(Items.END_STONE) || s.getHoverName().getString().toUpperCase().contains("END")) {
+                            targetSlot = i;
+                            break;
+                        }
+                    }
+                }
+
+                int containerId = ctx.player().containerMenu.containerId;
+                logDirect("§a[AutoShop] Menu SHOP đã mở! Click vào ô thứ 12 (slot " + targetSlot + " - End Stone)...");
+                ctx.playerController().windowClick(containerId, targetSlot, 0, ClickType.PICKUP, ctx.player());
+                shulkerState = ShulkerStorageState.SHOP_WAIT_END_MENU;
+                shulkerStateTicks = 0;
+                shopActionCooldown = 8;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case SHOP_WAIT_END_MENU -> {
+                if (shopActionCooldown > 0) {
+                    shopActionCooldown--;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (ctx.player().containerMenu == ctx.player().inventoryMenu) {
+                    if (shulkerStateTicks > 20) {
+                        logDirect("§c[AutoShop] Menu bị đóng giữa chừng khi đang chờ SHOP -> END! Thử lại...");
+                        shulkerState = ShulkerStorageState.SHOP_SEND_CMD;
+                        shulkerStateTicks = 0;
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Menu SHOP -> END đã mở (Hình 2):
+                // YÊU CẦU: "rồi lại click tiếp vào shuker box"
+                int containerSize = ctx.player().containerMenu.slots.size();
+                int shulkerBoxSlot = -1;
+
+                // Kiểm tra ô chuẩn slot 17 (Hình 2: hàng 2, cột cuối = 9 + 8 = 17)
+                if (containerSize > 17) {
+                    ItemStack s17 = ctx.player().containerMenu.getSlot(17).getItem();
+                    if (isShulkerBox(s17) || s17.is(Items.SHULKER_BOX)) {
+                        shulkerBoxSlot = 17;
+                    }
+                }
+                // Quét tìm ô Shulker Box nếu slot 17 chưa khớp
+                if (shulkerBoxSlot == -1) {
+                    for (int i = 0; i < Math.min(27, containerSize); i++) {
+                        ItemStack s = ctx.player().containerMenu.getSlot(i).getItem();
+                        if (isShulkerBox(s) || s.is(Items.SHULKER_BOX) || s.getHoverName().getString().toLowerCase().contains("shulker")) {
+                            shulkerBoxSlot = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (shulkerBoxSlot != -1) {
+                    int containerId = ctx.player().containerMenu.containerId;
+                    logDirect("§a[AutoShop] Menu SHOP -> END đã mở! Click vào Shulker Box (ô " + shulkerBoxSlot + ")...");
+                    ctx.playerController().windowClick(containerId, shulkerBoxSlot, 0, ClickType.PICKUP, ctx.player());
+                    shulkerState = ShulkerStorageState.SHOP_WAIT_CONFIRM_MENU;
+                    shulkerStateTicks = 0;
+                    shopActionCooldown = 8;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (shulkerStateTicks > 60) {
+                    logDirect("§c[AutoShop] Không tìm thấy Shulker Box trong menu END sau 3s! Đóng menu...");
+                    ctx.player().closeContainer();
+                    shulkerState = ShulkerStorageState.IDLE;
+                    shulkerCooldownTicks = 300;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case SHOP_WAIT_CONFIRM_MENU -> {
+                if (shopActionCooldown > 0) {
+                    shopActionCooldown--;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (ctx.player().containerMenu == ctx.player().inventoryMenu) {
+                    if (shulkerStateTicks > 20) {
+                        logDirect("§c[AutoShop] Menu bị đóng giữa chừng khi đang chờ Xác Nhận!");
+                        shulkerState = ShulkerStorageState.IDLE;
+                        shulkerCooldownTicks = 200;
+                    }
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Menu Mua Hộp Shulker đã mở (Hình 3):
+                // YÊU CẦU: "rồi ấn như hình 3 do it" -> Nút Xác Nhận (kính xanh lá ô 23 với tooltip '✔ XÁC NHẬN')
+                int containerSize = ctx.player().containerMenu.slots.size();
+                int confirmSlot = -1;
+
+                // Kiểm tra ô chuẩn slot 23 (Hình 3: hàng 3, cột 6 = 18 + 5 = 23)
+                if (containerSize > 23) {
+                    ItemStack s23 = ctx.player().containerMenu.getSlot(23).getItem();
+                    String name = s23.getHoverName().getString().toUpperCase();
+                    if (s23.is(Items.LIME_STAINED_GLASS_PANE) || s23.is(Items.GREEN_STAINED_GLASS_PANE)
+                            || name.contains("XÁC NHẬN") || name.contains("CONFIRM")) {
+                        confirmSlot = 23;
+                    }
+                }
+
+                // Quét tìm ô kính xanh lá / nút Xác Nhận nếu slot 23 chưa khớp
+                if (confirmSlot == -1) {
+                    for (int i = 0; i < Math.min(27, containerSize); i++) {
+                        ItemStack s = ctx.player().containerMenu.getSlot(i).getItem();
+                        String name = s.getHoverName().getString().toUpperCase();
+                        if (name.contains("XÁC NHẬN") || name.contains("CONFIRM")
+                                || s.is(Items.LIME_STAINED_GLASS_PANE) || s.is(Items.GREEN_STAINED_GLASS_PANE)) {
+                            confirmSlot = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (confirmSlot != -1) {
+                    int containerId = ctx.player().containerMenu.containerId;
+                    logDirect("§a[AutoShop] Menu Xác Nhận đã mở! Click nút ✔ XÁC NHẬN (ô " + confirmSlot + ")...");
+                    ctx.playerController().windowClick(containerId, confirmSlot, 0, ClickType.PICKUP, ctx.player());
+                    shulkerState = ShulkerStorageState.SHOP_WAIT_RECEIVE;
+                    shulkerStateTicks = 0;
+                    shopActionCooldown = 10;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (shulkerStateTicks > 60) {
+                    logDirect("§c[AutoShop] Không tìm thấy nút Xác Nhận sau 3s! Đóng menu...");
+                    ctx.player().closeContainer();
+                    shulkerState = ShulkerStorageState.IDLE;
+                    shulkerCooldownTicks = 300;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
+            case SHOP_WAIT_RECEIVE -> {
+                if (shopActionCooldown > 0) {
+                    shopActionCooldown--;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Kiểm tra xem đã nhận được Shulker Box mới vào balo chưa
+                int currentShulkerCount = countShulkerBoxesInInventory();
+                int bestSlot = findBestShulkerBoxSlot();
+
+                if (currentShulkerCount > shopPurchasedCountBefore || bestSlot != -1) {
+                    logDirect("§a[AutoShop] Mua Shulker Box thành công! Đã có Shulker Box mới trong balo (Tổng: " + currentShulkerCount + ")!");
+                    if (ctx.player().containerMenu != ctx.player().inventoryMenu) {
+                        ctx.player().closeContainer();
+                    }
+                    if (ctx.minecraft().screen != null) {
+                        ctx.minecraft().setScreen(null);
+                    }
+
+                    // Chuyển ngay sang quy trình đặt Shulker Box để cất quặng!
+                    shulkerClearingInProgress = true;
+                    shulkerBoxCountBefore = countShulkerBoxesInInventory();
+                    int occupied = getShulkerOccupiedSlots(ctx.player().getInventory().getNonEquipmentItems().get(bestSlot));
+                    String slotDesc = (occupied == 0) ? "trống 100%" : (occupied + "/27 ô đã dùng");
+                    int transferable = countTransferableSlots();
+                    logDirect("§a[AutoShulker] Tiến hành đặt Shulker Box mới mua (" + slotDesc + " tại ô " + bestSlot + ") ra để cất " + transferable + " stack quặng...");
+
+                    if (isNearLava(ctx.playerFeet(), 5)) {
+                        shulkerState = ShulkerStorageState.SWAP_TO_HOTBAR;
+                    } else {
+                        shulkerClearOrigin = ctx.playerFeet();
+                        shulkerState = ShulkerStorageState.CLEAR_SPACE;
+                    }
+                    shulkerStateTicks = 0;
+                    shulkerConsecutiveNoTransfer = 0;
+                    shulkerUntransferableSlots.clear();
+                    shulkerTransferredCount = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                if (shulkerStateTicks > 40) {
+                    if (ctx.player().containerMenu != ctx.player().inventoryMenu) {
+                        ctx.player().closeContainer();
+                    }
+                    logDirect("§c[AutoShop] Không nhận được Shulker Box (có thể do không đủ tiền trên server)! Tạm thời tiếp tục đào...");
+                    shulkerState = ShulkerStorageState.IDLE;
+                    shulkerCooldownTicks = 400; // Cooldown 20s
+                    return null;
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+
             case CLEAR_SPACE -> {
                 if (shulkerClearOrigin == null) {
                     shulkerClearOrigin = ctx.playerFeet();
@@ -4166,6 +4511,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.shulkerUntransferableSlots.clear();
         this.shulkerTransferredCount = 0;
         this.shulkerClearingInProgress = false;
+        this.shopRetryCount = 0;
+        this.shopActionCooldown = 0;
+        this.shopPurchasedCountBefore = 0;
         Baritone.settings().noPillar.value = false;
         if (filter != null) {
             rescan(new ArrayList<>(), new CalculationContext(baritone));
