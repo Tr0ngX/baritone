@@ -288,7 +288,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         }
         if (calcFailed) {
             int currentY = ctx.playerFeet().y;
-            if (currentY > targetY && !hasReachedTargetY) {
+            if (currentY > targetY && !hasReachedTargetY && baritone.getPathingBehavior().getGoal() instanceof GoalShaftDown) {
                 shaftConsecutiveFailures++;
                 if (shaftConsecutiveFailures == 3) {
                     logDirect("§6[AutoMine] Đào thẳng đứng (Shaft Down) không thể tìm đường sau 3 lần thử! Tự động chuyển sang đào dốc bậc thang...");
@@ -950,6 +950,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             // Loại bỏ các quặng nằm quá xa phía sau hướng hầm đang đào (tránh quay xe chạy ngược hầm cũ)
             if (tunnelDirection != null && (hasReachedTargetY || Baritone.settings().mineStrictOneDirection.value)) {
                 allCandidates.removeIf(p -> {
+                    if (lockedTargetOre != null && (p.equals(lockedTargetOre) || p.distSqr(lockedTargetOre) <= 64)) {
+                        return false;
+                    }
                     // QUY TẮC CỐT LÕI: Quặng ở cự ly gần (<= 10 block) quanh người TUYỆT ĐỐI KHÔNG BỎ QUA!
                     if (ctx.playerFeet().distSqr(p) <= 100.0) {
                         return false;
@@ -966,7 +969,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 });
             }
             if (ctx.playerFeet().y > targetY + 3 && !hasReachedTargetY) {
-                allCandidates.removeIf(p -> Math.abs(p.getY() - ctx.playerFeet().y) > 6 || ctx.playerFeet().distSqr(p) > 64);
+                allCandidates.removeIf(p -> {
+                    if (lockedTargetOre != null && (p.equals(lockedTargetOre) || p.distSqr(lockedTargetOre) <= 64)) {
+                        return Math.abs(p.getY() - ctx.playerFeet().y) > 12 || ctx.playerFeet().distSqr(p) > 256;
+                    }
+                    return Math.abs(p.getY() - ctx.playerFeet().y) > 6 || ctx.playerFeet().distSqr(p) > 64;
+                });
             }
             locs = prune(context, allCandidates, filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
             if (!locs.isEmpty()) {
@@ -978,12 +986,20 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             CalculationContext context = new CalculationContext(baritone);
             List<BlockPos> locs2 = prune(context, new ArrayList<>(locs), filter, Baritone.settings().mineMaxOreLocationsCount.value, blacklist, droppedItemsScan());
             if (ctx.playerFeet().y > targetY + 3 && !hasReachedTargetY) {
-                locs2.removeIf(p -> Math.abs(p.getY() - ctx.playerFeet().y) > 6 || ctx.playerFeet().distSqr(p) > 64);
+                locs2.removeIf(p -> {
+                    if (lockedTargetOre != null && (p.equals(lockedTargetOre) || p.distSqr(lockedTargetOre) <= 64)) {
+                        return Math.abs(p.getY() - ctx.playerFeet().y) > 12 || ctx.playerFeet().distSqr(p) > 256;
+                    }
+                    return Math.abs(p.getY() - ctx.playerFeet().y) > 6 || ctx.playerFeet().distSqr(p) > 64;
+                });
             }
             
             // CHẾ ĐỘ ĐÀO 1 HƯỚNG DUY NHẤT (STRICT ONE-DIRECTION MINING):
             if (Baritone.settings().mineStrictOneDirection.value && tunnelDirection != null && !isChopMode) {
                 locs2.removeIf(p -> {
+                    if (lockedTargetOre != null && (p.equals(lockedTargetOre) || p.distSqr(lockedTargetOre) <= 64)) {
+                        return false;
+                    }
                     // QUY TẮC CỐT LÕI: Quặng ở cự ly gần (<= 10 block) quanh người TUYỆT ĐỐI KHÔNG BỎ QUA!
                     if (ctx.playerFeet().distSqr(p) <= 100.0) {
                         return false;
@@ -3264,12 +3280,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     double distSq = currentFeet.distSqr(pos);
                     // Xử lý quặng mục tiêu trong bán kính 16 block (distSq <= 256)
                     if (distSq <= 256) {
-                        if (lastStuckOrePos == null || !lastStuckOrePos.equals(pos)) {
+                        if (lastStuckOrePos == null || lastStuckOrePos.distSqr(pos) > 9) {
                             lastStuckOrePos = pos;
                             stuckRetries = 1;
                         }
-                        if (stuckRetries >= 3 && lastCalcFailed) {
-                            // Đã thử nhiều lần và pathfinding thực sự thất bại: Thêm toàn bộ vỉa quặng vào BLACKLIST để không bị kẹt mãi
+                        if (stuckRetries >= 3) {
+                            // Đã thử nhiều lần (>= 3 lần): Thêm toàn bộ vỉa quặng vào BLACKLIST để không bị kẹt mãi
                             List<BlockPos> veinOres = candidates.stream()
                                     .filter(p -> p.equals(pos) || p.distSqr(pos) <= 9)
                                     .collect(Collectors.toList());
@@ -3280,11 +3296,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                             if (knownOreLocations != null) {
                                 knownOreLocations.removeIf(blacklist::contains);
                             }
-                            logDirect("§c[AntiStuck] Quặng tại " + pos.toShortString() + " (" + veinOres.size() + " block) không thể tìm đường tới! Đã BLACKLIST để tiếp tục tiến lên!");
+                            logDirect("§c[AntiStuck] Quặng tại " + pos.toShortString() + " (" + veinOres.size() + " block) không thể tiếp cận/kẹt sau " + stuckRetries + " lần thử! Đã BLACKLIST để tiếp tục tiến lên!");
                             lockedTargetOre = null;
                             forceReroute = true;
                             stuckRetries = 0;
                             lastStuckOrePos = null;
+                            baritone.getPathingBehavior().cancelSegmentIfSafe();
                             return;
                         } else {
                             lockedTargetOre = null;
