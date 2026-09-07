@@ -4967,7 +4967,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
 
             case ENDER_CHEST_WAIT_FOR_CONTAINER -> {
-                if (ctx.player().containerMenu instanceof net.minecraft.world.inventory.ChestMenu || (ctx.player().containerMenu != ctx.player().inventoryMenu && ctx.player().containerMenu.slots.size() >= 63)) {
+                if (ctx.player().containerMenu instanceof net.minecraft.world.inventory.ChestMenu || (ctx.player().containerMenu != ctx.player().inventoryMenu && ctx.player().containerMenu.slots.size() >= 54)) {
                     shulkerState = ShulkerStorageState.ENDER_CHEST_TRANSFER_SHULKERS;
                     shulkerStateTicks = 0;
                     shulkerTransferCooldown = 10; // Đợi 10 tick (0.5s) để server gửi toàn bộ packet nội dung container
@@ -4992,9 +4992,21 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
 
+                int totalSlots = ctx.player().containerMenu.slots.size();
+                if (totalSlots < 36) {
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+
+                // Balo & Hotbar của người chơi luôn nằm ở 36 ô cuối cùng của Container Menu:
+                // - Rương đơn (single chest): 27 ô rương (0..26) + 36 ô balo (27..62) = 63 ô
+                // - Rương đôi (double chest = 2 rương thường như trên KingMC): 54 ô rương (0..53) + 36 ô balo (54..89) = 90 ô
+                int enderChestSlotCount = totalSlots - 36;
+                int playerInvStartSlot = enderChestSlotCount;
+                int playerInvEndSlot = totalSlots;
+
                 // Kiểm tra xem dữ liệu menu từ server đã đồng bộ về client chưa
                 boolean hasAnyPlayerItem = false;
-                for (int slotId = 27; slotId < 63; slotId++) {
+                for (int slotId = playerInvStartSlot; slotId < playerInvEndSlot; slotId++) {
                     if (!ctx.player().containerMenu.getSlot(slotId).getItem().isEmpty()) {
                         hasAnyPlayerItem = true;
                         break;
@@ -5007,18 +5019,22 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 int containerId = ctx.player().containerMenu.containerId;
 
-                // Kiểm tra xem Rương Ender còn chỗ trống không (ô 0 đến 26)
+                // Kiểm tra xem Rương Ender còn chỗ trống không (ô 0 đến enderChestSlotCount - 1)
                 int firstEmptyEnderSlot = -1;
-                for (int b = 0; b < 27; b++) {
+                int enderOccupiedSlots = 0;
+                for (int b = 0; b < enderChestSlotCount; b++) {
                     ItemStack boxItem = ctx.player().containerMenu.getSlot(b).getItem();
                     if (boxItem.isEmpty()) {
-                        firstEmptyEnderSlot = b;
-                        break;
+                        if (firstEmptyEnderSlot == -1) {
+                            firstEmptyEnderSlot = b;
+                        }
+                    } else {
+                        enderOccupiedSlots++;
                     }
                 }
 
                 if (firstEmptyEnderSlot == -1) {
-                    logDirect("§6[AutoEnderChest] Rương Ender đã đầy chỗ (27/27 ô)! Đã cất " + enderChestTransferredCount + " Shulker Box.");
+                    logDirect("§6[AutoEnderChest] Rương Ender đã đầy chỗ (" + enderOccupiedSlots + "/" + enderChestSlotCount + " ô)! Đã cất " + enderChestTransferredCount + " Shulker Box.");
                     shulkerState = ShulkerStorageState.ENDER_CHEST_CLOSE_CONTAINER;
                     shulkerStateTicks = 0;
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -5026,17 +5042,17 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 // Chuyển tối đa 3 Shulker Box vào Rương Ender theo yêu cầu
                 if (enderChestTransferredCount >= 3) {
-                    logDirect("§a[AutoEnderChest] Đã cất đủ 3 Shulker Box vào Rương Ender thành công!");
+                    logDirect("§a[AutoEnderChest] Đã cất đủ 3 Shulker Box vào Rương Ender (" + enderOccupiedSlots + "/" + enderChestSlotCount + " ô) thành công!");
                     shulkerState = ShulkerStorageState.ENDER_CHEST_CLOSE_CONTAINER;
                     shulkerStateTicks = 0;
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
 
-                // Tìm Shulker Box để chuyển vào Rương Ender (slot 27 đến 62)
+                // Tìm Shulker Box trong balo/hotbar người chơi để chuyển vào Rương Ender
                 int transferSlot = -1;
 
                 // 1. Ưu tiên 1: Shulker Box ĐẦY (27/27)
-                for (int slotId = 27; slotId < 63; slotId++) {
+                for (int slotId = playerInvStartSlot; slotId < playerInvEndSlot; slotId++) {
                     ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
                     if (!stack.isEmpty() && isShulkerBoxFull(stack)) {
                         transferSlot = slotId;
@@ -5046,7 +5062,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
                 // 2. Ưu tiên 2: Shulker Box có đồ bên trong (> 0 ô chứa)
                 if (transferSlot == -1) {
-                    for (int slotId = 27; slotId < 63; slotId++) {
+                    for (int slotId = playerInvStartSlot; slotId < playerInvEndSlot; slotId++) {
                         ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
                         if (!stack.isEmpty() && isShulkerBox(stack) && getShulkerOccupiedSlots(stack) > 0) {
                             transferSlot = slotId;
@@ -5058,14 +5074,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 // 3. Ưu tiên 3: Bất kỳ Shulker Box nào nếu người chơi có từ 2 Shulker Box trở lên trong người
                 if (transferSlot == -1) {
                     int totalShulkersInMenu = 0;
-                    for (int slotId = 27; slotId < 63; slotId++) {
+                    for (int slotId = playerInvStartSlot; slotId < playerInvEndSlot; slotId++) {
                         ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
                         if (!stack.isEmpty() && isShulkerBox(stack)) {
                             totalShulkersInMenu += stack.getCount();
                         }
                     }
                     if (totalShulkersInMenu >= 2) {
-                        for (int slotId = 27; slotId < 63; slotId++) {
+                        for (int slotId = playerInvStartSlot; slotId < playerInvEndSlot; slotId++) {
                             ItemStack stack = ctx.player().containerMenu.getSlot(slotId).getItem();
                             if (!stack.isEmpty() && isShulkerBox(stack)) {
                                 transferSlot = slotId;
@@ -5082,7 +5098,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                     ItemStack after = ctx.player().containerMenu.getSlot(transferSlot).getItem();
                     if (before.getCount() != after.getCount() || after.isEmpty()) {
                         enderChestTransferredCount++;
-                        logDirect("§a[AutoEnderChest] Đã cất Shulker Box thứ " + enderChestTransferredCount + "/3 vào Rương Ender!");
+                        int remainingEmpty = enderChestSlotCount - enderOccupiedSlots - 1;
+                        logDirect("§a[AutoEnderChest] Đã cất Shulker Box thứ " + enderChestTransferredCount + "/3 vào Rương Ender (" + enderChestSlotCount + " ô, còn trống " + Math.max(0, remainingEmpty) + " ô)!");
                         shulkerTransferCooldown = 4; // Nhịp 4 tick mượt mà chống kick
                         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                     } else if (firstEmptyEnderSlot != -1) {
@@ -5092,7 +5109,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                         ItemStack enderSlotItem = ctx.player().containerMenu.getSlot(firstEmptyEnderSlot).getItem();
                         if (!enderSlotItem.isEmpty() && isShulkerBox(enderSlotItem)) {
                             enderChestTransferredCount++;
-                            logDirect("§a[AutoEnderChest] Đã cất thủ công Shulker Box thứ " + enderChestTransferredCount + "/3 vào ô " + firstEmptyEnderSlot + " của Rương Ender!");
+                            int remainingEmpty = enderChestSlotCount - enderOccupiedSlots - 1;
+                            logDirect("§a[AutoEnderChest] Đã cất thủ công Shulker Box thứ " + enderChestTransferredCount + "/3 vào ô " + firstEmptyEnderSlot + " của Rương Ender (" + enderChestSlotCount + " ô, còn trống " + Math.max(0, remainingEmpty) + " ô)!");
                             shulkerTransferCooldown = 4;
                             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                         } else {
