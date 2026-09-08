@@ -961,15 +961,28 @@ public class AutoMineScreen extends Screen implements Helper {
 
         // 9. Lớp hiển thị Tooltip giải thích tính năng khi di chuột (Topmost)
         if (hoveredItem != null) {
-            String stateStr = hoveredItem.getter.getAsBoolean() ? "§a[ĐANG BẬT]" : "§c[ĐANG TẮT]";
-            drawModernTooltip(graphics, hoveredItem.name + " " + stateStr, hoveredItem.desc, hoveredItem.details, mouseX, mouseY, hoveredItem.color);
+            drawModernTooltip(graphics,
+                    hoveredItem.name,
+                    hoveredItem.getter.getAsBoolean(),
+                    hoveredItem.desc,
+                    hoveredItem.details,
+                    "§8[Chuột trái] §7Chuyển đổi Bật / Tắt",
+                    mouseX, mouseY, hoveredItem.color);
         } else if (hoveredYSetting) {
-            drawModernTooltip(graphics, "Tầng Đào Y Mục Tiêu", "Độ cao khai thác khoáng sản tối ưu",
+            drawModernTooltip(graphics,
+                    "Tầng Đào Y Mục Tiêu",
+                    null,
+                    "Độ cao khai thác khoáng sản tối ưu",
                     "Nhấn chuột để đổi tầng Y mong muốn: Y=-58 (Nhiều Kim Cương nhất), Y=-54 (Tầng an toàn), Y=11 (Nether/Cũ), hoặc Tầng hiện tại.",
+                    "§8[Chuột trái] §7Thay đổi tầng đào Y",
                     mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
         } else if (hoveredFpsSetting) {
-            drawModernTooltip(graphics, "Giới Hạn FPS", "Tối ưu hóa hiệu năng & nhiệt độ máy",
+            drawModernTooltip(graphics,
+                    "Giới Hạn FPS",
+                    null,
+                    "Tối ưu hóa hiệu năng & nhiệt độ máy",
                     "Nhấn chuột để chuyển đổi giữa các mức FPS (30, 60, 120, 144, 240, Tối Đa) giúp máy chạy mát và tiết kiệm điện khi treo đào lâu.",
+                    "§8[Chuột trái] §7Thay đổi mức FPS",
                     mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
         } else if (hoveredActionIdx >= 0) {
             drawActionTooltip(graphics, hoveredActionIdx, mouseX, mouseY);
@@ -978,8 +991,12 @@ public class AutoMineScreen extends Screen implements Helper {
         } else if (hoveredTabIdx >= 0) {
             drawTabTooltip(graphics, hoveredTabIdx, mouseX, mouseY);
         } else if (hoveredSearch && searchQuery.isEmpty()) {
-            drawModernTooltip(graphics, "Thanh Tìm Kiếm", "Lọc nhanh các tính năng và quặng",
+            drawModernTooltip(graphics,
+                    "Thanh Tìm Kiếm",
+                    null,
+                    "Lọc nhanh các tính năng và quặng",
                     "Nhập từ khóa để tìm kiếm tức thì theo tên hoặc mô tả của mọi tính năng trong Baritone.",
+                    "§8[Bàn phím] §7Gõ để lọc tính năng",
                     mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
         }
     }
@@ -1077,30 +1094,47 @@ public class AutoMineScreen extends Screen implements Helper {
         return lines;
     }
 
-    private void drawModernTooltip(GuiGraphics graphics, String title, String desc, String details, int mouseX, int mouseY, int accentColor) {
-        int maxTextWidth = Math.min(230, Math.max(160, this.width / 3));
+    private void drawModernTooltip(GuiGraphics graphics, String title, Boolean isActive, String desc, String details, String footerHint, int mouseX, int mouseY, int accentColor) {
+        int maxTextWidth = Math.min(280, Math.max(200, (int) (this.width * 0.42f)));
         List<String> detailLines = wrapText(details, maxTextWidth);
 
-        int titleW = this.font.width(title);
-        int descW = (desc != null && !desc.isEmpty()) ? this.font.width(desc) : 0;
-        int maxW = Math.max(titleW, descW);
-        for (String line : detailLines) {
-            maxW = Math.max(maxW, this.font.width(line));
+        // Huy hiệu trạng thái Pill Badge
+        String badgeText = null;
+        int badgeW = 0;
+        if (isActive != null) {
+            badgeText = isActive ? "● BẬT" : "○ TẮT";
+            badgeW = this.font.width(badgeText) + 8;
         }
 
-        int boxPadding = 7;
-        int boxW = Math.min(maxTextWidth + boxPadding * 2 + 8, Math.max(130, maxW + boxPadding * 2 + 8));
-        int lineH = 10;
-        int totalH = boxPadding * 2 + lineH; // Title
+        int titleW = this.font.width(title);
+        int topRowW = titleW + (badgeW > 0 ? badgeW + 16 : 0);
+        int descW = (desc != null && !desc.isEmpty()) ? this.font.width(desc) : 0;
+        int footerW = (footerHint != null && !footerHint.isEmpty()) ? this.font.width(footerHint) : 0;
+
+        int maxContentW = Math.max(topRowW, Math.max(descW, footerW));
+        for (String line : detailLines) {
+            maxContentW = Math.max(maxContentW, this.font.width(line));
+        }
+
+        int padX = 12;
+        int padY = 9;
+        int boxW = Math.max(180, maxContentW + padX * 2);
+        int lineH = 12; // 12px thoáng đãng chuẩn font Unicode, chống dính dấu tiếng Việt
+
+        int totalH = padY + 10; // Top pad + Title row (10)
         if (desc != null && !desc.isEmpty()) {
-            totalH += lineH + 2; // Subtitle
+            totalH += 13; // Subtitle row
         }
         if (!detailLines.isEmpty()) {
-            totalH += 6 + detailLines.size() * lineH; // Separator + details
+            totalH += 7 + detailLines.size() * lineH; // Divider (7) + detail lines
         }
+        if (footerHint != null && !footerHint.isEmpty()) {
+            totalH += 14; // Divider + footer
+        }
+        totalH += padY; // Bottom pad
 
         int tooltipX = mouseX + 12;
-        int tooltipY = mouseY - 8;
+        int tooltipY = mouseY - 10;
 
         if (tooltipX + boxW > this.width - 6) {
             tooltipX = mouseX - boxW - 8;
@@ -1116,63 +1150,94 @@ public class AutoMineScreen extends Screen implements Helper {
             tooltipY = 6;
         }
 
-        // Nền tối mờ chuẩn LiquidBounce Nextgen Dark Glass
-        graphics.fillGradient(tooltipX, tooltipY, tooltipX + boxW, tooltipY + totalH, 0xF80B132B, 0xF8111D3B);
-        ClickGuiTheme.drawOutline(graphics, tooltipX, tooltipY, boxW, totalH, (accentColor & 0x00FFFFFF) | 0x90000000);
-        // Vạch màu chỉ báo bên trái
-        graphics.fill(tooltipX, tooltipY, tooltipX + 3, tooltipY + totalH, accentColor);
+        // 1. Lớp đổ bóng ngoài Ambient Shadow
+        graphics.fill(tooltipX - 2, tooltipY - 2, tooltipX + boxW + 2, tooltipY + totalH + 2, 0x30000000);
+        graphics.fill(tooltipX - 1, tooltipY - 1, tooltipX + boxW + 1, tooltipY + totalH + 1, 0x40000000);
 
-        int curY = tooltipY + boxPadding;
-        int textX = tooltipX + boxPadding + 4;
+        // 2. Nền Dark Glass đa tầng (Midnight Deep Slate)
+        graphics.fillGradient(tooltipX, tooltipY, tooltipX + boxW, tooltipY + totalH, 0xF40F172A, 0xF90A0E1A);
 
-        // Title
-        ClickGuiTheme.drawText(graphics, this.font, title, textX, curY, accentColor, true);
-        curY += lineH;
+        // 3. Viền tinh tế (Subtle Neon Border)
+        int borderColor = (accentColor & 0x00FFFFFF) | 0x75000000;
+        ClickGuiTheme.drawOutline(graphics, tooltipX, tooltipY, boxW, totalH, borderColor);
 
-        // Subtitle / Desc
+        // 4. Thanh phát sáng trên cùng (Top Neon Highlight Bar) kèm ánh sáng loang nhẹ
+        graphics.fill(tooltipX + 1, tooltipY + 1, tooltipX + boxW - 1, tooltipY + 3, accentColor);
+        graphics.fillGradient(tooltipX + 1, tooltipY + 3, tooltipX + boxW - 1, tooltipY + 8, (accentColor & 0x00FFFFFF) | 0x25000000, 0x00000000);
+
+        int curY = tooltipY + padY + 1;
+        int textX = tooltipX + padX;
+
+        // 5. Header: Tiêu đề + Huy hiệu Pill Badge
+        ClickGuiTheme.drawText(graphics, this.font, title, textX, curY, ClickGuiTheme.TEXT_TITLE, true);
+        if (isActive != null) {
+            int badgeX = tooltipX + boxW - padX - badgeW;
+            int badgeY = curY - 1;
+            int badgeBg = isActive ? 0x4010B981 : 0x30334155;
+            int badgeBorder = isActive ? 0x9034D399 : 0x5064748B;
+            int badgeTextColor = isActive ? 0xFF34D399 : 0xFF94A3B8;
+
+            graphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 11, badgeBg);
+            ClickGuiTheme.drawOutline(graphics, badgeX, badgeY, badgeW, 11, badgeBorder);
+            ClickGuiTheme.drawText(graphics, this.font, badgeText, badgeX + 4, badgeY + 2, badgeTextColor, false);
+        }
+        curY += 13;
+
+        // 6. Subtitle / Mô tả ngắn gọn
         if (desc != null && !desc.isEmpty()) {
-            curY += 2;
-            ClickGuiTheme.drawText(graphics, this.font, desc, textX, curY, ClickGuiTheme.TEXT_TITLE, false);
-            curY += lineH;
+            ClickGuiTheme.drawText(graphics, this.font, desc, textX, curY, (accentColor & 0x00FFFFFF) | 0xE0000000, false);
+            curY += 13;
         }
 
-        // Separator and Details
+        // 7. Thân chi tiết với dãn dòng 12px thoáng đãng
         if (!detailLines.isEmpty()) {
-            curY += 2;
-            graphics.fill(textX, curY, tooltipX + boxW - boxPadding, curY + 1, 0x35FFFFFF);
-            curY += 4;
+            graphics.fill(textX, curY, tooltipX + boxW - padX, curY + 1, 0x20FFFFFF);
+            curY += 6;
             for (String line : detailLines) {
-                ClickGuiTheme.drawText(graphics, this.font, line, textX, curY, ClickGuiTheme.TEXT_MUTED, false);
+                ClickGuiTheme.drawText(graphics, this.font, line, textX, curY, 0xFFCBD5E1, false);
                 curY += lineH;
             }
+        }
+
+        // 8. Footer phím tắt thao tác
+        if (footerHint != null && !footerHint.isEmpty()) {
+            curY += 1;
+            graphics.fill(textX, curY, tooltipX + boxW - padX, curY + 1, 0x14FFFFFF);
+            curY += 5;
+            ClickGuiTheme.drawText(graphics, this.font, footerHint, textX, curY, 0xFF64748B, false);
         }
     }
 
     private void drawActionTooltip(GuiGraphics graphics, int a, int mouseX, int mouseY) {
         switch (a) {
             case 0:
-                drawModernTooltip(graphics, "Bắt Đầu Đào Quặng", "Khởi chạy quy trình tự động đào khoáng",
+                drawModernTooltip(graphics, "Bắt Đầu Đào Quặng", null, "Khởi chạy quy trình tự động đào khoáng",
                         "Khởi động thuật toán tìm đường ARA* và tiến trình đào khoáng sản theo danh sách quặng đã chọn trong tab Quặng.",
+                        "§8[Chuột trái] §7Khai thác ngay",
                         mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                 break;
             case 1:
-                drawModernTooltip(graphics, "Bắt Đầu Chặt Cây", "Khởi chạy quy trình tự động chặt cây",
+                drawModernTooltip(graphics, "Bắt Đầu Chặt Cây", null, "Khởi chạy quy trình tự động chặt cây",
                         "Tự động quét thế giới xung quanh và di chuyển đốn hạ các loại cây đã chọn trong tab Chặt Cây.",
+                        "§8[Chuột trái] §7Đốn gỗ ngay",
                         mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
                 break;
             case 2:
-                drawModernTooltip(graphics, "Dừng Toàn Bộ", "Hủy bỏ mọi hoạt động ngay lập tức",
+                drawModernTooltip(graphics, "Dừng Toàn Bộ", null, "Hủy bỏ mọi hoạt động ngay lập tức",
                         "Dừng tìm đường, ngừng đập khối, xóa phím bấm và đóng mọi giao diện rương ngay lập tức.",
+                        "§8[Chuột trái] §7Dừng khẩn cấp",
                         mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
                 break;
             case 3:
-                drawModernTooltip(graphics, "Đặt Lại Chỉ Số", "Làm mới bảng thống kê phiên đào",
+                drawModernTooltip(graphics, "Đặt Lại Chỉ Số", null, "Làm mới bảng thống kê phiên đào",
                         "Xóa toàn bộ số liệu thời gian đào, tổng số khối đã đập và số lượng quặng/kim cương thu thập về 0.",
+                        "§8[Chuột trái] §7Xóa số liệu cũ",
                         mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
                 break;
             case 4:
-                drawModernTooltip(graphics, "Đóng Bảng Điều Khiển", "Lưu cài đặt và quay lại game",
+                drawModernTooltip(graphics, "Đóng Bảng Điều Khiển", null, "Lưu cài đặt và quay lại game",
                         "Tự động lưu toàn bộ cấu hình đã chỉnh vào file automine_config.json và đóng giao diện này.",
+                        "§8[Chuột trái] §7Lưu & Thoát",
                         mouseX, mouseY, ClickGuiTheme.TEXT_MUTED);
                 break;
         }
@@ -1182,46 +1247,54 @@ public class AutoMineScreen extends Screen implements Helper {
         if (tab == 0) { // Ores
             switch (q) {
                 case 0:
-                    drawModernTooltip(graphics, "Chọn Tất Cả Quặng", "Bật toàn bộ 10 loại khoáng sản",
+                    drawModernTooltip(graphics, "Chọn Tất Cả Quặng", null, "Bật toàn bộ 10 loại khoáng sản",
                             "Tự động kích hoạt toàn bộ các loại quặng: Kim Cương, Mảnh Cổ Đại, Ngọc Lục Bảo, Vàng, Sắt, Đá Đỏ, Ngọc Lưu Ly, Đồng, Than Đá, Thạch Anh.",
+                            "§8[Chuột trái] §7Áp dụng chọn hết",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                     break;
                 case 1:
-                    drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", "Tắt hết tất cả quặng",
+                    drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", null, "Tắt hết tất cả quặng",
                             "Tắt chọn toàn bộ quặng để bạn có thể chọn thủ công từng loại quặng mong muốn.",
+                            "§8[Chuột trái] §7Áp dụng bỏ chọn",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
                     break;
                 case 2:
-                    drawModernTooltip(graphics, "Đảo Ngược Lựa Chọn", "Đảo trạng thái các quặng",
+                    drawModernTooltip(graphics, "Đảo Ngược Lựa Chọn", null, "Đảo trạng thái các quặng",
                             "Quặng nào đang Bật sẽ chuyển thành Tắt, và quặng nào đang Tắt sẽ chuyển thành Bật.",
+                            "§8[Chuột trái] §7Áp dụng đảo ngược",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
                     break;
                 case 3:
-                    drawModernTooltip(graphics, "Bộ Quặng Chuẩn", "Chọn lọc quặng quý giá trị cao",
+                    drawModernTooltip(graphics, "Bộ Quặng Chuẩn", null, "Chọn lọc quặng quý giá trị cao",
                             "Chỉ chọn Kim Cương, Ngọc Lục Bảo, Ngọc Lưu Ly và Đá Đỏ giúp tối ưu diện tích túi đồ.",
+                            "§8[Chuột trái] §7Áp dụng mặc định",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
                     break;
             }
         } else if (tab == 1) { // Trees
             switch (q) {
                 case 0:
-                    drawModernTooltip(graphics, "Chọn Tất Cả Cây", "Bật toàn bộ 11 loại gỗ",
+                    drawModernTooltip(graphics, "Chọn Tất Cả Cây", null, "Bật toàn bộ 11 loại gỗ",
                             "Kích hoạt toàn bộ các loại gỗ trong Overworld và Nether: Sồi, Bạch Dương, Rừng Rậm, Hoa Anh Đào, Tre, Rừng Đỏ, Rừng Xanh, v.v.",
+                            "§8[Chuột trái] §7Áp dụng chọn hết",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                     break;
                 case 1:
-                    drawModernTooltip(graphics, "Gỗ Thế Giới Thường", "Chỉ chọn cây ở Overworld",
+                    drawModernTooltip(graphics, "Gỗ Thế Giới Thường", null, "Chỉ chọn cây ở Overworld",
                             "Chỉ chọn các loại gỗ mặt đất, bỏ chọn gỗ Rừng Đỏ (Crimson) và Rừng Xanh (Warped) ở Nether.",
+                            "§8[Chuột trái] §7Áp dụng Overworld",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
                     break;
                 case 2:
-                    drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", "Tắt hết tất cả loại cây",
+                    drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", null, "Tắt hết tất cả loại cây",
                             "Tắt chọn toàn bộ cây để bạn tự chọn thủ công những loại gỗ cần đốn hạ.",
+                            "§8[Chuột trái] §7Áp dụng bỏ chọn",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
                     break;
                 case 3:
-                    drawModernTooltip(graphics, "Gỗ Thông Dụng", "Khai thác các loại gỗ cơ bản",
+                    drawModernTooltip(graphics, "Gỗ Thông Dụng", null, "Khai thác các loại gỗ cơ bản",
                             "Bật chọn các loại cây gỗ phổ biến nhất trong thế giới.",
+                            "§8[Chuột trái] §7Áp dụng thông dụng",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
                     break;
             }
@@ -1229,35 +1302,43 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private void drawTabTooltip(GuiGraphics graphics, int tab, int mouseX, int mouseY) {
+        boolean isTabActive = (activeTab == tab && searchQuery.isEmpty());
+        String tabHint = isTabActive ? "§a● Tab đang mở" : "§8[Chuột trái] §7Chuyển sang tab này";
         switch (tab) {
             case 0:
-                drawModernTooltip(graphics, "Tab Quặng (Khoáng Sản)", "Cấu hình danh sách quặng khai thác",
+                drawModernTooltip(graphics, "Tab Quặng (Khoáng Sản)", isTabActive, "Cấu hình danh sách quặng khai thác",
                         "Tùy chọn 10 loại khoáng sản (Kim Cương, Mảnh Cổ Đại, Ngọc Lục Bảo, v.v.) muốn bot tự động tìm kiếm.",
+                        tabHint,
                         mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                 break;
             case 1:
-                drawModernTooltip(graphics, "Tab Chặt Cây", "Cấu hình danh sách cây gỗ khai thác",
+                drawModernTooltip(graphics, "Tab Chặt Cây", isTabActive, "Cấu hình danh sách cây gỗ khai thác",
                         "Tùy chọn 11 loại gỗ (Sồi, Bạch Dương, Tre, Anh Đào, v.v.) muốn bot tự động đốn hạ.",
+                        tabHint,
                         mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
                 break;
             case 2:
-                drawModernTooltip(graphics, "Tab Đi Lại (Di Chuyển)", "Cấu hình vượt địa hình & di chuyển",
+                drawModernTooltip(graphics, "Tab Đi Lại (Di Chuyển)", isTabActive, "Cấu hình vượt địa hình & di chuyển",
                         "Tùy chỉnh Chạy Nhanh, Nhảy Parkour, Vượt Nước, Đào 1 Block (Crawl) và Đào Thẳng Xuống.",
+                        tabHint,
                         mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                 break;
             case 3:
-                drawModernTooltip(graphics, "Tab Sinh Tồn", "Cấu hình bảo vệ mạng sống & túi đồ",
+                drawModernTooltip(graphics, "Tab Sinh Tồn", isTabActive, "Cấu hình bảo vệ mạng sống & túi đồ",
                         "Tự Ăn, Tự Cầm Totem, Tự Đăng Xuất Khi Máu Thấp, Cất Đồ Shulker và Tự Lọc Ném Bỏ Rác.",
+                        tabHint,
                         mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
                 break;
             case 4:
-                drawModernTooltip(graphics, "Tab Giao Diện", "Cấu hình hiển thị & hiệu năng",
+                drawModernTooltip(graphics, "Tab Giao Diện", isTabActive, "Cấu hình hiển thị & hiệu năng",
                         "Tùy chỉnh HUD thống kê, Đặt khối 1-tick, Giới hạn FPS, Chế độ Streamer và Tầng Y đào.",
+                        tabHint,
                         mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
                 break;
             case 5:
-                drawModernTooltip(graphics, "Tab Chỉ Số (Giám Sát)", "Bảng thống kê phần cứng & phiên đào",
+                drawModernTooltip(graphics, "Tab Chỉ Số (Giám Sát)", isTabActive, "Bảng thống kê phần cứng & phiên đào",
                         "Theo dõi thời gian thực FPS, CPU, RAM, GPU, thời gian đào, tốc độ khối/giờ và số kim cương thu được.",
+                        tabHint,
                         mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
                 break;
         }
