@@ -578,14 +578,14 @@ public final class MiningStatsTracker {
         int themeColor = isChop ? 0xFF34D399 : 0xFF38BDF8;
         int outlineColor = isChop ? 0x4034D399 : 0x4038BDF8;
 
-        // 1. Nền Card tối mờ chuẩn Sleek Dark
-        guiGraphics.fill(x, y, x + width, y + cardH, 0xB8080C14);
+        // 1. Hiệu ứng Ambient Bloom bao quanh card
+        ClickGuiTheme.drawGlowPanel(guiGraphics, x, y, width, cardH, themeColor);
 
-        // 2. Viền mỏng Neon
-        drawOutline(guiGraphics, x, y, width, cardH, outlineColor);
+        // 2. Card Double-Bezel cao cấp với specular highlight và viền hairline
+        ClickGuiTheme.drawDoubleBezelCard(guiGraphics, x, y, width, cardH, themeColor, isMining, false);
 
-        // 3. Thanh điểm nhấn neon trên cùng
-        guiGraphics.fill(x + 1, y + 1, x + width - 1, y + 3, themeColor);
+        // 3. Vạch trang trí đứng bên trái
+        guiGraphics.fill(x + 1, y + 2, x + 3, y + cardH - 2, themeColor);
 
         int curY = y + 6;
 
@@ -622,7 +622,11 @@ public final class MiningStatsTracker {
             curY += 3;
 
             for (DisplayRow row : displayRows) {
-                // Hình icon item 3D Minecraft (16x16)
+                // Nền kính mờ bảo vệ Item Icon thật
+                int iconBg = row.getCount() > 0 ? ((row.getColor() & 0x00FFFFFF) | 0x22000000) : 0x10FFFFFF;
+                int iconBorder = row.getCount() > 0 ? ((row.getColor() & 0x00FFFFFF) | 0x50000000) : 0x18FFFFFF;
+                guiGraphics.fill(x + 4, curY - 1, x + 22, curY + 17, iconBg);
+                ClickGuiTheme.drawOutline(guiGraphics, x + 4, curY - 1, 18, 18, iconBorder);
                 guiGraphics.renderFakeItem(row.getItemStack(), x + 5, curY);
 
                 // Tên item tiếng Việt

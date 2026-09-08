@@ -140,6 +140,7 @@ public class AutoMineScreen extends Screen implements Helper {
 
     private String searchQuery = "";
     private boolean searchFocused = false;
+    public static int filterMode = 0; // 0: Tất cả, 1: Đang Bật, 2: Đang Tắt
     private int scrollOffset = 0;
     private int maxScroll = 0;
 
@@ -152,6 +153,8 @@ public class AutoMineScreen extends Screen implements Helper {
         final int tabW;
         final int searchY;
         final int searchH;
+        final int searchBoxW;
+        final int filterW;
         final int quickY;
         final int quickH;
         final int contentY;
@@ -182,12 +185,19 @@ public class AutoMineScreen extends Screen implements Helper {
             this.tabH = screenH < 320 ? 18 : 22;
             this.tabW = this.panelW / 6;
 
-            // Search bar
+            // Search bar & Filter Chips
             this.searchY = this.tabY + this.tabH + 3;
             this.searchH = screenH < 320 ? 16 : 19;
+            if (this.panelW >= 480) {
+                this.filterW = 156;
+                this.searchBoxW = this.panelW - this.filterW - 6;
+            } else {
+                this.filterW = 0;
+                this.searchBoxW = this.panelW;
+            }
 
-            // Nút chọn nhanh (Tab 0 Quặng hoặc Tab 1 Cây)
-            boolean showQuick = (activeTab == 0 || activeTab == 1) && !hasSearch;
+            // Nút chọn nhanh (Tab 0 Quặng, Tab 1 Cây, Tab 2 Di Chuyển, Tab 3 Sinh Tồn)
+            boolean showQuick = (activeTab >= 0 && activeTab <= 3) && !hasSearch;
             this.quickH = showQuick ? (screenH < 320 ? 15 : 18) : 0;
             this.quickY = this.searchY + this.searchH + 3;
 
@@ -469,36 +479,165 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private String getResponsiveQuickTitle(int q, int btnW, int currentTab) {
-        if (currentTab == 1) {
+        if (currentTab == 0) { // Quặng
             if (btnW >= 70) {
                 switch (q) {
-                    case 0: return "[ TẤT CẢ ]";
-                    case 1: return "[ CÂY THƯỜNG ]";
+                    case 0: return "[ KIM CƯƠNG+ ]";
+                    case 1: return "[ TẤT CẢ ]";
                     case 2: return "[ BỎ CHỌN ]";
+                    default: return "[ ĐẢO NGƯỢC ]";
+                }
+            } else {
+                switch (q) {
+                    case 0: return "[QUÝ]";
+                    case 1: return "[TẤT CẢ]";
+                    case 2: return "[BỎ]";
+                    default: return "[ĐẢO]";
+                }
+            }
+        } else if (currentTab == 1) { // Cây
+            if (btnW >= 70) {
+                switch (q) {
+                    case 0: return "[ GỖ THƯỜNG ]";
+                    case 1: return "[ TẤT CẢ ]";
+                    case 2: return "[ BỎ CHỌN ]";
+                    default: return "[ NETHER ]";
+                }
+            } else {
+                switch (q) {
+                    case 0: return "[THƯỜNG]";
+                    case 1: return "[TẤT CẢ]";
+                    case 2: return "[BỎ]";
+                    default: return "[NETHER]";
+                }
+            }
+        } else if (currentTab == 2) { // Di chuyển
+            if (btnW >= 70) {
+                switch (q) {
+                    case 0: return "[ TỐC ĐỘ MAX ]";
+                    case 1: return "[ AN TOÀN ]";
+                    case 2: return "[ ĐỊA HÌNH ]";
                     default: return "[ MẶC ĐỊNH ]";
                 }
             } else {
                 switch (q) {
-                    case 0: return "[TẤT CẢ]";
-                    case 1: return "[THƯỜNG]";
-                    case 2: return "[BỎ CHỌN]";
+                    case 0: return "[TỐC ĐỘ]";
+                    case 1: return "[AN TOÀN]";
+                    case 2: return "[PARKOUR]";
+                    default: return "[CHUẨN]";
+                }
+            }
+        } else if (currentTab == 3) { // Sinh tồn
+            if (btnW >= 70) {
+                switch (q) {
+                    case 0: return "[ BẢO VỆ MAX ]";
+                    case 1: return "[ TREO MÁY ]";
+                    case 2: return "[ GIỮ ĐỒ ]";
+                    default: return "[ MẶC ĐỊNH ]";
+                }
+            } else {
+                switch (q) {
+                    case 0: return "[BẢO VỆ]";
+                    case 1: return "[AFK]";
+                    case 2: return "[GIỮ]";
                     default: return "[CHUẨN]";
                 }
             }
         }
-        if (btnW >= 70) {
-            switch (q) {
-                case 0: return "[ TẤT CẢ ]";
-                case 1: return "[ BỎ CHỌN ]";
-                case 2: return "[ ĐẢO NGƯỢC ]";
-                default: return "[ MẶC ĐỊNH ]";
+        return "";
+    }
+
+    private void applyQuickPreset(int tab, int q) {
+        if (tab == 0) { // Quặng
+            if (q == 0) {
+                oreDiamond = oreEmerald = oreDebris = oreLapis = oreRedstone = true;
+                oreGold = oreIron = oreCopper = oreCoal = oreQuartz = false;
+            } else if (q == 1) {
+                oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = true;
+            } else if (q == 2) {
+                oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
+            } else {
+                oreDiamond = !oreDiamond;
+                oreLapis = !oreLapis;
+                oreRedstone = !oreRedstone;
+                oreGold = !oreGold;
+                oreIron = !oreIron;
+                oreEmerald = !oreEmerald;
+                oreDebris = !oreDebris;
+                oreCopper = !oreCopper;
+                oreCoal = !oreCoal;
+                oreQuartz = !oreQuartz;
             }
-        } else {
-            switch (q) {
-                case 0: return "[TẤT CẢ]";
-                case 1: return "[BỎ CHỌN]";
-                case 2: return "[ĐẢO NGƯỢC]";
-                default: return "[CHUẨN]";
+        } else if (tab == 1) { // Cây cối
+            if (q == 0) {
+                woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = true;
+                woodCrimson = woodWarped = false;
+            } else if (q == 1) {
+                woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = woodCrimson = woodWarped = true;
+            } else if (q == 2) {
+                woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = woodCrimson = woodWarped = false;
+            } else {
+                woodCrimson = woodWarped = true;
+                woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = false;
+            }
+        } else if (tab == 2) { // Di chuyển
+            if (q == 0) { // Tối Đa Tốc Độ
+                optTunnelBhop = true;
+                optAutoSprint = true;
+                optZeroDelay = true;
+                optOvershoot = true;
+                optWaterSprint = true;
+            } else if (q == 1) { // An Toàn
+                optShaftDown = true;
+                optWaterCheck = true;
+                optTunnelBhop = false;
+                optStrictOneDirection = true;
+                Baritone.settings().mineStrictOneDirection.value = true;
+            } else if (q == 2) { // Vượt Địa Hình
+                optParkour = true;
+                optZeroDelay = true;
+                optCrawlMode = false;
+                Baritone.settings().clientFreeLook.value = true;
+            } else { // Mặc Định
+                optZeroDelay = true;
+                optTunnelBhop = true;
+                optAutoSprint = true;
+                optShaftDown = true;
+                optParkour = true;
+                optOvershoot = true;
+                optWaterSprint = true;
+                optStrictOneDirection = true;
+                Baritone.settings().mineStrictOneDirection.value = true;
+            }
+        } else if (tab == 3) { // Sinh tồn
+            if (q == 0) { // Bảo Vệ Tối Đa
+                optAutoEat = true;
+                optAutoTotem = true;
+                optAutoLogout = true;
+                Baritone.settings().autoLogoutOnDanger.value = true;
+                optMobAvoid = true;
+                optWaterCheck = true;
+            } else if (q == 1) { // Treo Máy (AFK)
+                optAutoEat = true;
+                optAutoTotem = true;
+                optShulkerStorage = true;
+                optAutoDrop = true;
+                optAutoTool = true;
+            } else if (q == 2) { // Giữ Đồ
+                optAutoTool = true;
+                optShulkerStorage = true;
+                optAutoDrop = false;
+                optAutoEat = true;
+            } else { // Mặc Định
+                optAutoTool = true;
+                optAutoEat = true;
+                optAutoTotem = true;
+                optAutoLogout = false;
+                Baritone.settings().autoLogoutOnDanger.value = false;
+                optShulkerStorage = true;
+                optAutoDrop = true;
+                optMobAvoid = true;
+                optWaterCheck = true;
             }
         }
     }
@@ -573,62 +712,41 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         }
 
-        // 2. Kiểm tra Click vào Search Bar
-        if (mouseX >= l.panelX && mouseX <= l.panelX + l.panelW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH) {
+        // 2. Kiểm tra Click vào Filter Chips (Tất Cả / Đang Bật / Đang Tắt)
+        if (l.filterW > 0 && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH) {
+            int chipStart = l.panelX + l.searchBoxW + 6;
+            int chipW = (l.filterW - 4) / 3;
+            for (int c = 0; c < 3; c++) {
+                int cx = chipStart + c * (chipW + 2);
+                if (mouseX >= cx && mouseX <= cx + chipW) {
+                    filterMode = c;
+                    scrollOffset = 0;
+                    return true;
+                }
+            }
+        }
+
+        // 3. Kiểm tra Click vào Search Bar & Nút [×] xóa nhanh
+        if (mouseX >= l.panelX && mouseX <= l.panelX + l.searchBoxW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH) {
+            if (!searchQuery.isEmpty() && mouseX >= l.panelX + l.searchBoxW - 18) {
+                searchQuery = "";
+                searchFocused = false;
+                scrollOffset = 0;
+                return true;
+            }
             searchFocused = true;
             return true;
         } else {
             searchFocused = false;
         }
 
-        // 3. Kiểm tra Click vào Quick Select Buttons (Tab 0 Ores hoặc Tab 1 Trees)
-        if ((activeTab == 0 || activeTab == 1) && searchQuery.isEmpty()) {
+        // 4. Kiểm tra Click vào Quick Select Presets (Tab 0, 1, 2, 3)
+        if ((activeTab >= 0 && activeTab <= 3) && searchQuery.isEmpty()) {
             int btnW = (l.panelW - 3 * 4) / 4;
             for (int q = 0; q < 4; q++) {
                 int qx = l.panelX + q * (btnW + 4);
                 if (mouseX >= qx && mouseX <= qx + btnW && mouseY >= l.quickY && mouseY <= l.quickY + l.quickH) {
-                    if (activeTab == 0) {
-                        if (q == 0) {
-                            oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = true;
-                        } else if (q == 1) {
-                            oreDiamond = oreLapis = oreRedstone = oreGold = oreIron = oreEmerald = oreDebris = oreCopper = oreCoal = oreQuartz = false;
-                        } else if (q == 2) {
-                            oreDiamond = !oreDiamond;
-                            oreLapis = !oreLapis;
-                            oreRedstone = !oreRedstone;
-                            oreGold = !oreGold;
-                            oreIron = !oreIron;
-                            oreEmerald = !oreEmerald;
-                            oreDebris = !oreDebris;
-                            oreCopper = !oreCopper;
-                            oreCoal = !oreCoal;
-                            oreQuartz = !oreQuartz;
-                        } else {
-                            oreDiamond = true;
-                            oreLapis = true;
-                            oreRedstone = true;
-                            oreGold = false;
-                            oreIron = false;
-                            oreEmerald = true;
-                            oreDebris = false;
-                            oreCopper = false;
-                            oreCoal = false;
-                            oreQuartz = false;
-                        }
-                    } else if (activeTab == 1) {
-                        if (q == 0) {
-                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = woodCrimson = woodWarped = true;
-                        } else if (q == 1) {
-                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = true;
-                            woodCrimson = woodWarped = false;
-                        } else if (q == 2) {
-                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = woodCrimson = woodWarped = false;
-                        } else {
-                            woodOak = woodBirch = woodSpruce = woodJungle = woodAcacia = woodDarkOak = woodMangrove = woodCherry = woodBamboo = true;
-                            woodCrimson = false;
-                            woodWarped = false;
-                        }
-                    }
+                    applyQuickPreset(activeTab, q);
                     AutoMineConfig.save();
                     return true;
                 }
@@ -716,17 +834,23 @@ public class AutoMineScreen extends Screen implements Helper {
         String query = searchQuery.trim().toLowerCase();
 
         for (ModuleItem item : allModules) {
+            boolean match = false;
             if (!query.isEmpty()) {
-                if (item.name.toLowerCase().contains(query) || item.desc.toLowerCase().contains(query)) {
-                    result.add(item);
-                }
+                match = item.name.toLowerCase().contains(query) || item.desc.toLowerCase().contains(query);
             } else {
-                if (activeTab == 0 && item.category.equals("ORES")) result.add(item);
-                else if (activeTab == 1 && item.category.equals("TREES")) result.add(item);
-                else if (activeTab == 2 && item.category.equals("MOVEMENT")) result.add(item);
-                else if (activeTab == 3 && item.category.equals("SURVIVAL")) result.add(item);
-                else if (activeTab == 4 && item.category.equals("HUD")) result.add(item);
+                if (activeTab == 0 && item.category.equals("ORES")) match = true;
+                else if (activeTab == 1 && item.category.equals("TREES")) match = true;
+                else if (activeTab == 2 && item.category.equals("MOVEMENT")) match = true;
+                else if (activeTab == 3 && item.category.equals("SURVIVAL")) match = true;
+                else if (activeTab == 4 && item.category.equals("HUD")) match = true;
             }
+            if (!match) continue;
+
+            // Áp dụng bộ lọc trạng thái (0: Tất Cả, 1: Đang Bật, 2: Đang Tắt)
+            if (filterMode == 1 && !item.getter.getAsBoolean()) continue;
+            if (filterMode == 2 && item.getter.getAsBoolean()) continue;
+
+            result.add(item);
         }
         return result;
     }
@@ -745,15 +869,32 @@ public class AutoMineScreen extends Screen implements Helper {
         int hoveredQuickIdx = -1;
         int hoveredTabIdx = -1;
         boolean hoveredSearch = false;
+        int hoveredFilterIdx = -1;
 
-        // 1. Header Bar với Logo Neon, Ambient Glow & Version Tag
+        // 1. Header Bar với Logo Neon, Live Status Badge & Version Tag
         ClickGuiTheme.drawGlowPanel(graphics, l.panelX, 3, l.panelW, this.height - 6, ClickGuiTheme.ACCENT_CYAN);
         graphics.fill(l.panelX, 3, l.panelX + l.panelW, 4, ClickGuiTheme.ACCENT_CYAN);
-        ClickGuiTheme.drawText(graphics, this.font, "BẢNG ĐIỀU KHIỂN TR0NGX", l.panelX + 4, 7, ClickGuiTheme.ACCENT_CYAN, true);
-        if (l.panelW >= 420) {
-            String versionTag = "v1.21.11 ỔN ĐỊNH | ARA* ENGINE";
+        ClickGuiTheme.drawText(graphics, this.font, "TR0NGX", l.panelX + 6, 7, ClickGuiTheme.ACCENT_CYAN, true);
+        int logoW = this.font.width("TR0NGX");
+        graphics.fill(l.panelX + 8 + logoW, 7, l.panelX + 9 + logoW, 15, 0x5064748B);
+        ClickGuiTheme.drawText(graphics, this.font, "BẢNG ĐIỀU KHIỂN NEXTGEN", l.panelX + 13 + logoW, 7, ClickGuiTheme.TEXT_MUTED, false);
+
+        boolean isMining = baritone.getMineProcess().isActive();
+        boolean isChop = baritone.getMineProcess().isChopMode();
+        String liveBadge = isMining ? (isChop ? "● ĐANG CHẶT GỖ" : "● ĐANG ĐÀO QUẶNG") : "● SẴN SÀNG";
+        int liveColor = isMining ? (isChop ? ClickGuiTheme.ACCENT_EMERALD : ClickGuiTheme.ACCENT_CYAN) : 0xFF34D399;
+        if (l.panelW >= 460) {
+            int liveW = this.font.width(liveBadge) + 8;
+            int liveX = l.panelX + l.panelW - liveW - (l.panelW >= 560 ? 110 : 6);
+            graphics.fill(liveX, 5, liveX + liveW, 16, (liveColor & 0x00FFFFFF) | 0x25000000);
+            ClickGuiTheme.drawOutline(graphics, liveX, 5, liveW, 11, (liveColor & 0x00FFFFFF) | 0x60000000);
+            ClickGuiTheme.drawText(graphics, this.font, liveBadge, liveX + 4, 7, liveColor, true);
+        }
+
+        if (l.panelW >= 560) {
+            String versionTag = "v1.21.11 STABLE";
             int vW = this.font.width(versionTag);
-            ClickGuiTheme.drawText(graphics, this.font, versionTag, l.panelX + l.panelW - vW - 4, 7, ClickGuiTheme.TEXT_MUTED, false);
+            ClickGuiTheme.drawText(graphics, this.font, versionTag, l.panelX + l.panelW - vW - 6, 7, ClickGuiTheme.TEXT_DIM, false);
         }
 
         // 2. LiquidBounce Nextgen Tab Bar (100% Responsive Tab Titles)
@@ -771,29 +912,53 @@ public class AutoMineScreen extends Screen implements Helper {
             ClickGuiTheme.drawTab(graphics, this.font, TAB_ITEM_ICONS[i], tabTitle, tx, l.tabY, l.tabW, l.tabH, isTabActive, isTabHover, ClickGuiTheme.ACCENT_CYAN);
         }
 
-        // 3. Quick Search Bar
-        graphics.fill(l.panelX, l.searchY, l.panelX + l.panelW, l.searchY + l.searchH, ClickGuiTheme.BG_INPUT);
+        // 3. Search Bar + 3 Filter Chips (Tất Cả / Đang Bật / Đang Tắt)
+        int searchBoxW = l.searchBoxW;
+        graphics.fill(l.panelX, l.searchY, l.panelX + searchBoxW, l.searchY + l.searchH, ClickGuiTheme.BG_INPUT);
         int searchBorder = searchFocused ? ClickGuiTheme.ACCENT_CYAN : ClickGuiTheme.BORDER_CARD;
-        ClickGuiTheme.drawOutline(graphics, l.panelX, l.searchY, l.panelW, l.searchH, searchBorder);
+        ClickGuiTheme.drawOutline(graphics, l.panelX, l.searchY, searchBoxW, l.searchH, searchBorder);
 
-        boolean searchHover = mouseX >= l.panelX && mouseX <= l.panelX + l.panelW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH;
+        boolean searchHover = mouseX >= l.panelX && mouseX <= l.panelX + searchBoxW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH;
         if (searchHover) {
             hoveredSearch = true;
         }
 
-        String searchPrompt = searchQuery.isEmpty() ? (searchFocused ? "" : "Tìm kiếm tính năng, quặng...") : searchQuery;
+        String searchPrompt = searchQuery.isEmpty() ? (searchFocused ? "" : "⌕  Tìm kiếm tính năng, quặng...") : searchQuery;
         int searchColor = searchQuery.isEmpty() ? ClickGuiTheme.TEXT_DIM : ClickGuiTheme.TEXT_TITLE;
         int searchPromptY = l.searchY + (l.searchH - 8) / 2;
         ClickGuiTheme.drawText(graphics, this.font, searchPrompt, l.panelX + 6, searchPromptY, searchColor, false);
         if (searchFocused && (System.currentTimeMillis() / 400) % 2 == 0) {
             int cursorX = l.panelX + 6 + this.font.width(searchQuery);
-            graphics.fill(cursorX, l.searchY + 3, cursorX + 1, l.searchY + l.searchH - 3, 0xFF38BDF8);
+            graphics.fill(cursorX, l.searchY + 3, cursorX + 1, l.searchY + l.searchH - 3, ClickGuiTheme.ACCENT_CYAN);
         }
 
-        // 4. Quick Action Buttons (Tab 0 Ores hoặc Tab 1 Trees)
-        if ((activeTab == 0 || activeTab == 1) && searchQuery.isEmpty()) {
+        if (!searchQuery.isEmpty()) {
+            int clearX = l.panelX + searchBoxW - 14;
+            int clearY = l.searchY + (l.searchH - 10) / 2;
+            boolean clearHover = mouseX >= clearX - 2 && mouseX <= clearX + 10 && mouseY >= clearY && mouseY <= clearY + 10;
+            ClickGuiTheme.drawText(graphics, this.font, "×", clearX, clearY, clearHover ? 0xFFFFFFFF : ClickGuiTheme.TEXT_MUTED, clearHover);
+        }
+
+        if (l.filterW > 0) {
+            int chipStart = l.panelX + searchBoxW + 6;
+            int chipW = (l.filterW - 4) / 3;
+            String[] filterLabels = new String[]{"Tất Cả", "Đang Bật", "Đang Tắt"};
+            int[] filterAccents = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_EMERALD, ClickGuiTheme.ACCENT_ROSE};
+            for (int c = 0; c < 3; c++) {
+                int cx = chipStart + c * (chipW + 2);
+                boolean cHover = mouseX >= cx && mouseX <= cx + chipW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH;
+                if (cHover) {
+                    hoveredFilterIdx = c;
+                }
+                boolean cActive = (filterMode == c);
+                ClickGuiTheme.drawFilterChip(graphics, this.font, filterLabels[c], cx, l.searchY, chipW, l.searchH, cActive, cHover, filterAccents[c]);
+            }
+        }
+
+        // 4. Quick Action Presets (Tab 0, 1, 2, 3)
+        if ((activeTab >= 0 && activeTab <= 3) && searchQuery.isEmpty()) {
             int btnW = (l.panelW - 3 * 4) / 4;
-            int[] qColors = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_ROSE, ClickGuiTheme.ACCENT_PURPLE, ClickGuiTheme.ACCENT_AMBER};
+            int[] qColors = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_EMERALD, ClickGuiTheme.ACCENT_PURPLE, ClickGuiTheme.ACCENT_AMBER};
 
             for (int q = 0; q < 4; q++) {
                 int qx = l.panelX + q * (btnW + 4);
@@ -835,35 +1000,39 @@ public class AutoMineScreen extends Screen implements Helper {
                     hoveredItem = item;
                 }
 
-                int cardBg = hover ? ClickGuiTheme.BG_CARD_HOVER : (active ? ClickGuiTheme.BG_CARD_ACTIVE : ClickGuiTheme.BG_CARD);
-                int cardBorder = hover ? ClickGuiTheme.BORDER_CARD_HOVER : (active ? (item.color | 0x80000000) : ClickGuiTheme.BORDER_CARD);
-                ClickGuiTheme.drawGlowingCard(graphics, cardX, cardY, l.colW, l.cardH, cardBg, cardBorder, item.color, active, hover);
+                // Double-Bezel Card chuẩn Taste Skill
+                ClickGuiTheme.drawDoubleBezelCard(graphics, cardX, cardY, l.colW, l.cardH, item.color, active, hover);
 
-                // Đường accent bên trái
-                graphics.fill(cardX, cardY, cardX + 3, cardY + l.cardH, active ? item.color : 0x5064748B);
+                // Đường vạch đứng hiển thị trạng thái bên trái
+                int leftBarColor = active ? item.color : (hover ? 0x8038BDF8 : 0x3064748B);
+                graphics.fill(cardX + 1, cardY + 2, cardX + 3, cardY + l.cardH - 2, leftBarColor);
 
-                // Vẽ Item Icon thật 16x16 (Minecraft Item Icon) với nền kính mờ bảo vệ
+                // Khung lồng chứa Item Icon thật với nền kính mờ bảo vệ
                 boolean hasItemIcon = (item.iconItem != null && !item.iconItem.isEmpty());
                 if (hasItemIcon) {
                     int iconY = cardY + (l.cardH - 16) / 2;
-                    graphics.fill(cardX + 4, iconY - 2, cardX + 24, iconY + 18, active ? 0x2538BDF8 : 0x12FFFFFF);
+                    int iconBg = active ? ((item.color & 0x00FFFFFF) | 0x2A000000) : 0x14FFFFFF;
+                    int iconBorder = active ? ((item.color & 0x00FFFFFF) | 0x60000000) : 0x20FFFFFF;
+                    graphics.fill(cardX + 5, iconY - 2, cardX + 23, iconY + 18, iconBg);
+                    ClickGuiTheme.drawOutline(graphics, cardX + 5, iconY - 2, 18, 20, iconBorder);
                     graphics.renderFakeItem(item.iconItem, cardX + 6, iconY);
                 }
 
-                // Switch viên thuốc
+                // Switch viên thuốc xúc giác 3D
                 int switchX = cardX + l.colW - switchW - 6;
                 int switchY = cardY + (l.cardH - switchH) / 2;
                 ClickGuiTheme.drawPillSwitch(graphics, this.font, switchX, switchY, switchW, switchH, active, hover);
 
                 // Text Module bắt đầu sau Icon, có cắt ngắn an toàn không bao giờ đè switch
-                int textStartX = hasItemIcon ? (cardX + 26) : (cardX + 8);
+                int textStartX = hasItemIcon ? (cardX + 27) : (cardX + 8);
                 int textMaxW = switchX - textStartX - 4;
                 String name = item.name;
                 if (this.font.width(name) > textMaxW) {
                     name = this.font.plainSubstrByWidth(name, Math.max(10, textMaxW - 6)) + "..";
                 }
                 int titleY = cardY + (l.isCompact ? 3 : 5);
-                ClickGuiTheme.drawText(graphics, this.font, name, textStartX, titleY, active ? ClickGuiTheme.TEXT_TITLE : ClickGuiTheme.TEXT_MUTED, active);
+                int titleColor = active ? ClickGuiTheme.TEXT_TITLE : (hover ? ClickGuiTheme.TEXT_BODY : ClickGuiTheme.TEXT_MUTED);
+                ClickGuiTheme.drawText(graphics, this.font, name, textStartX, titleY, titleColor, active);
 
                 if (!l.isCompact || l.cardH >= 28) {
                     String desc = item.desc;
@@ -877,7 +1046,8 @@ public class AutoMineScreen extends Screen implements Helper {
                         desc = this.font.plainSubstrByWidth(desc, Math.max(10, textMaxW - 6)) + "..";
                     }
                     int descY = cardY + (l.isCompact ? 14 : 17);
-                    ClickGuiTheme.drawText(graphics, this.font, desc, textStartX, descY, ClickGuiTheme.TEXT_DIM, false);
+                    int descColor = hover ? ClickGuiTheme.TEXT_MUTED : ClickGuiTheme.TEXT_DIM;
+                    ClickGuiTheme.drawText(graphics, this.font, desc, textStartX, descY, descColor, false);
                 }
             }
 
@@ -891,9 +1061,12 @@ public class AutoMineScreen extends Screen implements Helper {
                 if (yHover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
                     hoveredYSetting = true;
                 }
-                int yBg = yHover ? ClickGuiTheme.BG_CARD_HOVER : ClickGuiTheme.BG_CARD;
-                ClickGuiTheme.drawCard(graphics, yBtnX, extraRowY, halfColW, l.cardH, yBg, ClickGuiTheme.BORDER_CARD);
-                graphics.fill(yBtnX, extraRowY, yBtnX + 3, extraRowY + l.cardH, ClickGuiTheme.ACCENT_CYAN);
+                ClickGuiTheme.drawDoubleBezelCard(graphics, yBtnX, extraRowY, halfColW, l.cardH, ClickGuiTheme.ACCENT_CYAN, false, yHover);
+                graphics.fill(yBtnX + 1, extraRowY + 2, yBtnX + 3, extraRowY + l.cardH - 2, ClickGuiTheme.ACCENT_CYAN);
+                int yIconBg = yHover ? 0x22FFFFFF : 0x14FFFFFF;
+                int yIconBorder = yHover ? 0x40FFFFFF : 0x20FFFFFF;
+                graphics.fill(yBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, yBtnX + 23, extraRowY + (l.cardH - 16) / 2 + 18, yIconBg);
+                ClickGuiTheme.drawOutline(graphics, yBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, 18, 20, yIconBorder);
                 graphics.renderFakeItem(new ItemStack(Items.COMPASS), yBtnX + 6, extraRowY + (l.cardH - 16) / 2);
                 String yLabel = optTargetY == 999 ? "Hiện tại" : "Y=" + optTargetY;
                 ClickGuiTheme.drawText(graphics, this.font, "Tầng Y: " + yLabel, yBtnX + 26, extraRowY + 5, ClickGuiTheme.TEXT_TITLE, true);
@@ -904,9 +1077,12 @@ public class AutoMineScreen extends Screen implements Helper {
                 if (fpsHover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
                     hoveredFpsSetting = true;
                 }
-                int fpsBg = fpsHover ? ClickGuiTheme.BG_CARD_HOVER : ClickGuiTheme.BG_CARD;
-                ClickGuiTheme.drawCard(graphics, fpsBtnX, extraRowY, halfColW, l.cardH, fpsBg, ClickGuiTheme.BORDER_CARD);
-                graphics.fill(fpsBtnX, extraRowY, fpsBtnX + 3, extraRowY + l.cardH, ClickGuiTheme.ACCENT_EMERALD);
+                ClickGuiTheme.drawDoubleBezelCard(graphics, fpsBtnX, extraRowY, halfColW, l.cardH, ClickGuiTheme.ACCENT_EMERALD, false, fpsHover);
+                graphics.fill(fpsBtnX + 1, extraRowY + 2, fpsBtnX + 3, extraRowY + l.cardH - 2, ClickGuiTheme.ACCENT_EMERALD);
+                int fpsIconBg = fpsHover ? 0x22FFFFFF : 0x14FFFFFF;
+                int fpsIconBorder = fpsHover ? 0x40FFFFFF : 0x20FFFFFF;
+                graphics.fill(fpsBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, fpsBtnX + 23, extraRowY + (l.cardH - 16) / 2 + 18, fpsIconBg);
+                ClickGuiTheme.drawOutline(graphics, fpsBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, 18, 20, fpsIconBorder);
                 graphics.renderFakeItem(new ItemStack(Items.CLOCK), fpsBtnX + 6, extraRowY + (l.cardH - 16) / 2);
                 int curFpsLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
                 String fpsStr = curFpsLimit >= 260 ? "Max" : curFpsLimit + " FPS";
@@ -928,15 +1104,12 @@ public class AutoMineScreen extends Screen implements Helper {
         }
 
         // 7. Thẻ thống kê bên cạnh chỉ hiển thị khi đã ấn Start và màn hình còn đủ chỗ trống
-        if (activeTab != 4 && optMiningStats) {
-            boolean isMining = baritone.getMineProcess().isActive();
-            if (isMining) {
-                int statsW = 148;
-                if (this.width - (l.panelX + l.panelW) >= statsW + 10) {
-                    MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX + l.panelW + 8, l.contentY, statsW, isMining);
-                } else if (l.panelX >= statsW + 10) {
-                    MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX - statsW - 8, l.contentY, statsW, isMining);
-                }
+        if (activeTab != 4 && optMiningStats && isMining) {
+            int statsW = 148;
+            if (this.width - (l.panelX + l.panelW) >= statsW + 10) {
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX + l.panelW + 8, l.contentY, statsW, isMining);
+            } else if (l.panelX >= statsW + 10) {
+                MiningStatsTracker.getInstance().renderCard(graphics, this.font, l.panelX - statsW - 8, l.contentY, statsW, isMining);
             }
         }
 
@@ -992,6 +1165,14 @@ public class AutoMineScreen extends Screen implements Helper {
             drawQuickTooltip(graphics, hoveredQuickIdx, activeTab, mouseX, mouseY);
         } else if (hoveredTabIdx >= 0) {
             drawTabTooltip(graphics, hoveredTabIdx, mouseX, mouseY);
+        } else if (hoveredFilterIdx >= 0) {
+            String fTitle = hoveredFilterIdx == 0 ? "Bộ Lọc: Tất Cả" : (hoveredFilterIdx == 1 ? "Bộ Lọc: Đang Bật" : "Bộ Lọc: Đang Tắt");
+            String fDesc = hoveredFilterIdx == 0 ? "Hiển thị toàn bộ module trong chuyên mục này" : (hoveredFilterIdx == 1 ? "Chỉ hiển thị các module đang được BẬT" : "Chỉ hiển thị các module đang TẮT");
+            int fColor = hoveredFilterIdx == 0 ? ClickGuiTheme.ACCENT_CYAN : (hoveredFilterIdx == 1 ? ClickGuiTheme.ACCENT_EMERALD : ClickGuiTheme.ACCENT_ROSE);
+            drawModernTooltip(graphics, fTitle, null, fDesc,
+                    "Nhấn chuột để lọc nhanh các tính năng theo trạng thái Bật / Tắt, giúp quản lý cài đặt dễ dàng và trực quan.",
+                    "§8[Chuột trái] §7Áp dụng bộ lọc này",
+                    mouseX, mouseY, fColor);
         } else if (hoveredSearch && searchQuery.isEmpty()) {
             drawModernTooltip(graphics,
                     "Thanh Tìm Kiếm",
@@ -1022,9 +1203,9 @@ public class AutoMineScreen extends Screen implements Helper {
         int colW = isCompact ? w : (w - 8) / 2;
         int cardH = 96;
 
-        // Card 1: Hardware Specs
-        ClickGuiTheme.drawCard(g, x, y, colW, cardH, ClickGuiTheme.BG_CARD, ClickGuiTheme.BORDER_CARD);
-        g.fill(x, y, x + colW, y + 2, ClickGuiTheme.ACCENT_CYAN);
+        // Card 1: Hardware Specs (Double-Bezel Architecture)
+        ClickGuiTheme.drawDoubleBezelCard(g, x, y, colW, cardH, ClickGuiTheme.ACCENT_CYAN, false, false);
+        g.fill(x + 1, y + 2, x + 3, y + cardH - 2, ClickGuiTheme.ACCENT_CYAN);
         ClickGuiTheme.drawText(g, this.font, "PHẦN CỨNG & HIỆU NĂNG", x + 8, y + 6, ClickGuiTheme.ACCENT_CYAN, true);
 
         ClickGuiTheme.drawText(g, this.font, "FPS: " + curFps, x + 8, y + 22, fpsColor, true);
@@ -1034,12 +1215,12 @@ public class AutoMineScreen extends Screen implements Helper {
         ClickGuiTheme.drawText(g, this.font, "RAM (" + (int) (memPct * 100) + "%): " + usedMem + "/" + maxMem + "MB", x + 8, y + 64, ClickGuiTheme.TEXT_BODY, false);
         ClickGuiTheme.drawProgressBar(g, x + 8, y + 78, colW - 16, 7, memPct, ClickGuiTheme.ACCENT_EMERALD, 0xFF1E293B);
 
-        // Card 2: Mining Live Telemetry
+        // Card 2: Mining Live Telemetry (Double-Bezel Architecture)
         int rx = isCompact ? x : (x + colW + 8);
         int ry = isCompact ? (y + cardH + 6) : y;
 
-        ClickGuiTheme.drawCard(g, rx, ry, colW, cardH, ClickGuiTheme.BG_CARD, ClickGuiTheme.BORDER_CARD);
-        g.fill(rx, ry, rx + colW, ry + 2, ClickGuiTheme.ACCENT_EMERALD);
+        ClickGuiTheme.drawDoubleBezelCard(g, rx, ry, colW, cardH, ClickGuiTheme.ACCENT_EMERALD, false, false);
+        g.fill(rx + 1, ry + 2, rx + 3, ry + cardH - 2, ClickGuiTheme.ACCENT_EMERALD);
         ClickGuiTheme.drawText(g, this.font, "THỐNG KÊ PHIÊN ĐÀO", rx + 8, ry + 6, ClickGuiTheme.ACCENT_EMERALD, true);
 
         boolean isMining = baritone.getMineProcess().isActive();
@@ -1249,54 +1430,108 @@ public class AutoMineScreen extends Screen implements Helper {
         if (tab == 0) { // Ores
             switch (q) {
                 case 0:
-                    drawModernTooltip(graphics, "Chọn Tất Cả Quặng", null, "Bật toàn bộ 10 loại khoáng sản",
-                            "Tự động kích hoạt toàn bộ các loại quặng: Kim Cương, Mảnh Cổ Đại, Ngọc Lục Bảo, Vàng, Sắt, Đá Đỏ, Ngọc Lưu Ly, Đồng, Than Đá, Thạch Anh.",
-                            "§8[Chuột trái] §7Áp dụng chọn hết",
+                    drawModernTooltip(graphics, "Chọn Quặng Quý (Kim Cương+)", null, "Bật các khoáng sản giá trị cao nhất",
+                            "Kích hoạt Kim Cương, Ngọc Lục Bảo, Mảnh Cổ Đại, Ngọc Lưu Ly và Đá Đỏ. Bỏ qua than, sắt, đồng để tối ưu không gian túi đồ.",
+                            "§8[Chuột trái] §7Áp dụng quặng quý",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                     break;
                 case 1:
+                    drawModernTooltip(graphics, "Chọn Tất Cả Quặng", null, "Bật toàn bộ 10 loại khoáng sản",
+                            "Tự động kích hoạt toàn bộ các loại quặng: Kim Cương, Mảnh Cổ Đại, Ngọc Lục Bảo, Vàng, Sắt, Đá Đỏ, Ngọc Lưu Ly, Đồng, Than Đá, Thạch Anh.",
+                            "§8[Chuột trái] §7Áp dụng chọn hết",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
+                    break;
+                case 2:
                     drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", null, "Tắt hết tất cả quặng",
                             "Tắt chọn toàn bộ quặng để bạn có thể chọn thủ công từng loại quặng mong muốn.",
                             "§8[Chuột trái] §7Áp dụng bỏ chọn",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
                     break;
-                case 2:
+                case 3:
                     drawModernTooltip(graphics, "Đảo Ngược Lựa Chọn", null, "Đảo trạng thái các quặng",
                             "Quặng nào đang Bật sẽ chuyển thành Tắt, và quặng nào đang Tắt sẽ chuyển thành Bật.",
                             "§8[Chuột trái] §7Áp dụng đảo ngược",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
                     break;
-                case 3:
-                    drawModernTooltip(graphics, "Bộ Quặng Chuẩn", null, "Chọn lọc quặng quý giá trị cao",
-                            "Chỉ chọn Kim Cương, Ngọc Lục Bảo, Ngọc Lưu Ly và Đá Đỏ giúp tối ưu diện tích túi đồ.",
-                            "§8[Chuột trái] §7Áp dụng mặc định",
-                            mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
-                    break;
             }
         } else if (tab == 1) { // Trees
             switch (q) {
                 case 0:
-                    drawModernTooltip(graphics, "Chọn Tất Cả Cây", null, "Bật toàn bộ 11 loại gỗ",
-                            "Kích hoạt toàn bộ các loại gỗ trong Overworld và Nether: Sồi, Bạch Dương, Rừng Rậm, Hoa Anh Đào, Tre, Rừng Đỏ, Rừng Xanh, v.v.",
-                            "§8[Chuột trái] §7Áp dụng chọn hết",
+                    drawModernTooltip(graphics, "Gỗ Thế Giới Thường", null, "Khai thác cây ở Overworld",
+                            "Kích hoạt gỗ Sồi, Bạch Dương, Thông, Rừng Rậm, Keo, Sồi Sẫm, Đước, Hoa Anh Đào và Tre.",
+                            "§8[Chuột trái] §7Áp dụng Overworld",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                     break;
                 case 1:
-                    drawModernTooltip(graphics, "Gỗ Thế Giới Thường", null, "Chỉ chọn cây ở Overworld",
-                            "Chỉ chọn các loại gỗ mặt đất, bỏ chọn gỗ Rừng Đỏ (Crimson) và Rừng Xanh (Warped) ở Nether.",
-                            "§8[Chuột trái] §7Áp dụng Overworld",
-                            mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
+                    drawModernTooltip(graphics, "Chọn Tất Cả Cây", null, "Bật toàn bộ 11 loại gỗ",
+                            "Kích hoạt toàn bộ các loại gỗ trong Overworld và Nether: Sồi, Bạch Dương, Rừng Rậm, Hoa Anh Đào, Tre, Rừng Đỏ, Rừng Xanh, v.v.",
+                            "§8[Chuột trái] §7Áp dụng chọn hết",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
                     break;
                 case 2:
                     drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", null, "Tắt hết tất cả loại cây",
                             "Tắt chọn toàn bộ cây để bạn tự chọn thủ công những loại gỗ cần đốn hạ.",
                             "§8[Chuột trái] §7Áp dụng bỏ chọn",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
+                    break;
+                case 3:
+                    drawModernTooltip(graphics, "Chỉ Gỗ Nether", null, "Khai thác thân nấm Nether",
+                            "Chỉ kích hoạt khai thác thân nấm đỏ Crimson và nấm xanh Warped chống cháy trong thế giới Nether.",
+                            "§8[Chuột trái] §7Áp dụng Nether",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
+                    break;
+            }
+        } else if (tab == 2) { // Movement
+            switch (q) {
+                case 0:
+                    drawModernTooltip(graphics, "Cấu Hình Tốc Độ Cực Hạn", null, "Khai thác tốc độ di chuyển tối đa",
+                            "Bật đồng thời: Nhảy hầm (Bhop) không delay, Tự chạy nhanh, Phản xạ ARA* 0ms, Ôm cua mượt mà và Bơi nhanh dưới nước.",
+                            "§8[Chuột trái] §7Áp dụng tốc độ cao",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                    break;
+                case 1:
+                    drawModernTooltip(graphics, "Cấu Hình Di Chuyển An Toàn", null, "Chống rơi hang và bảo toàn tính mạng",
+                            "Bật Đào dọc an toàn chống rơi hang sâu, Rà soát chất lỏng nước/dung nham, Khóa 1 hướng đào và Tắt nhảy hầm.",
+                            "§8[Chuột trái] §7Áp dụng an toàn",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
+                    break;
+                case 2:
+                    drawModernTooltip(graphics, "Cấu Hình Vượt Địa Hình", null, "Vượt hang động và núi non hiểm trở",
+                            "Bật Parkour nhảy vực khe hở 1-4 ô, Tự do xoay nhìn quan sát cảnh quan và phản xạ tính đường ARA* 0ms.",
+                            "§8[Chuột trái] §7Áp dụng địa hình",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
                     break;
                 case 3:
-                    drawModernTooltip(graphics, "Gỗ Thông Dụng", null, "Khai thác các loại gỗ cơ bản",
-                            "Bật chọn các loại cây gỗ phổ biến nhất trong thế giới.",
-                            "§8[Chuột trái] §7Áp dụng thông dụng",
+                    drawModernTooltip(graphics, "Cấu Hình Di Chuyển Mặc Định", null, "Cân bằng tốc độ và vượt chướng ngại",
+                            "Khôi phục các tùy chọn di chuyển về trạng thái cân bằng chuẩn mực nhất của Baritone.",
+                            "§8[Chuột trái] §7Khôi phục mặc định",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
+                    break;
+            }
+        } else if (tab == 3) { // Survival
+            switch (q) {
+                case 0:
+                    drawModernTooltip(graphics, "Cấu Hình Bảo Vệ Tối Đa", null, "Bảo vệ sinh mạng và trang bị tuyệt đối",
+                            "Kích hoạt Tự ăn uống, Cầm Totem tay phụ tức thì, Tự ngắt kết nối an toàn khi chìm Lava 3s hoặc máu <= 6 HP, Né quái vật.",
+                            "§8[Chuột trái] §7Áp dụng bảo vệ",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                    break;
+                case 1:
+                    drawModernTooltip(graphics, "Cấu Hình Treo Máy (AFK)", null, "Tự động hóa hoàn toàn khi rời máy",
+                            "Tự ăn, Cầm Totem, Tự mua sắm /shop và cất đồ vào Shulker Box / Rương Ender, Tự vứt rác giải phóng túi đồ.",
+                            "§8[Chuột trái] §7Áp dụng treo máy",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
+                    break;
+                case 2:
+                    drawModernTooltip(graphics, "Cấu Hình Giữ Toàn Bộ Khoáng Sản", null, "Không vứt bỏ bất kỳ tài nguyên nào",
+                            "Tự chọn dụng cụ tối ưu độ bền, Cất trữ khoáng sản vào Shulker Box và TẮT tính năng tự động vứt rác.",
+                            "§8[Chuột trái] §7Áp dụng giữ đồ",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
+                    break;
+                case 3:
+                    drawModernTooltip(graphics, "Cấu Hình Sinh Tồn Mặc Định", null, "Thiết lập sinh tồn chuẩn mực",
+                            "Khôi phục cài đặt sinh tồn về trạng thái cân bằng an toàn mặc định.",
+                            "§8[Chuột trái] §7Khôi phục mặc định",
                             mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
                     break;
             }
