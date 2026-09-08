@@ -288,6 +288,13 @@ public final class AutoLogoutTracker {
             Minecraft.getInstance().keyboardHandler.setClipboard(coordsSimple);
         } catch (Throwable ignored) {}
 
+        // Tự động tắt cả 2 tính năng bảo vệ để khi đăng nhập lại vào game không bị ngắt kết nối lặp lại
+        Baritone.settings().autoLogoutOnDanger.value = false;
+        Baritone.settings().autoLogoutOnPlayer.value = false;
+        AutoMineScreen.optAutoLogout = false;
+        AutoMineConfig.save();
+        baritone.api.utils.SettingsUtil.save(Baritone.settings());
+
         // Dừng mọi hành vi điều khiển của Baritone
         try {
             baritone.api.IBaritone primary = baritone.api.BaritoneAPI.getProvider() != null ? baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone() : null;
@@ -377,7 +384,7 @@ public final class AutoLogoutTracker {
                     "§6[Baritone] §eToạ độ AutoLogout gần nhất: §fX: §a%.2f §fY: §a%.2f §fZ: §a%.2f §7(%s) §d(Đã lưu)",
                     lastX, lastY, lastZ, lastDimension);
             Helper.HELPER.logDirect(msg);
-            Helper.HELPER.logDirect("§e[Baritone] §c⚠ Bạn có 5 GIÂY an toàn để di chuyển hoặc gõ /spawn trước khi Auto-Logout hoạt động trở lại!");
+            Helper.HELPER.logDirect("§e[Baritone] §a✔ Đã tự động tắt Anti-Player & Auto-Logout để bạn an toàn vào lại thế giới. Bật lại trong ClickGUI khi cần!");
         }
     }
 }
