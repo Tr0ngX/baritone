@@ -746,7 +746,8 @@ public class AutoMineScreen extends Screen implements Helper {
         int hoveredTabIdx = -1;
         boolean hoveredSearch = false;
 
-        // 1. Header Bar với Logo Neon & Version Tag
+        // 1. Header Bar với Logo Neon, Ambient Glow & Version Tag
+        ClickGuiTheme.drawGlowPanel(graphics, l.panelX, 3, l.panelW, this.height - 6, ClickGuiTheme.ACCENT_CYAN);
         graphics.fill(l.panelX, 3, l.panelX + l.panelW, 4, ClickGuiTheme.ACCENT_CYAN);
         ClickGuiTheme.drawText(graphics, this.font, "BẢNG ĐIỀU KHIỂN TR0NGX", l.panelX + 4, 7, ClickGuiTheme.ACCENT_CYAN, true);
         if (l.panelW >= 420) {
@@ -836,15 +837,16 @@ public class AutoMineScreen extends Screen implements Helper {
 
                 int cardBg = hover ? ClickGuiTheme.BG_CARD_HOVER : (active ? ClickGuiTheme.BG_CARD_ACTIVE : ClickGuiTheme.BG_CARD);
                 int cardBorder = hover ? ClickGuiTheme.BORDER_CARD_HOVER : (active ? (item.color | 0x80000000) : ClickGuiTheme.BORDER_CARD);
-                ClickGuiTheme.drawCard(graphics, cardX, cardY, l.colW, l.cardH, cardBg, cardBorder);
+                ClickGuiTheme.drawGlowingCard(graphics, cardX, cardY, l.colW, l.cardH, cardBg, cardBorder, item.color, active, hover);
 
                 // Đường accent bên trái
                 graphics.fill(cardX, cardY, cardX + 3, cardY + l.cardH, active ? item.color : 0x5064748B);
 
-                // Vẽ Item Icon thật 16x16 (Minecraft Item Icon)
+                // Vẽ Item Icon thật 16x16 (Minecraft Item Icon) với nền kính mờ bảo vệ
                 boolean hasItemIcon = (item.iconItem != null && !item.iconItem.isEmpty());
                 if (hasItemIcon) {
                     int iconY = cardY + (l.cardH - 16) / 2;
+                    graphics.fill(cardX + 4, iconY - 2, cardX + 24, iconY + 18, active ? 0x2538BDF8 : 0x12FFFFFF);
                     graphics.renderFakeItem(item.iconItem, cardX + 6, iconY);
                 }
 

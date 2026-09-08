@@ -84,7 +84,40 @@ public final class ClickGuiTheme {
     }
 
     /**
-     * Vẽ công tắc dạng viên thuốc (Modern Pill Switch) chuẩn LiquidBounce Nextgen.
+     * Vẽ Card cao cấp phong cách Web CSS Glassmorphism: Nền kính mờ, viền đa lớp và vạch laser glow trên đỉnh.
+     */
+    public static void drawGlowingCard(GuiGraphics g, int x, int y, int w, int h, int bgColor, int borderColor, int accentColor, boolean active, boolean hover) {
+        g.fill(x, y, x + w, y + h, bgColor);
+        drawOutline(g, x, y, w, h, borderColor);
+
+        // Vạch Laser Glow trên đỉnh card khi Active hoặc Hover (chuẩn Glassmorphism Web)
+        if (active || hover) {
+            int laserAlpha = active ? 0xFF000000 : 0x80000000;
+            int laserColor = (accentColor & 0x00FFFFFF) | laserAlpha;
+            g.fill(x + 2, y, x + w - 2, y + 1, laserColor);
+        }
+    }
+
+    /**
+     * Vẽ ánh sáng nền Ambient Glow (Soft Shadow) xung quanh khung Panel chính.
+     */
+    public static void drawGlowPanel(GuiGraphics g, int x, int y, int w, int h, int accentColor) {
+        int glowColor1 = (accentColor & 0x00FFFFFF) | 0x15000000;
+        int glowColor2 = (accentColor & 0x00FFFFFF) | 0x08000000;
+        // Lớp glow mờ 2px bên ngoài
+        g.fill(x - 2, y - 2, x + w + 2, y, glowColor2);
+        g.fill(x - 2, y + h, x + w + 2, y + h + 2, glowColor2);
+        g.fill(x - 2, y, x, y + h, glowColor2);
+        g.fill(x + w, y, x + w + 2, y + h, glowColor2);
+        // Lớp glow 1px bên trong
+        g.fill(x - 1, y - 1, x + w + 1, y, glowColor1);
+        g.fill(x - 1, y + h, x + w + 1, y + h + 1, glowColor1);
+        g.fill(x - 1, y, x, y + h, glowColor1);
+        g.fill(x + w, y, x + w + 1, y + h, glowColor1);
+    }
+
+    /**
+     * Vẽ công tắc dạng viên thuốc (Modern Pill Switch) chuẩn LiquidBounce Nextgen với phản xạ ánh sáng 3D.
      */
     public static void drawPillSwitch(GuiGraphics g, Font font, int x, int y, int w, int h, boolean active, boolean hover) {
         int trackColor = active ? (hover ? 0xFF0284C7 : 0xFF0EA5E9) : (hover ? 0xFF334155 : 0xFF1E293B);
@@ -102,6 +135,8 @@ public final class ClickGuiTheme {
         int thumbColor = active ? 0xFFFFFFFF : 0xFF94A3B8;
 
         g.fill(thumbX, thumbY, thumbX + thumbW, thumbY + thumbH, thumbColor);
+        // Vạch ánh sáng nổi 3D tinh tế trên đỉnh thumb
+        g.fill(thumbX, thumbY, thumbX + thumbW, thumbY + 1, 0x60FFFFFF);
 
         // Nhãn chữ nhỏ BẬT / TẮT (chỉ vẽ khi bề rộng switch đủ hiển thị)
         if (w >= 30) {
