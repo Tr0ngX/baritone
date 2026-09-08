@@ -131,13 +131,6 @@ public final class AutoMineConfig {
         } catch (Throwable t) {
             Helper.HELPER.logDirect("§c[AutoMineConfig] Lỗi khi đọc file cấu hình automine.json: " + t.getMessage());
         } finally {
-            // AN TOÀN TUYỆT ĐỐI: Anti-Player & Anti-Death (AutoLogout) luôn luôn tự tắt (false)
-            // khi khởi động game hoặc load lại để chống vòng lặp ngắt kết nối liên tục khi vừa vào server.
-            AutoMineScreen.optAutoLogout = false;
-            try {
-                Baritone.settings().autoLogoutOnDanger.value = false;
-                Baritone.settings().autoLogoutOnPlayer.value = false;
-            } catch (Throwable ignored) {}
             loaded = true;
         }
     }
@@ -183,6 +176,7 @@ public final class AutoMineConfig {
         AutoMineScreen.optAutoTool = data.optAutoTool;
         AutoMineScreen.optAutoEat = data.optAutoEat;
         AutoMineScreen.optAutoTotem = data.optAutoTotem;
+        AutoMineScreen.optAutoLogout = data.optAutoLogout;
         AutoMineScreen.optShulkerStorage = data.optShulkerStorage;
         AutoMineScreen.optAutoDrop = data.optAutoDrop;
         AutoMineScreen.optMobAvoid = data.optMobAvoid;
@@ -200,6 +194,7 @@ public final class AutoMineConfig {
         AutoMineScreen.optTargetY = data.optTargetY;
 
         // Đồng bộ vào Baritone.settings()
+        Baritone.settings().autoLogoutOnPlayer.value = data.autoLogoutOnPlayer;
         syncToBaritoneSettings(data.clientFreeLook);
     }
 
@@ -207,6 +202,7 @@ public final class AutoMineConfig {
         try {
             Baritone.settings().clientFreeLook.value = clientFreeLook;
             Baritone.settings().mineStrictOneDirection.value = AutoMineScreen.optStrictOneDirection;
+            Baritone.settings().autoLogoutOnDanger.value = AutoMineScreen.optAutoLogout;
             Baritone.settings().autoTool.value = AutoMineScreen.optAutoTool;
             Baritone.settings().autoEat.value = AutoMineScreen.optAutoEat;
             Baritone.settings().autoBuyFood.value = AutoMineScreen.optAutoEat;
@@ -310,11 +306,8 @@ public final class AutoMineConfig {
             // Tầng Y
             data.optTargetY = AutoMineScreen.optTargetY;
 
-            // QUY TẮC AN TOÀN: Khi lưu file cấu hình, luôn lưu trạng thái optAutoLogout và autoLogoutOnPlayer là false.
-            // Điều này đảm bảo khi người chơi vào lại game hoặc máy chủ, các tính năng ngắt kết nối không bao giờ
-            // tự động kích hoạt ngay lập tức, ngăn ngừa hoàn toàn vòng lặp kick vô hạn.
-            data.optAutoLogout = false;
-            data.autoLogoutOnPlayer = false;
+            data.optAutoLogout = AutoMineScreen.optAutoLogout;
+            data.autoLogoutOnPlayer = Baritone.settings().autoLogoutOnPlayer.value;
 
             try (BufferedWriter writer = Files.newBufferedWriter(file)) {
                 GSON.toJson(data, writer);

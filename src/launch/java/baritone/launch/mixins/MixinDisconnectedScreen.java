@@ -45,16 +45,6 @@ public abstract class MixinDisconnectedScreen extends Screen {
         super(title);
     }
 
-    @Inject(method = "init", at = @At("HEAD"))
-    private void onPreInit(CallbackInfo ci) {
-        if (AutoLogoutTracker.hasLoggedOut()) {
-            baritone.Baritone.settings().autoLogoutOnDanger.value = false;
-            baritone.Baritone.settings().autoLogoutOnPlayer.value = false;
-            baritone.utils.AutoMineScreen.optAutoLogout = false;
-            baritone.utils.AutoMineConfig.save();
-            baritone.api.utils.SettingsUtil.save(baritone.Baritone.settings());
-        }
-    }
 
     @Inject(method = "init", at = @At("TAIL"))
     private void onInit(CallbackInfo ci) {

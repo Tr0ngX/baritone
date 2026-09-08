@@ -5807,78 +5807,8 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         return count;
     }
 
-    private int autoLogoutLavaTicks = 0;
-
     private boolean handleAutoLogout() {
-        boolean checkDanger = Baritone.settings().autoLogoutOnDanger.value;
-        boolean checkPlayer = Baritone.settings().autoLogoutOnPlayer.value;
-        if (!checkDanger && !checkPlayer) {
-            autoLogoutLavaTicks = 0;
-            return false;
-        }
-        if (ctx.player() == null || ctx.world() == null) {
-            autoLogoutLavaTicks = 0;
-            return false;
-        }
-        if (ctx.player().isCreative() || ctx.player().isSpectator()) {
-            autoLogoutLavaTicks = 0;
-            return false;
-        }
-
-        // 1. Kiểm tra trạng thái rơi vào / đứng trong hồ Lava (chỉ khi checkDanger bật):
-        boolean inLava = false;
-        if (checkDanger) {
-            inLava = ctx.player().isInLava()
-                    || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
-                    || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
-
-            if (inLava) {
-                autoLogoutLavaTicks++;
-            } else {
-                autoLogoutLavaTicks = 0;
-            }
-        } else {
-            autoLogoutLavaTicks = 0;
-        }
-
-        String dangerReason = null;
-
-        // TRƯỜNG HỢP 1: PHÁT HIỆN NGƯỜI CHƠI ĐẾN GẦN (KỂ CẢ DÙNG THUỐC TÀNG HÌNH / INVIS)
-        // Ưu tiên cao nhất: nếu phát hiện player khác xâm nhập vùng an toàn -> Logout ngay lập tức!
-        if (checkPlayer) {
-            AutoLogoutTracker.DetectedPlayerInfo playerThreat = AutoLogoutTracker.scanForNearbyPlayer(ctx);
-            if (playerThreat != null) {
-                dangerReason = "Phát hiện người chơi: " + playerThreat.getFormattedDescription();
-            }
-        }
-
-        // TRƯỜNG HỢP 2: LAVA (chỉ khi checkDanger bật)
-        if (dangerReason == null && checkDanger && inLava && autoLogoutLavaTicks >= 60) {
-            dangerReason = "Rơi vào hồ LAVA liên tục quá 3 giây!";
-        }
-
-        // TRƯỜNG HỢP 3: QUÁI ĐÁNH, ĐÓI, TÉ NGÃ, v.v. (Phải Hết Totem + Nửa thanh máu, chỉ khi checkDanger bật)
-        if (dangerReason == null && checkDanger) {
-            int totemCount = getTotemCount();
-            if (totemCount == 0) {
-                float health = ctx.player().getHealth();
-                float maxHealth = ctx.player().getMaxHealth();
-                float threshold = Baritone.settings().autoLogoutHealthThreshold.value;
-                boolean lowHealth = (health <= maxHealth * threshold) || (health <= 10.0f);
-                if (lowHealth) {
-                    String cause = EmergencySafetyBehavior.detectDamageCause(ctx);
-                    dangerReason = cause + " (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
-                }
-            }
-        }
-
-        if (dangerReason != null) {
-            autoLogoutLavaTicks = 0;
-            AutoLogoutTracker.performAutoLogout(ctx, dangerReason);
-            return true;
-        }
-
-        return false;
+        return AutoLogoutTracker.hasLoggedOut();
     }
 
     private Optional<BlockPos> findNearbyDescentOpening(int maxHorizontalRadius, int minDrop) {
