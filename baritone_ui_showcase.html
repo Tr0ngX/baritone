@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baritone NextGen ClickGUI — UI/UX Showcase</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              cyan: '#00F0FF',
+              blue: '#38BDF8',
+              emerald: '#10B981',
+              amber: '#F59E0B',
+              rose: '#F43F5E',
+              purple: '#A855F7',
+              dark: '#0B0F17',
+              card: 'rgba(15, 23, 42, 0.75)',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+          },
+          boxShadow: {
+            'neon-cyan': '0 0 25px -5px rgba(0, 240, 255, 0.4)',
+            'neon-emerald': '0 0 25px -5px rgba(16, 185, 129, 0.4)',
+            'neon-amber': '0 0 25px -5px rgba(245, 158, 11, 0.4)',
+            'neon-rose': '0 0 25px -5px rgba(244, 63, 94, 0.4)',
+            'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 20%, #1e1b4b 0%, #0b0f17 60%, #030712 100%);
+      font-family: 'Inter', sans-serif;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(56, 189, 248, 0.18);
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.45);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .glass-card:hover {
+      background: rgba(30, 41, 59, 0.75);
+      border-color: rgba(56, 189, 248, 0.45);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px -10px rgba(56, 189, 248, 0.25);
+    }
+    .glass-card.active {
+      background: rgba(14, 165, 233, 0.12);
+      border-color: rgba(56, 189, 248, 0.65);
+      box-shadow: 0 0 20px -5px rgba(56, 189, 248, 0.3);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.35);
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.65);
+    }
+    .toggle-track {
+      transition: background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.3s;
+    }
+    .toggle-thumb {
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .grid-mesh {
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    }
+    @keyframes pulse-slow {
+      0%, 100% { opacity: 0.3; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.05); }
+    }
+    .animate-pulse-slow {
+      animation: pulse-slow 6s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-100 flex flex-col justify-between overflow-x-hidden relative grid-mesh">
+
+  <!-- Ambient Glow Orbs -->
+  <div class="fixed top-12 left-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-[120px] pointer-events-none animate-pulse-slow"></div>
+  <div class="fixed bottom-20 right-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-[140px] pointer-events-none animate-pulse-slow" style="animation-delay: 3s;"></div>
+
+  <!-- Header / Navigation Bar -->
+  <header class="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-20">
+    <div class="flex items-center space-x-4">
+      <div class="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 shadow-neon-cyan text-slate-950 font-black text-xl tracking-tighter">
+        B
+        <span class="absolute -top-1 -right-1 flex h-3 w-3">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+        </span>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-xl font-extrabold tracking-tight text-white flex items-center gap-2">
+            BARITONE <span class="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">NEXTGEN</span>
+          </h1>
+          <span class="px-2 py-0.5 text-xs font-bold rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">v1.21.11-stable</span>
+        </div>
+        <p class="text-xs font-medium text-slate-400">Giao diện điều khiển Tự Động Hóa & Sinh Tồn Đỉnh Cao</p>
+      </div>
+    </div>
+
+    <!-- Quick Actions & Theme Picker -->
+    <div class="flex items-center space-x-3">
+      <div class="hidden sm:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-700/50 text-xs font-mono text-slate-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>TPS: 20.0</span>
+        <span class="text-slate-600">|</span>
+        <span>PING: 24ms</span>
+        <span class="text-slate-600">|</span>
+        <span class="text-cyan-400">KingMC.vn</span>
+      </div>
+
+      <button id="soundToggle" onclick="toggleAudio()" class="px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700 text-xs font-medium text-slate-300 flex items-center gap-1.5 transition">
+        <span id="soundIcon">🔊</span>
+        <span>Âm Thanh</span>
+      </button>
+
+      <button onclick="exportConfig()" class="px-4 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-neon-cyan transition transform active:scale-95">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+        <span>Lưu Config</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Showcase Dashboard -->
+  <main class="w-full max-w-7xl mx-auto px-6 py-4 flex-1 flex flex-col z-10">
+
+    <!-- Glass Control Center -->
+    <div class="glass-panel rounded-3xl p-6 sm:p-8 shadow-glass flex-1 flex flex-col">
+
+      <!-- Sub-header: Search, Category Tabs, and Quick Selection -->
+      <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 pb-6 border-b border-slate-800/80">
+        
+        <!-- Category Navigation Pills -->
+        <nav class="flex items-center space-x-2 overflow-x-auto custom-scrollbar pb-2 md:pb-0" id="tabsContainer">
+          <button onclick="switchTab('all')" class="tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-cyan-500 text-slate-950 shadow-neon-cyan" data-tab="all">
+            <span>✨</span><span>Tất Cả</span>
+          </button>
+          <button onclick="switchTab('ore')" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70" data-tab="ore">
+            <span>💎</span><span>Khoáng Sản</span>
+          </button>
+          <button onclick="switchTab('wood')" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70" data-tab="wood">
+            <span>🪓</span><span>Gỗ Rừng</span>
+          </button>
+          <button onclick="switchTab('movement')" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70" data-tab="movement">
+            <span>⚡</span><span>Di Chuyển</span>
+          </button>
+          <button onclick="switchTab('survival')" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70" data-tab="survival">
+            <span>🛡️</span><span>Sinh Tồn</span>
+          </button>
+          <button onclick="switchTab('render')" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70" data-tab="render">
+            <span>👁️</span><span>Giao Diện</span>
+          </button>
+          <button onclick="switchTab('stats')" class="tab-btn px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70" data-tab="stats">
+            <span>📊</span><span>Chỉ Số</span>
+          </button>
+        </nav>
+
+        <!-- Search Bar & Fast Actions -->
+        <div class="flex items-center space-x-3">
+          <div class="relative flex-1 md:w-64">
+            <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <input type="text" id="searchInput" oninput="filterCards()" placeholder="Tìm kiếm tính năng... (VD: lava, totem)" class="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-900/80 border border-slate-700/60 text-xs font-medium text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 transition">
+          </div>
+          <button onclick="selectAll(true)" class="px-3 py-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 transition">Bật Hết</button>
+          <button onclick="selectAll(false)" class="px-3 py-2 rounded-xl bg-slate-800/70 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 transition">Tắt Hết</button>
+        </div>
+
+      </div>
+
+      <!-- Modules Grid Container (Bento Style) -->
+      <div class="flex-1 overflow-y-auto custom-scrollbar py-6 pr-1 max-h-[580px]">
+        <div id="modulesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Modules injected dynamically via JS -->
+        </div>
+
+        <!-- Telemetry Stats Tab (Hidden by default) -->
+        <div id="statsSection" class="hidden space-y-6">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="glass-card rounded-2xl p-5 border-l-4 border-cyan-400">
+              <div class="text-xs font-medium text-slate-400 mb-1 flex items-center justify-between">
+                <span>TỐC ĐỘ ĐÀO</span>
+                <span class="text-cyan-400 text-base">⚡</span>
+              </div>
+              <div class="text-2xl font-extrabold text-white font-mono">1,842 <span class="text-xs font-normal text-slate-400">khối/giờ</span></div>
+              <div class="mt-2 text-xs text-emerald-400 font-medium">↑ +18% so với hôm qua</div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-5 border-l-4 border-blue-400">
+              <div class="text-xs font-medium text-slate-400 mb-1 flex items-center justify-between">
+                <span>KIM CƯƠNG THỰC TẾ</span>
+                <span class="text-blue-400 text-base">💎</span>
+              </div>
+              <div class="text-2xl font-extrabold text-white font-mono">318 <span class="text-xs font-normal text-slate-400">viên</span></div>
+              <div class="mt-2 text-xs text-blue-300 font-medium">Khoáng quặng gốc: 142 khối (Gia tài III)</div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-5 border-l-4 border-emerald-400">
+              <div class="text-xs font-medium text-slate-400 mb-1 flex items-center justify-between">
+                <span>THỜI GIAN ĐÀO LIÊN TỤC</span>
+                <span class="text-emerald-400 text-base">⏱️</span>
+              </div>
+              <div class="text-2xl font-extrabold text-white font-mono">03:42:18</div>
+              <div class="mt-2 text-xs text-slate-400 font-medium">Tầng mục tiêu: Y = -54</div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-5 border-l-4 border-amber-400">
+              <div class="text-xs font-medium text-slate-400 mb-1 flex items-center justify-between">
+                <span>TOTEM BẤT TỬ CÒN LẠI</span>
+                <span class="text-amber-400 text-base">🛡️</span>
+              </div>
+              <div class="text-2xl font-extrabold text-white font-mono">12 <span class="text-xs font-normal text-slate-400">cái</span></div>
+              <div class="mt-2 text-xs text-amber-300 font-medium">Tự mua /shop: ĐANG BẬT</div>
+            </div>
+          </div>
+
+          <!-- Hardware Telemetry -->
+          <div class="glass-card rounded-2xl p-6 border border-slate-700/60">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 mb-4 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Giám Sát Phần Cứng Thời Gian Thực (Hardware Telemetry)
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-slate-400">FPS TRUNG BÌNH</span>
+                  <span class="text-white font-mono" id="fpsVal">144 FPS</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                  <div class="bg-gradient-to-r from-cyan-400 to-blue-500 h-2.5 rounded-full" style="width: 85%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-slate-400">CPU TẢI (PATHFINDING)</span>
+                  <span class="text-white font-mono" id="cpuVal">18.4%</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                  <div class="bg-gradient-to-r from-emerald-400 to-cyan-500 h-2.5 rounded-full" style="width: 18%"></div>
+                </div>
+              </div>
+
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1">
+                  <span class="text-slate-400">RAM SỬ DỤNG</span>
+                  <span class="text-white font-mono" id="ramVal">2.8 / 8.0 GB</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                  <div class="bg-gradient-to-r from-amber-400 to-rose-500 h-2.5 rounded-full" style="width: 35%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Floating Action Dock (macOS / Raycast Style) -->
+      <div class="pt-6 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center space-x-3 text-xs text-slate-400">
+          <span class="inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 font-mono font-medium">RightShift</span>
+          <span>để mở bảng điều khiển trong game</span>
+          <span class="text-slate-600">•</span>
+          <span class="inline-flex items-center px-2 py-0.5 rounded bg-slate-800/80 text-cyan-400 font-mono">#automine</span>
+          <span>để bắt đầu đào</span>
+        </div>
+
+        <div class="flex items-center space-x-3 w-full sm:w-auto">
+          <button onclick="startMiningMock()" class="flex-1 sm:flex-none px-6 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-neon-emerald transition transform active:scale-95 flex items-center justify-center gap-2">
+            <span>▶</span>
+            <span>BẮT ĐẦU ĐÀO TỰ ĐỘNG</span>
+          </button>
+          <button onclick="stopMiningMock()" class="flex-1 sm:flex-none px-6 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white font-black text-xs uppercase tracking-wider shadow-neon-rose transition transform active:scale-95 flex items-center justify-center gap-2">
+            <span>■</span>
+            <span>DỪNG LẠI</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-8 right-8 z-50 transform translate-y-20 opacity-0 transition duration-300 flex items-center space-x-3 px-5 py-3 rounded-2xl glass-panel shadow-neon-cyan border-cyan-400/50 text-white text-xs font-semibold">
+    <span id="toastIcon">✨</span>
+    <span id="toastMsg">Cài đặt đã được lưu!</span>
+  </div>
+
+  <script>
+    // Audio synthesizer for click sound
+    let audioCtx = null;
+    let soundEnabled = true;
+
+    function playClickSound(active) {
+      if (!soundEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(active ? 580 : 340, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(active ? 880 : 220, audioCtx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.05);
+      } catch (e) {}
+    }
+
+    function toggleAudio() {
+      soundEnabled = !soundEnabled;
+      document.getElementById('soundIcon').innerText = soundEnabled ? '🔊' : '🔇';
+      showToast(soundEnabled ? 'Đã bật hiệu ứng âm thanh click!' : 'Đã tắt hiệu ứng âm thanh!', '🔊');
+    }
+
+    // Module definitions (38 full modules)
+    const modules = [
+      // Quặng
+      { id: 'oreDiamond', name: 'Quặng Kim Cương', cat: 'ore', icon: '💎', color: '#38BDF8', desc: 'Tự động quét và đào sâu mọi cụm quặng Kim Cương', detail: 'Sử dụng A* heuristics ưu tiên đào cụm quặng gần nhất, bảo toàn độ bền cuốc.', enabled: true },
+      { id: 'oreRedstone', name: 'Quặng Đá Đỏ', cat: 'ore', icon: '🔴', color: '#EF4444', desc: 'Đào quặng Đá Đỏ để bán /shop hoặc trữ rương', detail: 'Tự động kết hợp chế độ bán 1728 Redstone nhận 5.6M trên KingMC.', enabled: true },
+      { id: 'oreLapis', name: 'Quặng Thanh Kim', cat: 'ore', icon: '🔵', color: '#3B82F6', desc: 'Khai thác Thanh Kim (Lapis) làm phù phép', detail: 'Tìm kiếm các vỉa quặng Lapis ở tầng Y=-54 đến Y=-32.', enabled: false },
+      { id: 'oreGold', name: 'Quặng Vàng', cat: 'ore', icon: '🪙', color: '#F59E0B', desc: 'Khai thác quặng Vàng và Vàng Thô', detail: 'Tự động đổi cuốc sắt/kim cương khi đào để không vỡ mất quặng.', enabled: false },
+      { id: 'oreIron', name: 'Quặng Sắt', cat: 'ore', icon: '⛓️', color: '#E2E8F0', desc: 'Khai thác Sắt Thô xây dựng và rèn trang bị', detail: 'Đào mọi vỉa quặng sắt trong bán kính quét 25 block.', enabled: false },
+      { id: 'oreEmerald', name: 'Quặng Ngọc Lục Bảo', cat: 'ore', icon: '❇️', color: '#10B981', desc: 'Khai thác quặng Ngọc Lục Bảo trên núi cao', detail: 'Rất hiếm gặp ở tầng sâu, hữu dụng khi đào ở biome đồi núi.', enabled: false },
+      { id: 'oreDebris', name: 'Mảnh Vỡ Cổ Đại (Netherite)', cat: 'ore', icon: '🧱', color: '#D97706', desc: 'Khai thác Netherite ở tầng Y=14 Nether', detail: 'Kết hợp chống dung nham và đào hầm thẳng bảo toàn mạng sống.', enabled: false },
+
+      // Gỗ
+      { id: 'woodOak', name: 'Gỗ Sồi (Oak)', cat: 'wood', icon: '🪵', color: '#854D0E', desc: 'Tự đốn hạ thân cây sồi từ gốc lên ngọn', detail: 'Đào ngược lên 4 block không để sót khúc gỗ lơ lửng nào.', enabled: true },
+      { id: 'woodSpruce', name: 'Gỗ Vân Sam (Spruce)', cat: 'wood', icon: '🌲', color: '#15803D', desc: 'Đốn hạ các cây thông cao vút tự động', detail: 'Tự kê trụ leo lên đốn sạch các ngọn thông khổng lồ 2x2.', enabled: true },
+      { id: 'woodBirch', name: 'Gỗ Bạch Dương (Birch)', cat: 'wood', icon: '⚪', color: '#F1F5F9', desc: 'Đốn hạ rừng bạch dương nhanh chóng', detail: 'Chặt thân cây và tự nhặt sạch mầm cây rơi quanh gốc.', enabled: true },
+      { id: 'woodDarkOak', name: 'Gỗ Sồi Sẫm (Dark Oak)', cat: 'wood', icon: '🟤', color: '#451A03', desc: 'Đốn hạ cây sồi sẫm thân dày 2x2', detail: 'Tự xoay vòng đốn trọn vẹn 4 thân cây mà không bị kẹt trần lá.', enabled: true },
+      { id: 'woodCherry', name: 'Gỗ Anh Đào (Cherry)', cat: 'wood', icon: '🌸', color: '#F472B6', desc: 'Thu hoạch rừng hoa anh đào thơ mộng', detail: 'Đốn hạ thân cong tự nhiên của gỗ hoa anh đào cực kỳ chuẩn xác.', enabled: true },
+
+      // Di Chuyển
+      { id: 'optZeroDelay', name: 'Zero-Delay Break', cat: 'movement', icon: '⚡', color: '#00F0FF', desc: 'Đập khối liên tục triệt tiêu độ trễ 5 tick', detail: 'Tối ưu hoá client loop, gửi gói tin đập block ngay trong tick vừa phá.', enabled: true },
+      { id: 'optTunnelBhop', name: 'Tunnel Bunny-Hop', cat: 'movement', icon: '🐇', color: '#38BDF8', desc: 'Nhảy lướt Bhop trong đường hầm cao 2 block', detail: 'Gia tốc di chuyển tăng 140% so với đi bộ thông thường.', enabled: true },
+      { id: 'optShaftDown', name: 'Đào Thẳng Đứng (Shaft)', cat: 'movement', icon: '⬇️', color: '#A855F7', desc: 'Đào giếng đứng 1x1 lao thẳng xuống Y=-54', detail: 'Đào thẳng xuống tầng sâu cực nhanh trong 20 giây đầu tiên.', enabled: true },
+      { id: 'optStrictOneDirection', name: 'Khóa Hướng Đào Thẳng', cat: 'movement', icon: '🧭', color: '#EC4899', desc: 'Đào hầm ngang cố định 1 hướng (North/East/...)', detail: 'Không bị quay đầu ngoằn ngoèo, đào xa hàng ngàn block cực đẹp mắt.', enabled: true },
+      { id: 'optParkour', name: 'Parkour Nhảy Xa', cat: 'movement', icon: '🏃', color: '#EAB308', desc: 'Cho phép nhảy vượt hố sâu và bậc 2 block', detail: 'Tự động tính toán quỹ đạo nhảy vượt chướng ngại vật mượt mà.', enabled: true },
+      { id: 'optAutoSprint', name: 'Tự Động Chạy Nhanh', cat: 'movement', icon: '👟', color: '#06B6D4', desc: 'Luôn luôn giữ trạng thái Sprint khi di chuyển', detail: 'Tự kích hoạt chạy nhanh mọi lúc khi còn trên 3 cọc đói.', enabled: true },
+
+      // Sinh Tồn
+      { id: 'optAutoLogout', name: 'Tự Thoát Khẩn Cấp (3s Lava)', cat: 'survival', icon: '🛡️', color: '#F43F5E', desc: 'Ngắt kết nối khi ngâm hồ Lava đúng 3s hoặc máu <= 6 HP', detail: 'Phản xạ vàng 3 giây trong hồ dung nham. Tự ngắt sau kick tránh vòng lặp lặp lại.', enabled: true },
+      { id: 'autoLogoutOnPlayer', name: 'Phát Hiện Người Chơi', cat: 'survival', icon: '👤', color: '#EF4444', desc: 'Tự logout ngay khi phát hiện người chơi trong 32m', detail: 'Quét cả người chơi tàng hình. Tự lọc bot clone nhái tên chính mình.', enabled: true },
+      { id: 'optAutoTotem', name: 'Tự Cầm Totem & Mua /shop', cat: 'survival', icon: '🧿', color: '#F59E0B', desc: 'Tự lôi Totem ra tay phụ trong 1 tick & mua /shop', detail: 'Khi nổ Totem, bù ngay Totem mới trong tick kế tiếp.', enabled: true },
+      { id: 'optAutoEat', name: 'Tự Động Ăn Uống', cat: 'survival', icon: '🥩', color: '#10B981', desc: 'Ăn thịt ngon nhất khi đói dưới 19', detail: 'Tự động mở /shop mua Bò Nấu Chín khi hết thức ăn.', enabled: true },
+      { id: 'optAutoTool', name: 'Tự Chọn Công Cụ Tốt Nhất', cat: 'survival', icon: '⛏️', color: '#6366F1', desc: 'Đổi cuốc/rìu tối ưu cho từng loại khối', detail: 'Dùng cuốc Silk Touch cho quặng đặc biệt, gia tài cho quặng thô.', enabled: true },
+      { id: 'optMobAvoid', name: 'Tránh Xa Quái Vật (14m)', cat: 'survival', icon: '🧟', color: '#84CC16', desc: 'Né xa Creeper, Warden, Skeleton và Lồng Quái', detail: 'Tăng chi phí đường đi A* để không bao giờ chạm trán quái.', enabled: true },
+      { id: 'optAutoDrop', name: 'Tự Động Vứt Rác', cat: 'survival', icon: '🗑️', color: '#64748B', desc: 'Ném bỏ đá cuội, đất, sỏi khi túi đồ đầy', detail: 'Giữ lại 64 block để kê chân, vứt toàn bộ rác thừa ra phía sau.', enabled: true },
+      { id: 'optShulkerStorage', name: 'Cất Đồ Vào Rương Ender', cat: 'survival', icon: '📦', color: '#8B5CF6', desc: 'Tự cất Shulker Box chứa đầy quặng vào Ender Chest', detail: 'Tự đặt rương Ender, cất 3 Shulker rồi đập lại bằng Silk Touch.', enabled: true },
+
+      // Giao Diện
+      { id: 'optStreamerMode', name: 'Chế Độ Streamer', cat: 'render', icon: '🎥', color: '#EC4899', desc: 'Ẩn tọa độ XYZ trên thanh trạng thái', detail: 'Bảo mật vị trí căn cứ bí mật khi quay video hoặc livestream.', enabled: true },
+      { id: 'optHidePlayerName', name: 'Ẩn Tên Người Chơi', cat: 'render', icon: '🥷', color: '#94A3B8', desc: 'Che tên tài khoản trên thanh Chat và Tab', detail: 'Hiển thị [PLAYER] thay cho nickname thật chống bị soi acc.', enabled: true },
+      { id: 'optHideScoreboard', name: 'Ẩn Bảng Điểm (Scoreboard)', cat: 'render', icon: '📋', color: '#64748B', desc: 'Ẩn bảng thông tin máy chủ góc phải màn hình', detail: 'Mở rộng tầm nhìn, giảm lag giao diện khi máy chủ spam quảng cáo.', enabled: true },
+      { id: 'clientFreeLook', name: 'Tự Do Xoay Camera (FreeLook)', cat: 'render', icon: '👀', color: '#06B6D4', desc: 'Tự do nhìn xung quanh khi bot đang tự đào', detail: 'Tách biệt góc nhìn camera khỏi góc đào thực tế của Baritone.', enabled: true },
+      { id: 'optHideSwing', name: 'Ẩn Cánh Tay Vung (NoSwing)', cat: 'render', icon: '🦾', color: '#38BDF8', desc: 'Tắt hoạt ảnh vung tay khi đào block', detail: 'Tăng FPS khi đào tốc độ cao và cho cảm giác mượt mắt hơn.', enabled: true },
+      { id: 'optFastPlace', name: 'Đặt Khối Siêu Nhanh', cat: 'render', icon: '🧱', color: '#F59E0B', desc: 'Chu kỳ đặt khối 1 tick thay vì 4 tick', detail: 'Hữu ích khi xây cầu bắc qua vực sâu hoặc kê chân khẩn cấp.', enabled: true }
+    ];
+
+    let currentTab = 'all';
+
+    function renderModules() {
+      const grid = document.getElementById('modulesGrid');
+      grid.innerHTML = '';
+      const query = document.getElementById('searchInput').value.toLowerCase().trim();
+
+      const filtered = modules.filter(m => {
+        const matchesTab = currentTab === 'all' || m.cat === currentTab;
+        const matchesSearch = m.name.toLowerCase().includes(query) || m.desc.toLowerCase().includes(query) || m.detail.toLowerCase().includes(query);
+        return matchesTab && matchesSearch;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full py-16 text-center text-slate-400">
+            <div class="text-4xl mb-3">🔍</div>
+            <div class="font-bold text-base text-white">Không tìm thấy tính năng nào</div>
+            <div class="text-xs text-slate-500 mt-1">Thử tìm bằng từ khóa khác như "lava", "kim cương", "bhop"...</div>
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach(m => {
+        const card = document.createElement('div');
+        card.className = `glass-card rounded-2xl p-4 flex flex-col justify-between cursor-pointer select-none group relative overflow-hidden ${m.enabled ? 'active' : ''}`;
+        card.id = `card-${m.id}`;
+        card.onclick = () => toggleModule(m.id);
+
+        card.innerHTML = `
+          <!-- Top Accent Light -->
+          <div class="absolute top-0 left-0 right-0 h-0.5 opacity-0 group-hover:opacity-100 transition duration-300" style="background: linear-gradient(90deg, transparent, ${m.color}, transparent);"></div>
+
+          <div>
+            <div class="flex items-start justify-between gap-3 mb-2">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-9 h-9 rounded-xl flex items-center justify-center text-lg bg-slate-800/80 border border-slate-700/60 shadow-sm" style="color: ${m.color}">
+                  ${m.icon}
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-white group-hover:text-cyan-300 transition flex items-center gap-1.5">
+                    ${m.name}
+                  </h4>
+                  <span class="text-[10px] uppercase font-mono tracking-wider font-semibold" style="color: ${m.color}">
+                    [${m.cat.toUpperCase()}]
+                  </span>
+                </div>
+              </div>
+
+              <!-- Pill Toggle Switch -->
+              <div class="toggle-track w-11 h-6 rounded-full p-0.5 flex items-center border ${m.enabled ? 'bg-cyan-500 border-cyan-400' : 'bg-slate-800 border-slate-700'}">
+                <div class="toggle-thumb w-5 h-5 rounded-full bg-white shadow-md transform ${m.enabled ? 'translate-x-5' : 'translate-x-0'}"></div>
+              </div>
+            </div>
+
+            <p class="text-xs text-slate-300 font-normal leading-relaxed line-clamp-2">
+              ${m.desc}
+            </p>
+          </div>
+
+          <div class="mt-3 pt-3 border-t border-slate-800/60 flex items-center justify-between text-[11px]">
+            <span class="text-slate-400 truncate max-w-[200px]" title="${m.detail}">${m.detail}</span>
+            <span class="font-bold font-mono px-2 py-0.5 rounded text-[10px] ${m.enabled ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-slate-800 text-slate-500'}">
+              ${m.enabled ? 'BẬT' : 'TẮT'}
+            </span>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function toggleModule(id) {
+      const m = modules.find(item => item.id === id);
+      if (m) {
+        m.enabled = !m.enabled;
+        playClickSound(m.enabled);
+        renderModules();
+        showToast(`Đã ${m.enabled ? 'BẬT' : 'TẮT'}: ${m.name}`, m.enabled ? '🟢' : '⚪');
+      }
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      playClickSound(true);
+
+      // Tab styling
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tab) {
+          btn.className = 'tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-cyan-500 text-slate-950 shadow-neon-cyan';
+        } else {
+          btn.className = 'tab-btn px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70';
+        }
+      });
+
+      const modulesGrid = document.getElementById('modulesGrid');
+      const statsSection = document.getElementById('statsSection');
+
+      if (tab === 'stats') {
+        modulesGrid.classList.add('hidden');
+        statsSection.classList.remove('hidden');
+      } else {
+        modulesGrid.classList.remove('hidden');
+        statsSection.classList.add('hidden');
+        renderModules();
+      }
+    }
+
+    function filterCards() {
+      renderModules();
+    }
+
+    function selectAll(state) {
+      playClickSound(state);
+      modules.forEach(m => {
+        if (currentTab === 'all' || m.cat === currentTab) {
+          m.enabled = state;
+        }
+      });
+      renderModules();
+      showToast(state ? 'Đã bật toàn bộ tính năng trong mục này!' : 'Đã tắt toàn bộ tính năng trong mục này!', state ? '✨' : '🧹');
+    }
+
+    function exportConfig() {
+      playClickSound(true);
+      const config = {};
+      modules.forEach(m => {
+        config[m.id] = m.enabled;
+      });
+      const json = JSON.stringify(config, null, 2);
+      navigator.clipboard.writeText(json).then(() => {
+        showToast('Đã sao chép automine.json vào Clipboard!', '📋');
+      }).catch(() => {
+        showToast('automine.json sẵn sàng tải xuống!', '💾');
+      });
+    }
+
+    function startMiningMock() {
+      playClickSound(true);
+      showToast('ĐÃ BẮT ĐẦU: Baritone đang dò đường và đào quặng!', '🚀');
+    }
+
+    function stopMiningMock() {
+      playClickSound(false);
+      showToast('ĐÃ DỪNG: Đã dừng toàn bộ hành vi Baritone!', '🛑');
+    }
+
+    let toastTimer = null;
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').innerText = msg;
+      document.getElementById('toastIcon').innerText = icon;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 2500);
+    }
+
+    // Dynamic Hardware Simulation
+    setInterval(() => {
+      const fps = Math.floor(138 + Math.random() * 14);
+      const cpu = (16.5 + Math.random() * 4).toFixed(1);
+      const ram = (2.7 + Math.random() * 0.3).toFixed(1);
+      const fpsEl = document.getElementById('fpsVal');
+      const cpuEl = document.getElementById('cpuVal');
+      const ramEl = document.getElementById('ramVal');
+      if (fpsEl) fpsEl.innerText = `${fps} FPS`;
+      if (cpuEl) cpuEl.innerText = `${cpu}%`;
+      if (ramEl) ramEl.innerText = `${ram} / 8.0 GB`;
+    }, 2000);
+
+    // Initial render
+    renderModules();
+  </script>
+</body>
+</html>
