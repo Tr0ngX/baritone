@@ -6533,7 +6533,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 yawDiff = 360.0F - yawDiff;
             }
             float pitchDiff = Math.abs(ctx.playerRotations().getPitch() - targetRot.getPitch());
-            if (yawDiff < 10.0F && pitchDiff < 10.0F) {
+            if (yawDiff < 3.5F && pitchDiff < 3.5F) {
                 return true;
             }
         }

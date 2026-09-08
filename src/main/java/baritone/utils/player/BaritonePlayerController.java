@@ -71,6 +71,9 @@ public final class BaritonePlayerController implements IPlayerController {
 
     @Override
     public void windowClick(int windowId, int slotId, int mouseButton, ClickType type, Player player) {
+        if (player != null && player.isSprinting()) {
+            player.setSprinting(false);
+        }
         mc.gameMode.handleInventoryMouseClick(windowId, slotId, mouseButton, type, player);
     }
 

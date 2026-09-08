@@ -22,6 +22,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.NonNullList;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
@@ -29,6 +32,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,33 +54,43 @@ public final class MiningStatsTracker {
     public enum OreType {
         DIAMOND("Kim Cương", "Diamond", 0xFF38BDF8, () -> AutoMineScreen.oreDiamond,
                 new ItemStack(Items.DIAMOND_ORE),
+                Items.DIAMOND, "Cục Kim Cương",
                 Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE),
         EMERALD("Lục Bảo", "Emerald", 0xFF34D399, () -> AutoMineScreen.oreEmerald,
                 new ItemStack(Items.EMERALD_ORE),
+                Items.EMERALD, "Cục Lục Bảo",
                 Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE),
         ANCIENT_DEBRIS("Debris", "Ancient Debris", 0xFFC084FC, () -> AutoMineScreen.oreDebris,
                 new ItemStack(Items.ANCIENT_DEBRIS),
+                Items.ANCIENT_DEBRIS, "Mảnh Debris",
                 Blocks.ANCIENT_DEBRIS),
         GOLD("Vàng", "Gold", 0xFFFBBF24, () -> AutoMineScreen.oreGold,
                 new ItemStack(Items.GOLD_ORE),
+                Items.RAW_GOLD, "Vàng Thô",
                 Blocks.GOLD_ORE, Blocks.DEEPSLATE_GOLD_ORE, Blocks.NETHER_GOLD_ORE),
         IRON("Sắt", "Iron", 0xFFE2E8F0, () -> AutoMineScreen.oreIron,
                 new ItemStack(Items.IRON_ORE),
+                Items.RAW_IRON, "Sắt Thô",
                 Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE),
         REDSTONE("Redstone", "Redstone", 0xFFF87171, () -> AutoMineScreen.oreRedstone,
                 new ItemStack(Items.REDSTONE_ORE),
+                Items.REDSTONE, "Bột Đá Đỏ",
                 Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE),
         LAPIS("Lapis", "Lapis", 0xFF60A5FA, () -> AutoMineScreen.oreLapis,
                 new ItemStack(Items.LAPIS_ORE),
+                Items.LAPIS_LAZULI, "Cục Lapis",
                 Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE),
         COPPER("Đồng", "Copper", 0xFFFB923C, () -> AutoMineScreen.oreCopper,
                 new ItemStack(Items.COPPER_ORE),
+                Items.RAW_COPPER, "Đồng Thô",
                 Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE),
         COAL("Than", "Coal", 0xFF94A3B8, () -> AutoMineScreen.oreCoal,
                 new ItemStack(Items.COAL_ORE),
+                Items.COAL, "Cục Than",
                 Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE),
         QUARTZ("Thạch Anh", "Quartz", 0xFFF1F5F9, () -> AutoMineScreen.oreQuartz,
                 new ItemStack(Items.NETHER_QUARTZ_ORE),
+                Items.QUARTZ, "Thạch Anh",
                 Blocks.NETHER_QUARTZ_ORE);
 
         private final String nameVi;
@@ -84,14 +98,18 @@ public final class MiningStatsTracker {
         private final int color;
         private final BooleanSupplier selectedSupplier;
         private final ItemStack itemStack;
+        private final Item dropItem;
+        private final String dropItemNameVi;
         private final Block[] matchingBlocks;
 
-        OreType(String nameVi, String nameEn, int color, BooleanSupplier selectedSupplier, ItemStack itemStack, Block... matchingBlocks) {
+        OreType(String nameVi, String nameEn, int color, BooleanSupplier selectedSupplier, ItemStack itemStack, Item dropItem, String dropItemNameVi, Block... matchingBlocks) {
             this.nameVi = nameVi;
             this.nameEn = nameEn;
             this.color = color;
             this.selectedSupplier = selectedSupplier;
             this.itemStack = itemStack;
+            this.dropItem = dropItem;
+            this.dropItemNameVi = dropItemNameVi;
             this.matchingBlocks = matchingBlocks;
         }
 
@@ -113,6 +131,18 @@ public final class MiningStatsTracker {
 
         public ItemStack getItemStack() {
             return itemStack;
+        }
+
+        public Item getDropItem() {
+            return dropItem;
+        }
+
+        public String getDropItemNameVi() {
+            return dropItemNameVi;
+        }
+
+        public Block[] getMatchingBlocks() {
+            return matchingBlocks;
         }
 
         public boolean matches(Block block) {
@@ -209,12 +239,77 @@ public final class MiningStatsTracker {
     private final AtomicInteger totalBlocksMined = new AtomicInteger(0);
     private final Map<OreType, AtomicInteger> oreCounts = new ConcurrentHashMap<>();
     private final Map<WoodType, AtomicInteger> woodCounts = new ConcurrentHashMap<>();
+    private final Map<Item, AtomicInteger> dropItemCounts = new ConcurrentHashMap<>();
+    private final Map<Item, Integer> lastSeenInventoryCounts = new ConcurrentHashMap<>();
+    private volatile boolean inventoryBaselineInitialized = false;
     private long sessionStartTime = System.currentTimeMillis();
     private volatile long lastBreakTime = 0;
     private volatile BlockPos lastBreakPos = null;
 
     private MiningStatsTracker() {
         // Singleton
+    }
+
+    public int getDropItemCount(Item item) {
+        if (item == null) return 0;
+        AtomicInteger count = dropItemCounts.get(item);
+        return count != null ? count.get() : 0;
+    }
+
+    public int getDiamondDropCount() {
+        return getDropItemCount(Items.DIAMOND);
+    }
+
+    /**
+     * Tự động quét và cập nhật số lượng vật phẩm/cục quặng rơi ra thực tế nhặt được vào túi đồ.
+     * Hỗ trợ đầy đủ hiệu ứng Gia Vận (Fortune 1-3), không bị mất số lượng khi cất vào Shulker hay Rương Ender.
+     */
+    public void updateInventoryStats(Player player) {
+        if (player == null) return;
+        try {
+            NonNullList<ItemStack> inv = player.getInventory().getNonEquipmentItems();
+            Map<Item, Integer> currentCounts = new HashMap<>();
+            for (ItemStack stack : inv) {
+                if (!stack.isEmpty()) {
+                    Item it = stack.getItem();
+                    currentCounts.merge(it, stack.getCount(), Integer::sum);
+                }
+            }
+
+            if (!inventoryBaselineInitialized) {
+                for (OreType ore : OreType.values()) {
+                    if (ore.getDropItem() != null) {
+                        lastSeenInventoryCounts.put(ore.getDropItem(), currentCounts.getOrDefault(ore.getDropItem(), 0));
+                    }
+                    for (Block b : ore.getMatchingBlocks()) {
+                        lastSeenInventoryCounts.put(b.asItem(), currentCounts.getOrDefault(b.asItem(), 0));
+                    }
+                }
+                inventoryBaselineInitialized = true;
+                return;
+            }
+
+            for (OreType ore : OreType.values()) {
+                Item dropItem = ore.getDropItem();
+                if (dropItem != null) {
+                    int current = currentCounts.getOrDefault(dropItem, 0);
+                    int last = lastSeenInventoryCounts.getOrDefault(dropItem, 0);
+                    if (current > last) {
+                        dropItemCounts.computeIfAbsent(dropItem, k -> new AtomicInteger(0)).addAndGet(current - last);
+                    }
+                    lastSeenInventoryCounts.put(dropItem, current);
+                }
+                for (Block b : ore.getMatchingBlocks()) {
+                    Item bItem = b.asItem();
+                    int current = currentCounts.getOrDefault(bItem, 0);
+                    int last = lastSeenInventoryCounts.getOrDefault(bItem, 0);
+                    if (current > last) {
+                        dropItemCounts.computeIfAbsent(bItem, k -> new AtomicInteger(0)).addAndGet(current - last);
+                    }
+                    lastSeenInventoryCounts.put(bItem, current);
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     /**
@@ -249,6 +344,11 @@ public final class MiningStatsTracker {
                 break;
             }
         }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            updateInventoryStats(mc.player);
+        }
     }
 
     public int getTotalBlocksMined() {
@@ -277,6 +377,9 @@ public final class MiningStatsTracker {
         totalBlocksMined.set(0);
         oreCounts.clear();
         woodCounts.clear();
+        dropItemCounts.clear();
+        lastSeenInventoryCounts.clear();
+        inventoryBaselineInitialized = false;
         sessionStartTime = System.currentTimeMillis();
         lastBreakPos = null;
         lastBreakTime = 0;
@@ -401,6 +504,11 @@ public final class MiningStatsTracker {
     public void renderCard(GuiGraphics guiGraphics, Font font, int x, int y, int width, boolean isMining, boolean isChop) {
         List<DisplayRow> displayRows = new ArrayList<>();
 
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            updateInventoryStats(mc.player);
+        }
+
         if (isChop) {
             int selectedCount = 0;
             for (WoodType wood : WoodType.values()) {
@@ -436,10 +544,20 @@ public final class MiningStatsTracker {
             }
         } else {
             for (OreType ore : OreType.values()) {
-                if (ore.isSelected()) {
-                    displayRows.add(new DisplayRow(ore.getItemStack(), ore.getNameVi(), getOreCount(ore), ore.getColor()));
-                } else if (getOreCount(ore) > 0) {
-                    displayRows.add(new DisplayRow(ore.getItemStack(), ore.getNameVi(), getOreCount(ore), ore.getColor()));
+                int dropCount = (ore.getDropItem() != null) ? getDropItemCount(ore.getDropItem()) : 0;
+                int oreCount = getOreCount(ore);
+                boolean isSelected = ore.isSelected();
+
+                if (isSelected || oreCount > 0 || dropCount > 0) {
+                    // 1. Dòng Cục vật phẩm rơi ra thực tế (Items.DIAMOND, Items.RAW_IRON, v.v.):
+                    if (ore.getDropItem() != null && ore.getDropItem() != ore.getItemStack().getItem()) {
+                        displayRows.add(new DisplayRow(new ItemStack(ore.getDropItem()), ore.getDropItemNameVi(), dropCount, ore.getColor()));
+                    }
+                    // 2. Dòng Quặng (Blocks: Blocks.DIAMOND_ORE, v.v.):
+                    String oreLabel = (ore.getDropItem() != null && ore.getDropItem() != ore.getItemStack().getItem())
+                            ? "Quặng " + ore.getNameVi()
+                            : ore.getNameVi();
+                    displayRows.add(new DisplayRow(ore.getItemStack(), oreLabel, oreCount, ore.getColor()));
                 }
             }
             for (WoodType wood : WoodType.values()) {

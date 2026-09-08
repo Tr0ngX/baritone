@@ -503,9 +503,9 @@ public final class Settings {
     public final Setting<Double> randomLooking113 = new Setting<>(2d);
 
     /**
-     * Block reach distance
+     * Block reach distance. Set to 4.25f to safely operate within GrimAC's 4.5f hard reach threshold with zero margin violations.
      */
-    public final Setting<Float> blockReachDistance = new Setting<>(4.5f);
+    public final Setting<Float> blockReachDistance = new Setting<>(4.25f);
 
     /**
      * How many ticks between breaking a block and starting to break the next block. Default in game is 6 ticks.

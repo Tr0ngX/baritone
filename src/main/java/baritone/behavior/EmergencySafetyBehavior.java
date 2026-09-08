@@ -27,8 +27,9 @@ import baritone.utils.AutoMineConfig;
 import baritone.utils.AutoMineScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import baritone.api.event.events.type.EventState;
 import net.minecraft.core.NonNullList;
-import net.minecraft.network.chat.Component;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -55,7 +56,7 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
     @Override
     public void onTick(TickEvent event) {
-        if (event.getType() == TickEvent.Type.OUT) {
+        if (event.getType() == TickEvent.Type.OUT || event.getState() == EventState.PRE) {
             return;
         }
 
@@ -77,14 +78,17 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             return;
         }
 
-        // 1. Kiểm tra trạng thái rơi vào / đứng trong hồ Lava (chỉ khi checkDanger bật):
-        boolean inLava = false;
+        // 1. Kiểm tra trạng thái rơi vào và thực sự bốc cháy trong hồ Lava (chỉ khi checkDanger bật):
+        // ĐIỀU KIỆN CHÍNH XÁC:
+        // - Người chơi phải thực sự đang bốc cháy (isOnFire() || getRemainingFireTicks() > 0)
+        // - Người chơi phải đang tiếp xúc trong khối Lava (isInLava() || getBlockState(playerFeet()).is(Blocks.LAVA))
+        // - Người chơi KHÔNG có hiệu ứng kháng lửa (MobEffects.FIRE_RESISTANCE)
         if (checkDanger) {
-            inLava = ctx.player().isInLava()
-                    || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA)
-                    || (ctx.player().getDeltaMovement().y < 0 && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.LAVA));
+            boolean hasFireResistance = ctx.player().hasEffect(MobEffects.FIRE_RESISTANCE);
+            boolean isBurning = ctx.player().isOnFire() || ctx.player().getRemainingFireTicks() > 0;
+            boolean inLavaBlock = ctx.player().isInLava() || ctx.world().getBlockState(ctx.playerFeet()).is(Blocks.LAVA);
 
-            if (inLava) {
+            if (!hasFireResistance && isBurning && inLavaBlock) {
                 lavaTicks++;
             } else {
                 lavaTicks = 0;
@@ -104,9 +108,9 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             }
         }
 
-        // TRƯỜNG HỢP 2: LAVA (chỉ khi checkDanger bật)
-        if (dangerReason == null && checkDanger && inLava && lavaTicks >= 60) {
-            dangerReason = "Rơi vào hồ LAVA liên tục quá 3 giây!";
+        // TRƯỜNG HỢP 2: LAVA (chỉ khi checkDanger bật, phải bốc cháy liên tục hơn 3 giây = 60 ticks)
+        if (dangerReason == null && checkDanger && lavaTicks >= 60) {
+            dangerReason = "Bị bốc cháy trong hồ LAVA liên tục quá 3 giây!";
         }
 
         // TRƯỜNG HỢP 3: QUÁI ĐÁNH, ĐÓI, TÉ NGÃ, v.v. (Phải Hết Totem + Nửa thanh máu, chỉ khi checkDanger bật)

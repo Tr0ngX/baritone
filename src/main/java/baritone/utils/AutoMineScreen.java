@@ -893,8 +893,10 @@ public class AutoMineScreen extends Screen implements Helper {
             int totalWood = MiningStatsTracker.getInstance().getTotalWoodMined();
             ClickGuiTheme.drawText(g, this.font, "Gỗ khai thác: " + totalWood + " khúc", rx + 8, ry + 78, 0xFF34D399, true);
         } else {
-            int totalDiamonds = MiningStatsTracker.getInstance().getOreCount(MiningStatsTracker.OreType.DIAMOND);
-            ClickGuiTheme.drawText(g, this.font, "Kim cương: " + totalDiamonds + " viên", rx + 8, ry + 78, ClickGuiTheme.ACCENT_CYAN, true);
+            int totalDiamondGems = MiningStatsTracker.getInstance().getDiamondDropCount();
+            int totalDiamondOres = MiningStatsTracker.getInstance().getOreCount(MiningStatsTracker.OreType.DIAMOND);
+            String diamText = "Kim cương: " + totalDiamondGems + " cục (" + totalDiamondOres + " quặng)";
+            ClickGuiTheme.drawText(g, this.font, diamText, rx + 8, ry + 78, ClickGuiTheme.ACCENT_CYAN, true);
         }
     }
 
