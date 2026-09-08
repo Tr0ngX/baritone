@@ -8,6 +8,7 @@
     "defaultRequire": 1
   },
   "client": [
+    "MixinClientBundleTooltip",
     "MixinChunkArray",
     "MixinClientChunkProvider",
     "MixinClientPlayerEntity",

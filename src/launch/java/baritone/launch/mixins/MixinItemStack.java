@@ -60,4 +60,33 @@ public abstract class MixinItemStack implements IItemStack {
         if (baritoneHash == 0) recalculateHash();
         return baritoneHash;
     }
+
+    @Shadow public abstract Item getItem();
+    @Shadow public abstract <T> T get(net.minecraft.core.component.DataComponentType<? extends T> type);
+    @Shadow public abstract boolean has(net.minecraft.core.component.DataComponentType<?> type);
+
+    @Inject(
+            method = "getTooltipLines",
+            at = @At("RETURN"),
+            cancellable = true
+    )
+    private void onGetTooltipLines(
+            net.minecraft.world.item.Item.TooltipContext context,
+            net.minecraft.world.entity.player.Player player,
+            net.minecraft.world.item.TooltipFlag tooltipFlag,
+            org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<java.util.List<net.minecraft.network.chat.Component>> cir
+    ) {
+        java.util.List<net.minecraft.network.chat.Component> originalList = cir.getReturnValue();
+        if (originalList == null) return;
+
+        if (this.getItem() instanceof net.minecraft.world.item.BundleItem || this.has(net.minecraft.core.component.DataComponents.BUNDLE_CONTENTS)) {
+            net.minecraft.world.item.component.BundleContents contents = this.get(net.minecraft.core.component.DataComponents.BUNDLE_CONTENTS);
+            if (contents != null) {
+                java.util.List<net.minecraft.network.chat.Component> enriched = new java.util.ArrayList<>(originalList);
+                ItemStack self = (ItemStack) (Object) this;
+                baritone.utils.BundleTooltipHelper.appendBundleTooltip(self, contents, enriched, context, tooltipFlag);
+                cir.setReturnValue(enriched);
+            }
+        }
+    }
 }

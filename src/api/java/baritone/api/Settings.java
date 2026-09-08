@@ -508,6 +508,11 @@ public final class Settings {
     public final Setting<Float> blockReachDistance = new Setting<>(4.25f);
 
     /**
+     * Tự động soi và hiển thị chi tiết vật phẩm, số lượng, cấp độ phù phép (Enchantments), hiệu ứng thuốc, độ bền bên trong Túi Đồ (Bundle).
+     */
+    public final Setting<Boolean> bundleInspector = new Setting<>(true);
+
+    /**
      * How many ticks between breaking a block and starting to break the next block. Default in game is 6 ticks.
      * Values under 1 will be clamped. The delay only applies to non-instant (1-tick) breaks.
      */
