@@ -214,6 +214,14 @@ public final class AutoLogoutTracker {
             if (name == null || name.isEmpty()) {
                 name = p.getName().getString();
             }
+
+            // Bỏ qua thực thể clone / bot nhái tên của chính mình do plugin server / anti-cheat tạo ra
+            String selfScoreboardName = self.getScoreboardName();
+            String selfProfileName = self.getGameProfile() != null ? self.getGameProfile().name() : "";
+            if (name.equalsIgnoreCase(selfScoreboardName) || name.equalsIgnoreCase(selfProfileName)) {
+                continue;
+            }
+
             if (whitelist.contains(name.toLowerCase(Locale.ROOT))) {
                 continue;
             }
