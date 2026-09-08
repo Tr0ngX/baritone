@@ -103,9 +103,9 @@ public final class ClickGuiTheme {
 
         g.fill(thumbX, thumbY, thumbX + thumbW, thumbY + thumbH, thumbColor);
 
-        // Nhãn chữ nhỏ ON / OFF (chỉ vẽ khi bề rộng switch đủ hiển thị)
+        // Nhãn chữ nhỏ BẬT / TẮT (chỉ vẽ khi bề rộng switch đủ hiển thị)
         if (w >= 30) {
-            String label = active ? "ON" : "OFF";
+            String label = active ? "BẬT" : "TẮT";
             int labelColor = active ? 0xFFFFFFFF : 0xFF64748B;
             int labelX = active ? (x + 3) : (x + w - font.width(label) - 3);
             int labelY = y + (h - 8) / 2;

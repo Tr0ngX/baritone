@@ -116,10 +116,10 @@ public class AutoMineScreen extends Screen implements Helper {
     private static final String[] TAB_SHORT_NAMES = new String[]{
             "Quặng",
             "Cây",
-            "Hầm",
+            "Đi Lại",
             "Sống",
-            "HUD",
-            "Specs"
+            "G.Diện",
+            "Chỉ Số"
     };
     private static final ItemStack[] TAB_ITEM_ICONS = new ItemStack[]{
             new ItemStack(Items.DIAMOND_ORE),
@@ -215,15 +215,17 @@ public class AutoMineScreen extends Screen implements Helper {
         final ItemStack iconItem;
         final String name;
         final String desc;
+        final String details;
         final String category;
         final int color;
         final java.util.function.BooleanSupplier getter;
         final Runnable toggle;
 
-        ModuleItem(ItemStack iconItem, String name, String desc, String category, int color, java.util.function.BooleanSupplier getter, Runnable toggle) {
+        ModuleItem(ItemStack iconItem, String name, String desc, String details, String category, int color, java.util.function.BooleanSupplier getter, Runnable toggle) {
             this.iconItem = iconItem;
             this.name = name;
             this.desc = desc;
+            this.details = details;
             this.category = category;
             this.color = color;
             this.getter = getter;
@@ -234,7 +236,7 @@ public class AutoMineScreen extends Screen implements Helper {
     private final List<ModuleItem> allModules = new ArrayList<>();
 
     public AutoMineScreen(Baritone baritone) {
-        super(Component.literal("TR0NGX NEXTGEN CLICKGUI"));
+        super(Component.literal("BẢNG ĐIỀU KHIỂN TR0NGX"));
         this.baritone = baritone;
         AutoMineConfig.ensureLoaded();
         initModuleRegistry();
@@ -244,68 +246,156 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.clear();
 
         // 1. TAB QUẶNG
-        allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_ORE), "Kim Cương", "Khai thác quặng Diamond & Deepslate Diamond", "ORES", 0xFF38BDF8, () -> oreDiamond, () -> oreDiamond = !oreDiamond));
-        allModules.add(new ModuleItem(new ItemStack(Items.EMERALD_ORE), "Lục Bảo", "Khai thác quặng Emerald quý hiếm trên núi", "ORES", 0xFF34D399, () -> oreEmerald, () -> oreEmerald = !oreEmerald));
-        allModules.add(new ModuleItem(new ItemStack(Items.ANCIENT_DEBRIS), "Mảnh Vỡ Cổ Đại", "Ancient Debris tầng Netherite Y=15", "ORES", 0xFFC084FC, () -> oreDebris, () -> oreDebris = !oreDebris));
-        allModules.add(new ModuleItem(new ItemStack(Items.GOLD_ORE), "Vàng", "Quặng Gold thế giới thường và Nether Gold", "ORES", 0xFFFBBF24, () -> oreGold, () -> oreGold = !oreGold));
-        allModules.add(new ModuleItem(new ItemStack(Items.IRON_ORE), "Sắt", "Quặng Iron & Deepslate Iron", "ORES", 0xFFE2E8F0, () -> oreIron, () -> oreIron = !oreIron));
-        allModules.add(new ModuleItem(new ItemStack(Items.REDSTONE_ORE), "Redstone", "Quặng Đá đỏ cung cấp năng lượng", "ORES", 0xFFF87171, () -> oreRedstone, () -> oreRedstone = !oreRedstone));
-        allModules.add(new ModuleItem(new ItemStack(Items.LAPIS_ORE), "Lapis", "Ngọc Lưu Ly Lapis Lazuli phù phép", "ORES", 0xFF60A5FA, () -> oreLapis, () -> oreLapis = !oreLapis));
-        allModules.add(new ModuleItem(new ItemStack(Items.COPPER_ORE), "Đồng", "Quặng Copper & Deepslate Copper", "ORES", 0xFFFB923C, () -> oreCopper, () -> oreCopper = !oreCopper));
-        allModules.add(new ModuleItem(new ItemStack(Items.COAL_ORE), "Than", "Quặng Coal cung cấp nhiên liệu", "ORES", 0xFF94A3B8, () -> oreCoal, () -> oreCoal = !oreCoal));
-        allModules.add(new ModuleItem(new ItemStack(Items.NETHER_QUARTZ_ORE), "Thạch Anh", "Quặng Nether Quartz thế giới Nether", "ORES", 0xFFF1F5F9, () -> oreQuartz, () -> oreQuartz = !oreQuartz));
+        allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_ORE), "Kim Cương", "Khai thác quặng Kim Cương thường và đá sâu",
+                "Tự động tìm kiếm và đào mọi khối quặng Kim Cương xung quanh. Tự chuyển cuốc Gia Tài (Fortune) để nhân số lượng kim cương rơi ra. Tầng lý tưởng: Y=-58 hoặc -54.",
+                "ORES", 0xFF38BDF8, () -> oreDiamond, () -> oreDiamond = !oreDiamond));
+        allModules.add(new ModuleItem(new ItemStack(Items.EMERALD_ORE), "Lục Bảo", "Khai thác quặng Ngọc Lục Bảo quý hiếm trên núi cao",
+                "Dò quét và khai thác quặng Ngọc Lục Bảo đơn lẻ trên các dãy núi cao. Thích hợp để tích lũy tiền tệ giao dịch với dân làng.",
+                "ORES", 0xFF34D399, () -> oreEmerald, () -> oreEmerald = !oreEmerald));
+        allModules.add(new ModuleItem(new ItemStack(Items.ANCIENT_DEBRIS), "Mảnh Vỡ Cổ Đại", "Mảnh Vỡ Cổ Đại (Netherite) tầng Y=15 thế giới Nether",
+                "Tự động dò tìm và đào Mảnh Vỡ Cổ Đại (Debris) cực kỳ quý giá trong Nether để đúc phôi Netherite. Tích hợp né Bedrock và chống dung nham.",
+                "ORES", 0xFFC084FC, () -> oreDebris, () -> oreDebris = !oreDebris));
+        allModules.add(new ModuleItem(new ItemStack(Items.GOLD_ORE), "Quặng Vàng", "Khai thác quặng Vàng thế giới thường và Nether",
+                "Khai thác quặng Vàng thường, vàng đá sâu và Nether Gold. Dùng chế tạo Táo Vàng, Cà Rốt Vàng và giao dịch với Piglin.",
+                "ORES", 0xFFFBBF24, () -> oreGold, () -> oreGold = !oreGold));
+        allModules.add(new ModuleItem(new ItemStack(Items.IRON_ORE), "Quặng Sắt", "Khai thác quặng Sắt thường và đá sâu",
+                "Khai thác quặng Sắt thô để chế tạo giáp, xô nước, cuốc sắt và phễu (Hopper). Nguồn tài nguyên kim loại thiết yếu nhất.",
+                "ORES", 0xFFE2E8F0, () -> oreIron, () -> oreIron = !oreIron));
+        allModules.add(new ModuleItem(new ItemStack(Items.REDSTONE_ORE), "Đá Đỏ (Redstone)", "Khai thác quặng Đá Đỏ cung cấp năng lượng máy móc",
+                "Khai thác bột Đá Đỏ phục vụ mạch tự động hóa, máy móc Piston, đường ray tăng tốc. Phổ biến ở các tầng âm Y=-32 đến Y=-64.",
+                "ORES", 0xFFF87171, () -> oreRedstone, () -> oreRedstone = !oreRedstone));
+        allModules.add(new ModuleItem(new ItemStack(Items.LAPIS_ORE), "Ngọc Lưu Ly (Lapis)", "Khai thác Ngọc Lưu Ly dùng để phù phép trang bị",
+                "Khai thác quặng Lapis Lazuli làm nguyên liệu phù phép (Enchant) trang bị tại Bàn Phù Phép và nhuộm màu xanh. Mật độ cao nhất ở Y=0.",
+                "ORES", 0xFF60A5FA, () -> oreLapis, () -> oreLapis = !oreLapis));
+        allModules.add(new ModuleItem(new ItemStack(Items.COPPER_ORE), "Quặng Đồng", "Khai thác quặng Đồng thường và đá sâu",
+                "Thu thập quặng Đồng để chế tạo Kính Viễn Vọng, Cột Thu Lôi và các khối kiến trúc xây dựng bằng đồng độc đáo.",
+                "ORES", 0xFFFB923C, () -> oreCopper, () -> oreCopper = !oreCopper));
+        allModules.add(new ModuleItem(new ItemStack(Items.COAL_ORE), "Than Đá", "Khai thác quặng Than Đá cung cấp chất đốt, nhiên liệu",
+                "Khai thác quặng Than Đá để lấy chất đốt nung khoáng sản, chế tạo đuốc chiếu sáng và phục vụ sinh tồn đường dài.",
+                "ORES", 0xFF94A3B8, () -> oreCoal, () -> oreCoal = !oreCoal));
+        allModules.add(new ModuleItem(new ItemStack(Items.NETHER_QUARTZ_ORE), "Thạch Anh Nether", "Khai thác quặng Thạch Anh thế giới Nether",
+                "Khai thác Thạch Anh trong Nether giúp kiếm kinh nghiệm (XP) cực nhanh để hồi phục độ bền đồ Mending và làm máy so sánh Redstone.",
+                "ORES", 0xFFF1F5F9, () -> oreQuartz, () -> oreQuartz = !oreQuartz));
 
         // 2. TAB CHẶT CÂY (TREES)
-        allModules.add(new ModuleItem(new ItemStack(Items.OAK_LOG), "Gỗ Sồi (Oak)", "Khai thác thân gỗ Sồi Oak Log & Wood", "TREES", 0xFFB48A55, () -> woodOak, () -> woodOak = !woodOak));
-        allModules.add(new ModuleItem(new ItemStack(Items.BIRCH_LOG), "Gỗ Bạch Dương", "Khai thác gỗ Bạch Dương thân trắng", "TREES", 0xFFE2E8F0, () -> woodBirch, () -> woodBirch = !woodBirch));
-        allModules.add(new ModuleItem(new ItemStack(Items.SPRUCE_LOG), "Gỗ Thông (Spruce)", "Khai thác gỗ Thông rừng Taiga và vùng tuyết", "TREES", 0xFF6B4226, () -> woodSpruce, () -> woodSpruce = !woodSpruce));
-        allModules.add(new ModuleItem(new ItemStack(Items.JUNGLE_LOG), "Gỗ Rừng (Jungle)", "Khai thác cây cổ thụ rừng nhiệt đới khổng lồ", "TREES", 0xFF966F33, () -> woodJungle, () -> woodJungle = !woodJungle));
-        allModules.add(new ModuleItem(new ItemStack(Items.ACACIA_LOG), "Gỗ Keo (Acacia)", "Khai thác gỗ Keo thảo nguyên Savanna", "TREES", 0xFFFB923C, () -> woodAcacia, () -> woodAcacia = !woodAcacia));
-        allModules.add(new ModuleItem(new ItemStack(Items.DARK_OAK_LOG), "Gỗ Sồi Sẫm", "Khai thác gỗ Sồi Sẫm tán dày rừng Dark Forest", "TREES", 0xFF4A3525, () -> woodDarkOak, () -> woodDarkOak = !woodDarkOak));
-        allModules.add(new ModuleItem(new ItemStack(Items.MANGROVE_LOG), "Gỗ Đước (Mangrove)", "Khai thác gỗ Đước đầm lầy ngập mặn", "TREES", 0xFFE11D48, () -> woodMangrove, () -> woodMangrove = !woodMangrove));
-        allModules.add(new ModuleItem(new ItemStack(Items.CHERRY_LOG), "Gỗ Anh Đào (Cherry)", "Khai thác hoa anh đào rực rỡ vùng núi cao", "TREES", 0xFFF472B6, () -> woodCherry, () -> woodCherry = !woodCherry));
-        allModules.add(new ModuleItem(new ItemStack(Items.BAMBOO_BLOCK), "Cây Tre (Bamboo)", "Khai thác thân tre khối Bamboo Block", "TREES", 0xFFA3E635, () -> woodBamboo, () -> woodBamboo = !woodBamboo));
-        allModules.add(new ModuleItem(new ItemStack(Items.CRIMSON_STEM), "Nấm U Ám (Crimson)", "Khai thác thân nấm Crimson đỏ thế giới Nether", "TREES", 0xFFDC2626, () -> woodCrimson, () -> woodCrimson = !woodCrimson));
-        allModules.add(new ModuleItem(new ItemStack(Items.WARPED_STEM), "Nấm Kỳ Dị (Warped)", "Khai thác thân nấm Warped xanh thế giới Nether", "TREES", 0xFF06B6D4, () -> woodWarped, () -> woodWarped = !woodWarped));
+        allModules.add(new ModuleItem(new ItemStack(Items.OAK_LOG), "Gỗ Sồi", "Khai thác thân gỗ Sồi và khối gỗ Sồi",
+                "Tự động tìm kiếm và đốn hạ cây gỗ Sồi quanh khu vực. Bot tự chặt từ gốc lên ngọn và tự nhặt khối gỗ rơi xung quanh.",
+                "TREES", 0xFFB48A55, () -> woodOak, () -> woodOak = !woodOak));
+        allModules.add(new ModuleItem(new ItemStack(Items.BIRCH_LOG), "Gỗ Bạch Dương", "Khai thác thân gỗ Bạch Dương trắng rừng thưa",
+                "Khai thác thân gỗ Bạch Dương vỏ trắng, loại gỗ sáng màu được ưa chuộng để lát sàn và làm đồ nội thất trang trí.",
+                "TREES", 0xFFE2E8F0, () -> woodBirch, () -> woodBirch = !woodBirch));
+        allModules.add(new ModuleItem(new ItemStack(Items.SPRUCE_LOG), "Gỗ Thông", "Khai thác thân gỗ Thông rừng Taiga và vùng tuyết",
+                "Khai thác cây gỗ Thông thân thẳng đứng trong rừng Taiga. Cực kỳ thích hợp cho các công trình kiến trúc phong cách Trung Cổ.",
+                "TREES", 0xFF6B4226, () -> woodSpruce, () -> woodSpruce = !woodSpruce));
+        allModules.add(new ModuleItem(new ItemStack(Items.JUNGLE_LOG), "Gỗ Rừng Nhiệt Đới", "Khai thác cây cổ thụ khổng lồ rừng nhiệt đới",
+                "Khai thác cây cổ thụ khổng lồ 2x2 trong rừng rậm nhiệt đới. Bot tự động kê khối hoặc leo lên chặt sạch các nhánh gỗ trên cao.",
+                "TREES", 0xFF966F33, () -> woodJungle, () -> woodJungle = !woodJungle));
+        allModules.add(new ModuleItem(new ItemStack(Items.ACACIA_LOG), "Gỗ Keo", "Khai thác cây gỗ Keo thảo nguyên Savanna",
+                "Khai thác cây gỗ Keo thân cong màu cam ấm áp tại các thảo nguyên Savanna nắng gió.",
+                "TREES", 0xFFFB923C, () -> woodAcacia, () -> woodAcacia = !woodAcacia));
+        allModules.add(new ModuleItem(new ItemStack(Items.DARK_OAK_LOG), "Gỗ Sồi Sẫm", "Khai thác gỗ Sồi Sẫm tán lá dày rừng u ám",
+                "Khai thác cây gỗ Sồi Sẫm thân to 2x2 tán lá rậm rạp tại rừng Dark Forest, dùng làm mái nhà và khung cửa sang trọng.",
+                "TREES", 0xFF4A3525, () -> woodDarkOak, () -> woodDarkOak = !woodDarkOak));
+        allModules.add(new ModuleItem(new ItemStack(Items.MANGROVE_LOG), "Gỗ Đước", "Khai thác cây gỗ Đước đầm lầy ngập mặn",
+                "Khai thác cây gỗ Đước ngập mặn với hệ thống rễ chằng chịt và gỗ màu đỏ sẫm đặc trưng.",
+                "TREES", 0xFFE11D48, () -> woodMangrove, () -> woodMangrove = !woodMangrove));
+        allModules.add(new ModuleItem(new ItemStack(Items.CHERRY_LOG), "Gỗ Anh Đào", "Khai thác hoa anh đào rực rỡ vùng núi cao",
+                "Khai thác cây hoa Anh Đào màu hồng phấn mộng mơ trên đỉnh núi, thu hoạch khối gỗ hoa anh đào tuyệt đẹp.",
+                "TREES", 0xFFF472B6, () -> woodCherry, () -> woodCherry = !woodCherry));
+        allModules.add(new ModuleItem(new ItemStack(Items.BAMBOO_BLOCK), "Thân Tre", "Khai thác bụi tre và khối thân tre",
+                "Khai thác các bụi tre và khối thân tre để ghép thành ván tre, bè tre và giàn giáo leo trèo công trình.",
+                "TREES", 0xFFA3E635, () -> woodBamboo, () -> woodBamboo = !woodBamboo));
+        allModules.add(new ModuleItem(new ItemStack(Items.CRIMSON_STEM), "Thân Nấm Đỏ (Crimson)", "Khai thác thân nấm đỏ Crimson thế giới Nether",
+                "Khai thác thân nấm đỏ Crimson trong rừng nấm Nether. Thân gỗ chống cháy hoàn toàn, không bao giờ bị lửa thiêu rụi.",
+                "TREES", 0xFFDC2626, () -> woodCrimson, () -> woodCrimson = !woodCrimson));
+        allModules.add(new ModuleItem(new ItemStack(Items.WARPED_STEM), "Thân Nấm Xanh (Warped)", "Khai thác thân nấm xanh Warped thế giới Nether",
+                "Khai thác thân nấm xanh Warped ngọc bích trong rừng Nether. Thân gỗ màu xanh biển chống cháy cực đẹp.",
+                "TREES", 0xFF06B6D4, () -> woodWarped, () -> woodWarped = !woodWarped));
 
         // 3. TAB DI CHUYỂN
-        allModules.add(new ModuleItem(new ItemStack(Items.NETHER_STAR), "ARA* Engine", "Tính toán đường đi Anytime Search 0ms phản xạ", "MOVEMENT", 0xFF38BDF8, () -> optZeroDelay, () -> optZeroDelay = !optZeroDelay));
-        allModules.add(new ModuleItem(new ItemStack(Items.OAK_TRAPDOOR), "Crawl 1-Block", "Đào hầm chui 1 block siêu tốc bằng trapdoor", "MOVEMENT", 0xFF60A5FA, () -> optCrawlMode, () -> optCrawlMode = !optCrawlMode));
-        allModules.add(new ModuleItem(new ItemStack(Items.RABBIT_FOOT), "Tunnel Bhop", "Nhảy liên hoàn trong đường hầm tăng tốc độ", "MOVEMENT", 0xFF34D399, () -> optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
-        allModules.add(new ModuleItem(new ItemStack(Items.IRON_PICKAXE), "Shaft Down", "Đào thẳng xuống tầng an toàn chống rơi tự do", "MOVEMENT", 0xFFFBBF24, () -> optShaftDown, () -> optShaftDown = !optShaftDown));
-        allModules.add(new ModuleItem(new ItemStack(Items.FEATHER), "Parkour", "Tự động nhảy vượt chướng ngại vật & kê block", "MOVEMENT", 0xFFC084FC, () -> optParkour, () -> optParkour = !optParkour));
-        allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_BOOTS), "Auto-Sprint", "Tự động chạy nhanh khi bot di chuyển thẳng", "MOVEMENT", 0xFF38BDF8, () -> optAutoSprint, () -> optAutoSprint = !optAutoSprint));
-        allModules.add(new ModuleItem(new ItemStack(Items.FIREWORK_ROCKET), "Overshoot", "Cắt cua tốc độ cao ở các góc rẽ mà không dừng", "MOVEMENT", 0xFFFB923C, () -> optOvershoot, () -> optOvershoot = !optOvershoot));
-        allModules.add(new ModuleItem(new ItemStack(Items.HEART_OF_THE_SEA), "Water Sprint", "Bơi nước tốc độ cao như trên cạn", "MOVEMENT", 0xFF60A5FA, () -> optWaterSprint, () -> optWaterSprint = !optWaterSprint));
-        allModules.add(new ModuleItem(new ItemStack(Items.COMPASS), "Strict 1-Dir", "Khóa cố định 1 hướng đào không đổi hướng ngẫu nhiên", "MOVEMENT", 0xFFF87171, () -> optStrictOneDirection, () -> {
+        allModules.add(new ModuleItem(new ItemStack(Items.NETHER_STAR), "Tìm Đường Siêu Tốc (ARA*)", "Thuật toán tìm đường phản xạ tức thì 0ms",
+                "Công nghệ Anytime Repairing A* tiên tiến nhất giúp bot phản xạ né tránh và tính đường đi tức thì trong 0 mili-giây, không bị khựng đơ màn hình.",
+                "MOVEMENT", 0xFF38BDF8, () -> optZeroDelay, () -> optZeroDelay = !optZeroDelay));
+        allModules.add(new ModuleItem(new ItemStack(Items.OAK_TRAPDOOR), "Đào Hầm Chui 1 Ô", "Đào hầm chui 1 block siêu tốc bằng cửa sập",
+                "Bot tự đặt cửa sập (trapdoor) để ép người chơi vào tư thế bò (crawl) cao 1 ô. Giảm 50% khối lượng đá cần đào, tăng gấp đôi tốc độ tìm quặng.",
+                "MOVEMENT", 0xFF60A5FA, () -> optCrawlMode, () -> optCrawlMode = !optCrawlMode));
+        allModules.add(new ModuleItem(new ItemStack(Items.RABBIT_FOOT), "Nhảy Hầm (Bhop)", "Nhảy liên hoàn trong hầm 2 ô tăng tối đa tốc độ",
+                "Tự động căn nhịp đập đầu vào trần hầm 2 block để huỷ độ trễ rơi, biến thành chuỗi nhảy bunny-hop liên tục với vận tốc gấp 2 lần chạy bộ.",
+                "MOVEMENT", 0xFF34D399, () -> optTunnelBhop, () -> optTunnelBhop = !optTunnelBhop));
+        allModules.add(new ModuleItem(new ItemStack(Items.IRON_PICKAXE), "Đào Thẳng Xuống", "Đào hầm dọc thẳng đứng xuống tầng an toàn chống rơi",
+                "Đào hầm dọc thẳng đứng xuống tầng Y mục tiêu cực nhanh mà không bao giờ bị rơi tự do vào hang hở hay vũng dung nham.",
+                "MOVEMENT", 0xFFFBBF24, () -> optShaftDown, () -> optShaftDown = !optShaftDown));
+        allModules.add(new ModuleItem(new ItemStack(Items.FEATHER), "Vượt Địa Hình (Parkour)", "Tự động nhảy vượt chướng ngại vật & kê khối mở đường",
+                "Cho phép bot nhảy qua khe hở 1-4 ô, nhảy chéo góc, nhảy bậc cao và tự động kê khối tạm dưới chân khi vượt địa hình hiểm trở.",
+                "MOVEMENT", 0xFFC084FC, () -> optParkour, () -> optParkour = !optParkour));
+        allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_BOOTS), "Tự Chạy Nhanh", "Tự động kích hoạt chạy nhanh khi di chuyển thẳng",
+                "Tự động kích hoạt chạy nhanh (Sprint) khi có đường đi thoáng phía trước, giúp tiết kiệm thời gian di chuyển giữa các mỏ quặng.",
+                "MOVEMENT", 0xFF38BDF8, () -> optAutoSprint, () -> optAutoSprint = !optAutoSprint));
+        allModules.add(new ModuleItem(new ItemStack(Items.FIREWORK_ROCKET), "Cắt Cua Tốc Độ", "Cắt góc cua tốc độ cao ở các ngã rẽ mà không bị khựng",
+                "Tối ưu góc rẽ: Bot chủ động nghiêng hướng đi trước khi chạm ngã rẽ để ôm cua mượt mà, giữ nguyên đà chạy không bị giảm tốc độ.",
+                "MOVEMENT", 0xFFFB923C, () -> optOvershoot, () -> optOvershoot = !optOvershoot));
+        allModules.add(new ModuleItem(new ItemStack(Items.HEART_OF_THE_SEA), "Bơi Nhanh Dưới Nước", "Bơi lội dưới nước tốc độ cao mượt mà như trên cạn",
+                "Tự động kích hoạt chế độ bơi lặn tốc độ cao khi chìm trong nước, vượt qua các hồ ngầm và sông sâu mà không bị chậm chạp.",
+                "MOVEMENT", 0xFF60A5FA, () -> optWaterSprint, () -> optWaterSprint = !optWaterSprint));
+        allModules.add(new ModuleItem(new ItemStack(Items.COMPASS), "Khóa Một Hướng Đào", "Đào cố định duy nhất một hướng thẳng, không quay đầu",
+                "Ép bot chỉ đào theo đúng một hướng địa lý duy nhất (Bắc, Nam, Đông hoặc Tây). Không bao giờ quay đầu đào lại hầm cũ khi đi đào đường dài (Strip Mine).",
+                "MOVEMENT", 0xFFF87171, () -> optStrictOneDirection, () -> {
             optStrictOneDirection = !optStrictOneDirection;
             Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.SPYGLASS), "Client FreeLook", "Tự do quay camera client, server vẫn force theo Baritone", "MOVEMENT", 0xFF06B6D4, () -> Baritone.settings().clientFreeLook.value, () -> {
+        allModules.add(new ModuleItem(new ItemStack(Items.SPYGLASS), "Tự Do Xoay Màn Hình", "Tự do quay góc nhìn quan sát, máy chủ vẫn khóa theo bot",
+                "Cho phép bạn tự do dùng chuột quay nhìn xung quanh ngắm cảnh trong khi bot vẫn tự lái và đào chuẩn xác dưới nền.",
+                "MOVEMENT", 0xFF06B6D4, () -> Baritone.settings().clientFreeLook.value, () -> {
             Baritone.settings().clientFreeLook.value = !Baritone.settings().clientFreeLook.value;
         }));
 
-        // 3. TAB SINH TỒN
-        allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_PICKAXE), "Auto-Tool", "Tự động đổi công cụ tối ưu (Cúp, Rìu, Xẻng)", "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
-        allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_CARROT), "Auto-Eat", "Tự động ăn thức ăn ngon nhất khi đói < 19", "SURVIVAL", 0xFF34D399, () -> optAutoEat, () -> optAutoEat = !optAutoEat));
-        allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Auto-Totem", "Tự động lấy Totem ra tay phụ & mua /shop khi hết", "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Auto-Logout", "Tự thoát game khi gặp nguy hiểm (Lava, hết Totem, phát hiện Player/Invis)", "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
+        // 4. TAB SINH TỒN
+        allModules.add(new ModuleItem(new ItemStack(Items.DIAMOND_PICKAXE), "Tự Đổi Dụng Cụ", "Tự động chọn dụng cụ tối ưu nhất (Cuốc, Rìu, Xẻng)",
+                "Tự động chọn cuốc, rìu, xẻng hoặc kéo phù hợp nhất cho từng khối block để tốc độ đào nhanh nhất và bảo vệ độ bền dụng cụ.",
+                "SURVIVAL", 0xFF38BDF8, () -> optAutoTool, () -> optAutoTool = !optAutoTool));
+        allModules.add(new ModuleItem(new ItemStack(Items.GOLDEN_CARROT), "Tự Động Ăn Uống", "Tự động ăn thức ăn ngon nhất khi thanh đói dưới 19",
+                "Tự động chọn món ăn có độ hồi phục tốt nhất trong túi đồ và ăn khi thanh đói dưới 19. Tự động mua thức ăn qua /shop nếu hết.",
+                "SURVIVAL", 0xFF34D399, () -> optAutoEat, () -> optAutoEat = !optAutoEat));
+        allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Tự Cầm Totem", "Tự động cầm Totem bất tử ra tay phụ & tự mua /shop khi hết",
+                "Kiểm tra tay phụ liên tục: nếu mất Totem, bot sẽ tự lôi Totem dự phòng ra tay phụ trong 1 tick. Tự mở /shop mua thêm khi hết.",
+                "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
+        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Tự Thoát Khẩn Cấp", "Tự thoát game khi gặp Lava, máu thấp hoặc nguy hiểm",
+                "Hệ thống an toàn tuyệt đối: Tự thoát game khi ngâm trong Lava đúng 2s, khi bị sát thương dung nham 0.5s, hoặc khi máu <= 6 HP. Tự ngắt tính năng sau khi kick để tránh lặp vô hạn!",
+                "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
             optAutoLogout = !optAutoLogout;
             Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.PLAYER_HEAD), "Anti-Player", "Tự ngắt kết nối khi phát hiện người chơi (kể cả tàng hình / invis)", "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
+        allModules.add(new ModuleItem(new ItemStack(Items.PLAYER_HEAD), "Phát Hiện Người Chơi", "Tự ngắt kết nối ngay khi thấy người chơi (kể cả tàng hình)",
+                "Quét radar người chơi trong phạm vi 32 ô (bao gồm cả người chơi tàng hình). Tự động ngắt kết nối tức thì để chống bị phục kích PvP.",
+                "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
             Baritone.settings().autoLogoutOnPlayer.value = !Baritone.settings().autoLogoutOnPlayer.value;
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Shulker Box", "Tự động đặt & mua Shulker Box qua /shop khi đầy balo", "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
-        allModules.add(new ModuleItem(new ItemStack(Items.LAVA_BUCKET), "Auto-Drop", "Tự vứt đá/đất/gravel đầy stack về sau hoặc vào lava", "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
-        allModules.add(new ModuleItem(new ItemStack(Items.ZOMBIE_HEAD), "Mob Avoid", "Tự động né quái vật nguy hiểm và Spawner 14m", "SURVIVAL", 0xFFF87171, () -> optMobAvoid, () -> optMobAvoid = !optMobAvoid));
-        allModules.add(new ModuleItem(new ItemStack(Items.WATER_BUCKET), "Water Check", "Kiểm tra an toàn chất lỏng chống sặc nước / lava", "SURVIVAL", 0xFF60A5FA, () -> optWaterCheck, () -> optWaterCheck = !optWaterCheck));
+        allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Lưu Trữ Shulker Box", "Tự mua /shop, cất đồ vào Shulker và cất vào Rương Ender",
+                "Khi túi đồ đầy khoáng sản: Tự đặt Hộp Shulker cất đồ. Khi đầy 3 Shulker, tự đặt Rương Ender cất Shulker vào trong và đập lại bằng Silk Touch.",
+                "SURVIVAL", 0xFFC084FC, () -> optShulkerStorage, () -> optShulkerStorage = !optShulkerStorage));
+        allModules.add(new ModuleItem(new ItemStack(Items.LAVA_BUCKET), "Tự Động Vứt Rác", "Tự lọc ném bỏ đá cuội/đất/sỏi khi đầy túi đồ",
+                "Tự động lọc và ném bỏ các khối đá cuội, đá sâu, đất, sỏi thừa thãi ra phía sau hoặc ném vào dung nham để giải phóng không gian chứa quặng quý.",
+                "SURVIVAL", 0xFF94A3B8, () -> optAutoDrop, () -> optAutoDrop = !optAutoDrop));
+        allModules.add(new ModuleItem(new ItemStack(Items.ZOMBIE_HEAD), "Tránh Xa Quái Vật", "Tự động né tránh quái vật nguy hiểm và lồng quái trong 14m",
+                "Tự động tính toán chi phí đường đi né xa quái vật nguy hiểm (Creeper, Warden, Skeleton) và lồng sinh quái (Spawner) trong bán kính 14-16 mét.",
+                "SURVIVAL", 0xFFF87171, () -> optMobAvoid, () -> optMobAvoid = !optMobAvoid));
+        allModules.add(new ModuleItem(new ItemStack(Items.WATER_BUCKET), "Kiểm Tra Chất Lỏng", "Quét an toàn nước và dung nham chống sặc nước hoặc bỏng",
+                "Rà soát nghiêm ngặt các khối chất lỏng phía trước mặt. Chống đào thủng trần hang bị sạt lở nước hoặc dung nham đổ ụp vào đầu.",
+                "SURVIVAL", 0xFF60A5FA, () -> optWaterCheck, () -> optWaterCheck = !optWaterCheck));
 
-        // 4. TAB HIỂN THỊ
-        allModules.add(new ModuleItem(new ItemStack(Items.ITEM_FRAME), "Stats HUD", "Bảng thống kê số block & quặng đào ở góc màn hình", "HUD", 0xFF38BDF8, () -> optMiningStats, () -> optMiningStats = !optMiningStats));
-        allModules.add(new ModuleItem(new ItemStack(Items.SHEARS), "No-Swing", "Ẩn animation vung tay phía client chống giật màn hình", "HUD", 0xFF94A3B8, () -> optHideSwing, () -> optHideSwing = !optHideSwing));
-        allModules.add(new ModuleItem(new ItemStack(Items.AMETHYST_SHARD), "FastPlace", "Đặt block tức thì 1-tick (0.05s) mượt mà", "HUD", 0xFF34D399, () -> optFastPlace, () -> optFastPlace = !optFastPlace));
-        allModules.add(new ModuleItem(new ItemStack(Items.ENDER_EYE), "Streamer Mode", "Chế độ Livestream ẩn toàn bộ thông tin nhạy cảm", "HUD", 0xFFC084FC, () -> optStreamerMode, () -> {
+        // 5. TAB GIAO DIỆN
+        allModules.add(new ModuleItem(new ItemStack(Items.ITEM_FRAME), "Bảng Thống Kê HUD", "Bảng thống kê số khối & quặng đào ở góc màn hình",
+                "Hiển thị bảng nổi nhỏ gọn ở góc màn hình thống kê thời gian đào, tốc độ khối/giờ, số quặng đào được và số kim cương rơi ra theo thời gian thực.",
+                "HUD", 0xFF38BDF8, () -> optMiningStats, () -> optMiningStats = !optMiningStats));
+        allModules.add(new ModuleItem(new ItemStack(Items.SHEARS), "Ẩn Vung Tay", "Ẩn hiệu ứng vung tay phía người chơi giúp màn hình êm ái",
+                "Ẩn hiệu ứng vung tay phía người chơi khi đào/đặt block giúp giảm giật lag, chống rung lắc màn hình và êm mắt khi treo máy lâu.",
+                "HUD", 0xFF94A3B8, () -> optHideSwing, () -> optHideSwing = !optHideSwing));
+        allModules.add(new ModuleItem(new ItemStack(Items.AMETHYST_SHARD), "Đặt Khối Nhanh", "Đặt khối tức thì 1-tick (0.05s) mượt mà chuẩn anti-cheat",
+                "Giảm độ trễ đặt khối từ 4 tick xuống còn 1 tick (0.05 giây), giúp việc kê chân, bắc cầu và lấp hầm diễn ra tức thì và mượt mà.",
+                "HUD", 0xFF34D399, () -> optFastPlace, () -> optFastPlace = !optFastPlace));
+        allModules.add(new ModuleItem(new ItemStack(Items.ENDER_EYE), "Chế Độ Phát Sóng", "Chế độ Livestream ẩn toàn bộ thông tin nhạy cảm",
+                "Chế độ chuyên dụng cho quay phim/livestream: Ẩn toàn bộ tọa độ, bảng điểm (Scoreboard) và tên người chơi để bảo mật vị trí căn cứ.",
+                "HUD", 0xFFC084FC, () -> optStreamerMode, () -> {
             optStreamerMode = !optStreamerMode;
             optHideScoreboard = optStreamerMode;
             optHidePlayerName = optStreamerMode;
@@ -313,11 +403,15 @@ public class AutoMineScreen extends Screen implements Helper {
             Baritone.settings().hideScoreboard.value = optHideScoreboard;
             Baritone.settings().hidePlayerName.value = optHidePlayerName;
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.MAP), "Hide Board", "Ẩn hoàn toàn bảng điểm Scoreboard bên phải", "HUD", 0xFF60A5FA, () -> optHideScoreboard, () -> {
+        allModules.add(new ModuleItem(new ItemStack(Items.MAP), "Ẩn Bảng Điểm", "Ẩn hoàn toàn bảng điểm Scoreboard bên phải màn hình",
+                "Ẩn hoàn toàn bảng điểm Scoreboard bên phải màn hình giúp tầm nhìn rộng rãi, không bị che khuất tầm mắt.",
+                "HUD", 0xFF60A5FA, () -> optHideScoreboard, () -> {
             optHideScoreboard = !optHideScoreboard;
             Baritone.settings().hideScoreboard.value = optHideScoreboard;
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.NAME_TAG), "Hide Name", "Che tên người chơi trên Actionbar và thông báo", "HUD", 0xFFFBBF24, () -> optHidePlayerName, () -> {
+        allModules.add(new ModuleItem(new ItemStack(Items.NAME_TAG), "Ẩn Tên Tài Khoản", "Che tên người chơi trên thanh trạng thái và thông báo",
+                "Che giấu tên tài khoản trên thanh trạng thái (Actionbar) và các thông báo nổi để chống lộ danh tính người chơi.",
+                "HUD", 0xFFFBBF24, () -> optHidePlayerName, () -> {
             optHidePlayerName = !optHidePlayerName;
             Baritone.settings().hidePlayerName.value = optHidePlayerName;
         }));
@@ -358,7 +452,7 @@ public class AutoMineScreen extends Screen implements Helper {
                 case 0: return "BẮT ĐẦU ĐÀO";
                 case 1: return "CHẶT CÂY";
                 case 2: return "DỪNG LẠI";
-                case 3: return "RESET STATS";
+                case 3: return "ĐẶT LẠI CHỈ SỐ";
                 default: return "ĐÓNG (" + BaritoneKeyBindings.KEY_AUTOMINE_GUI.getTranslatedKeyMessage().getString() + ")";
             }
         } else if (btnW >= 55) {
@@ -366,7 +460,7 @@ public class AutoMineScreen extends Screen implements Helper {
                 case 0: return "ĐÀO";
                 case 1: return "CHẶT";
                 case 2: return "DỪNG";
-                case 3: return "RESET";
+                case 3: return "LÀM MỚI";
                 default: return "ĐÓNG";
             }
         } else {
@@ -385,10 +479,10 @@ public class AutoMineScreen extends Screen implements Helper {
                 }
             } else {
                 switch (q) {
-                    case 0: return "[ALL]";
-                    case 1: return "[COMM]";
-                    case 2: return "[NONE]";
-                    default: return "[DEF]";
+                    case 0: return "[TẤT CẢ]";
+                    case 1: return "[THƯỜNG]";
+                    case 2: return "[BỎ CHỌN]";
+                    default: return "[CHUẨN]";
                 }
             }
         }
@@ -401,10 +495,10 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         } else {
             switch (q) {
-                case 0: return "[ALL]";
-                case 1: return "[NONE]";
-                case 2: return "[INV]";
-                default: return "[DEF]";
+                case 0: return "[TẤT CẢ]";
+                case 1: return "[BỎ CHỌN]";
+                case 2: return "[ĐẢO NGƯỢC]";
+                default: return "[CHUẨN]";
             }
         }
     }
@@ -644,11 +738,19 @@ public class AutoMineScreen extends Screen implements Helper {
 
         ResponsiveLayout l = new ResponsiveLayout(this.width, this.height, activeTab, !searchQuery.isEmpty());
 
+        ModuleItem hoveredItem = null;
+        boolean hoveredYSetting = false;
+        boolean hoveredFpsSetting = false;
+        int hoveredActionIdx = -1;
+        int hoveredQuickIdx = -1;
+        int hoveredTabIdx = -1;
+        boolean hoveredSearch = false;
+
         // 1. Header Bar với Logo Neon & Version Tag
         graphics.fill(l.panelX, 3, l.panelX + l.panelW, 4, ClickGuiTheme.ACCENT_CYAN);
-        ClickGuiTheme.drawText(graphics, this.font, "TR0NGX CLICKGUI", l.panelX + 4, 7, ClickGuiTheme.ACCENT_CYAN, true);
+        ClickGuiTheme.drawText(graphics, this.font, "BẢNG ĐIỀU KHIỂN TR0NGX", l.panelX + 4, 7, ClickGuiTheme.ACCENT_CYAN, true);
         if (l.panelW >= 420) {
-            String versionTag = "v1.21.8 STABLE | ARA* ENGINE";
+            String versionTag = "v1.21.11 ỔN ĐỊNH | ARA* ENGINE";
             int vW = this.font.width(versionTag);
             ClickGuiTheme.drawText(graphics, this.font, versionTag, l.panelX + l.panelW - vW - 4, 7, ClickGuiTheme.TEXT_MUTED, false);
         }
@@ -661,6 +763,9 @@ public class AutoMineScreen extends Screen implements Helper {
             int tx = l.panelX + i * l.tabW;
             boolean isTabActive = (activeTab == i && searchQuery.isEmpty());
             boolean isTabHover = mouseX >= tx && mouseX <= tx + l.tabW && mouseY >= l.tabY && mouseY <= l.tabY + l.tabH;
+            if (isTabHover) {
+                hoveredTabIdx = i;
+            }
             String tabTitle = getResponsiveTabTitle(i, l.tabW);
             ClickGuiTheme.drawTab(graphics, this.font, TAB_ITEM_ICONS[i], tabTitle, tx, l.tabY, l.tabW, l.tabH, isTabActive, isTabHover, ClickGuiTheme.ACCENT_CYAN);
         }
@@ -669,6 +774,11 @@ public class AutoMineScreen extends Screen implements Helper {
         graphics.fill(l.panelX, l.searchY, l.panelX + l.panelW, l.searchY + l.searchH, ClickGuiTheme.BG_INPUT);
         int searchBorder = searchFocused ? ClickGuiTheme.ACCENT_CYAN : ClickGuiTheme.BORDER_CARD;
         ClickGuiTheme.drawOutline(graphics, l.panelX, l.searchY, l.panelW, l.searchH, searchBorder);
+
+        boolean searchHover = mouseX >= l.panelX && mouseX <= l.panelX + l.panelW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH;
+        if (searchHover) {
+            hoveredSearch = true;
+        }
 
         String searchPrompt = searchQuery.isEmpty() ? (searchFocused ? "" : "Tìm kiếm tính năng, quặng...") : searchQuery;
         int searchColor = searchQuery.isEmpty() ? ClickGuiTheme.TEXT_DIM : ClickGuiTheme.TEXT_TITLE;
@@ -687,6 +797,9 @@ public class AutoMineScreen extends Screen implements Helper {
             for (int q = 0; q < 4; q++) {
                 int qx = l.panelX + q * (btnW + 4);
                 boolean qHover = mouseX >= qx && mouseX <= qx + btnW && mouseY >= l.quickY && mouseY <= l.quickY + l.quickH;
+                if (qHover) {
+                    hoveredQuickIdx = q;
+                }
                 String qTitle = getResponsiveQuickTitle(q, btnW, activeTab);
                 ClickGuiTheme.drawActionButton(graphics, this.font, ItemStack.EMPTY, qTitle, qx, l.quickY, btnW, l.quickH, qColors[q], qHover);
             }
@@ -717,6 +830,9 @@ public class AutoMineScreen extends Screen implements Helper {
                 ModuleItem item = filtered.get(i);
                 boolean active = item.getter.getAsBoolean();
                 boolean hover = mouseX >= cardX && mouseX <= cardX + l.colW && mouseY >= cardY && mouseY <= cardY + l.cardH;
+                if (hover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
+                    hoveredItem = item;
+                }
 
                 int cardBg = hover ? ClickGuiTheme.BG_CARD_HOVER : (active ? ClickGuiTheme.BG_CARD_ACTIVE : ClickGuiTheme.BG_CARD);
                 int cardBorder = hover ? ClickGuiTheme.BORDER_CARD_HOVER : (active ? (item.color | 0x80000000) : ClickGuiTheme.BORDER_CARD);
@@ -770,6 +886,9 @@ public class AutoMineScreen extends Screen implements Helper {
 
                 int yBtnX = l.panelX;
                 boolean yHover = mouseX >= yBtnX && mouseX <= yBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH;
+                if (yHover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
+                    hoveredYSetting = true;
+                }
                 int yBg = yHover ? ClickGuiTheme.BG_CARD_HOVER : ClickGuiTheme.BG_CARD;
                 ClickGuiTheme.drawCard(graphics, yBtnX, extraRowY, halfColW, l.cardH, yBg, ClickGuiTheme.BORDER_CARD);
                 graphics.fill(yBtnX, extraRowY, yBtnX + 3, extraRowY + l.cardH, ClickGuiTheme.ACCENT_CYAN);
@@ -780,6 +899,9 @@ public class AutoMineScreen extends Screen implements Helper {
 
                 int fpsBtnX = l.panelX + halfColW + 6;
                 boolean fpsHover = mouseX >= fpsBtnX && mouseX <= fpsBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH;
+                if (fpsHover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
+                    hoveredFpsSetting = true;
+                }
                 int fpsBg = fpsHover ? ClickGuiTheme.BG_CARD_HOVER : ClickGuiTheme.BG_CARD;
                 ClickGuiTheme.drawCard(graphics, fpsBtnX, extraRowY, halfColW, l.cardH, fpsBg, ClickGuiTheme.BORDER_CARD);
                 graphics.fill(fpsBtnX, extraRowY, fpsBtnX + 3, extraRowY + l.cardH, ClickGuiTheme.ACCENT_EMERALD);
@@ -828,11 +950,38 @@ public class AutoMineScreen extends Screen implements Helper {
         for (int a = 0; a < 5; a++) {
             int ax = l.panelX + a * (l.actionW + l.actionGap);
             boolean aHover = mouseX >= ax && mouseX <= ax + l.actionW && mouseY >= l.actionBottomY && mouseY <= l.actionBottomY + l.actionH;
+            if (aHover) {
+                hoveredActionIdx = a;
+            }
             String aTitle = getResponsiveActionTitle(a, l.actionW);
             ClickGuiTheme.drawActionButton(graphics, this.font, ACTION_ITEM_ICONS[a], aTitle, ax, l.actionBottomY, l.actionW, l.actionH, aColors[a], aHover);
         }
 
         super.render(graphics, mouseX, mouseY, partialTicks);
+
+        // 9. Lớp hiển thị Tooltip giải thích tính năng khi di chuột (Topmost)
+        if (hoveredItem != null) {
+            String stateStr = hoveredItem.getter.getAsBoolean() ? "§a[ĐANG BẬT]" : "§c[ĐANG TẮT]";
+            drawModernTooltip(graphics, hoveredItem.name + " " + stateStr, hoveredItem.desc, hoveredItem.details, mouseX, mouseY, hoveredItem.color);
+        } else if (hoveredYSetting) {
+            drawModernTooltip(graphics, "Tầng Đào Y Mục Tiêu", "Độ cao khai thác khoáng sản tối ưu",
+                    "Nhấn chuột để đổi tầng Y mong muốn: Y=-58 (Nhiều Kim Cương nhất), Y=-54 (Tầng an toàn), Y=11 (Nether/Cũ), hoặc Tầng hiện tại.",
+                    mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+        } else if (hoveredFpsSetting) {
+            drawModernTooltip(graphics, "Giới Hạn FPS", "Tối ưu hóa hiệu năng & nhiệt độ máy",
+                    "Nhấn chuột để chuyển đổi giữa các mức FPS (30, 60, 120, 144, 240, Tối Đa) giúp máy chạy mát và tiết kiệm điện khi treo đào lâu.",
+                    mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
+        } else if (hoveredActionIdx >= 0) {
+            drawActionTooltip(graphics, hoveredActionIdx, mouseX, mouseY);
+        } else if (hoveredQuickIdx >= 0) {
+            drawQuickTooltip(graphics, hoveredQuickIdx, activeTab, mouseX, mouseY);
+        } else if (hoveredTabIdx >= 0) {
+            drawTabTooltip(graphics, hoveredTabIdx, mouseX, mouseY);
+        } else if (hoveredSearch && searchQuery.isEmpty()) {
+            drawModernTooltip(graphics, "Thanh Tìm Kiếm", "Lọc nhanh các tính năng và quặng",
+                    "Nhập từ khóa để tìm kiếm tức thì theo tên hoặc mô tả của mọi tính năng trong Baritone.",
+                    mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+        }
     }
 
     private void renderTelemetryDashboard(GuiGraphics g, int x, int y, int w) {
@@ -897,6 +1046,220 @@ public class AutoMineScreen extends Screen implements Helper {
             int totalDiamondOres = MiningStatsTracker.getInstance().getOreCount(MiningStatsTracker.OreType.DIAMOND);
             String diamText = "Kim cương: " + totalDiamondGems + " cục (" + totalDiamondOres + " quặng)";
             ClickGuiTheme.drawText(g, this.font, diamText, rx + 8, ry + 78, ClickGuiTheme.ACCENT_CYAN, true);
+        }
+    }
+
+    private List<String> wrapText(String text, int maxWidth) {
+        List<String> lines = new ArrayList<>();
+        if (text == null || text.isEmpty()) return lines;
+        String[] paragraphs = text.split("\n");
+        for (String para : paragraphs) {
+            String[] words = para.split(" ");
+            StringBuilder currentLine = new StringBuilder();
+            for (String word : words) {
+                if (word.isEmpty()) continue;
+                if (currentLine.length() == 0) {
+                    currentLine.append(word);
+                } else {
+                    String test = currentLine + " " + word;
+                    if (this.font.width(test) <= maxWidth) {
+                        currentLine.append(" ").append(word);
+                    } else {
+                        lines.add(currentLine.toString());
+                        currentLine = new StringBuilder(word);
+                    }
+                }
+            }
+            if (currentLine.length() > 0) {
+                lines.add(currentLine.toString());
+            }
+        }
+        return lines;
+    }
+
+    private void drawModernTooltip(GuiGraphics graphics, String title, String desc, String details, int mouseX, int mouseY, int accentColor) {
+        int maxTextWidth = Math.min(230, Math.max(160, this.width / 3));
+        List<String> detailLines = wrapText(details, maxTextWidth);
+
+        int titleW = this.font.width(title);
+        int descW = (desc != null && !desc.isEmpty()) ? this.font.width(desc) : 0;
+        int maxW = Math.max(titleW, descW);
+        for (String line : detailLines) {
+            maxW = Math.max(maxW, this.font.width(line));
+        }
+
+        int boxPadding = 7;
+        int boxW = Math.min(maxTextWidth + boxPadding * 2 + 8, Math.max(130, maxW + boxPadding * 2 + 8));
+        int lineH = 10;
+        int totalH = boxPadding * 2 + lineH; // Title
+        if (desc != null && !desc.isEmpty()) {
+            totalH += lineH + 2; // Subtitle
+        }
+        if (!detailLines.isEmpty()) {
+            totalH += 6 + detailLines.size() * lineH; // Separator + details
+        }
+
+        int tooltipX = mouseX + 12;
+        int tooltipY = mouseY - 8;
+
+        if (tooltipX + boxW > this.width - 6) {
+            tooltipX = mouseX - boxW - 8;
+        }
+        if (tooltipX < 6) {
+            tooltipX = 6;
+        }
+
+        if (tooltipY + totalH > this.height - 6) {
+            tooltipY = this.height - totalH - 6;
+        }
+        if (tooltipY < 6) {
+            tooltipY = 6;
+        }
+
+        // Nền tối mờ chuẩn LiquidBounce Nextgen Dark Glass
+        graphics.fillGradient(tooltipX, tooltipY, tooltipX + boxW, tooltipY + totalH, 0xF80B132B, 0xF8111D3B);
+        ClickGuiTheme.drawOutline(graphics, tooltipX, tooltipY, boxW, totalH, (accentColor & 0x00FFFFFF) | 0x90000000);
+        // Vạch màu chỉ báo bên trái
+        graphics.fill(tooltipX, tooltipY, tooltipX + 3, tooltipY + totalH, accentColor);
+
+        int curY = tooltipY + boxPadding;
+        int textX = tooltipX + boxPadding + 4;
+
+        // Title
+        ClickGuiTheme.drawText(graphics, this.font, title, textX, curY, accentColor, true);
+        curY += lineH;
+
+        // Subtitle / Desc
+        if (desc != null && !desc.isEmpty()) {
+            curY += 2;
+            ClickGuiTheme.drawText(graphics, this.font, desc, textX, curY, ClickGuiTheme.TEXT_TITLE, false);
+            curY += lineH;
+        }
+
+        // Separator and Details
+        if (!detailLines.isEmpty()) {
+            curY += 2;
+            graphics.fill(textX, curY, tooltipX + boxW - boxPadding, curY + 1, 0x35FFFFFF);
+            curY += 4;
+            for (String line : detailLines) {
+                ClickGuiTheme.drawText(graphics, this.font, line, textX, curY, ClickGuiTheme.TEXT_MUTED, false);
+                curY += lineH;
+            }
+        }
+    }
+
+    private void drawActionTooltip(GuiGraphics graphics, int a, int mouseX, int mouseY) {
+        switch (a) {
+            case 0:
+                drawModernTooltip(graphics, "Bắt Đầu Đào Quặng", "Khởi chạy quy trình tự động đào khoáng",
+                        "Khởi động thuật toán tìm đường ARA* và tiến trình đào khoáng sản theo danh sách quặng đã chọn trong tab Quặng.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                break;
+            case 1:
+                drawModernTooltip(graphics, "Bắt Đầu Chặt Cây", "Khởi chạy quy trình tự động chặt cây",
+                        "Tự động quét thế giới xung quanh và di chuyển đốn hạ các loại cây đã chọn trong tab Chặt Cây.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
+                break;
+            case 2:
+                drawModernTooltip(graphics, "Dừng Toàn Bộ", "Hủy bỏ mọi hoạt động ngay lập tức",
+                        "Dừng tìm đường, ngừng đập khối, xóa phím bấm và đóng mọi giao diện rương ngay lập tức.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
+                break;
+            case 3:
+                drawModernTooltip(graphics, "Đặt Lại Chỉ Số", "Làm mới bảng thống kê phiên đào",
+                        "Xóa toàn bộ số liệu thời gian đào, tổng số khối đã đập và số lượng quặng/kim cương thu thập về 0.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
+                break;
+            case 4:
+                drawModernTooltip(graphics, "Đóng Bảng Điều Khiển", "Lưu cài đặt và quay lại game",
+                        "Tự động lưu toàn bộ cấu hình đã chỉnh vào file automine_config.json và đóng giao diện này.",
+                        mouseX, mouseY, ClickGuiTheme.TEXT_MUTED);
+                break;
+        }
+    }
+
+    private void drawQuickTooltip(GuiGraphics graphics, int q, int tab, int mouseX, int mouseY) {
+        if (tab == 0) { // Ores
+            switch (q) {
+                case 0:
+                    drawModernTooltip(graphics, "Chọn Tất Cả Quặng", "Bật toàn bộ 10 loại khoáng sản",
+                            "Tự động kích hoạt toàn bộ các loại quặng: Kim Cương, Mảnh Cổ Đại, Ngọc Lục Bảo, Vàng, Sắt, Đá Đỏ, Ngọc Lưu Ly, Đồng, Than Đá, Thạch Anh.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                    break;
+                case 1:
+                    drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", "Tắt hết tất cả quặng",
+                            "Tắt chọn toàn bộ quặng để bạn có thể chọn thủ công từng loại quặng mong muốn.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
+                    break;
+                case 2:
+                    drawModernTooltip(graphics, "Đảo Ngược Lựa Chọn", "Đảo trạng thái các quặng",
+                            "Quặng nào đang Bật sẽ chuyển thành Tắt, và quặng nào đang Tắt sẽ chuyển thành Bật.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
+                    break;
+                case 3:
+                    drawModernTooltip(graphics, "Bộ Quặng Chuẩn", "Chọn lọc quặng quý giá trị cao",
+                            "Chỉ chọn Kim Cương, Ngọc Lục Bảo, Ngọc Lưu Ly và Đá Đỏ giúp tối ưu diện tích túi đồ.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
+                    break;
+            }
+        } else if (tab == 1) { // Trees
+            switch (q) {
+                case 0:
+                    drawModernTooltip(graphics, "Chọn Tất Cả Cây", "Bật toàn bộ 11 loại gỗ",
+                            "Kích hoạt toàn bộ các loại gỗ trong Overworld và Nether: Sồi, Bạch Dương, Rừng Rậm, Hoa Anh Đào, Tre, Rừng Đỏ, Rừng Xanh, v.v.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                    break;
+                case 1:
+                    drawModernTooltip(graphics, "Gỗ Thế Giới Thường", "Chỉ chọn cây ở Overworld",
+                            "Chỉ chọn các loại gỗ mặt đất, bỏ chọn gỗ Rừng Đỏ (Crimson) và Rừng Xanh (Warped) ở Nether.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
+                    break;
+                case 2:
+                    drawModernTooltip(graphics, "Bỏ Chọn Toàn Bộ", "Tắt hết tất cả loại cây",
+                            "Tắt chọn toàn bộ cây để bạn tự chọn thủ công những loại gỗ cần đốn hạ.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
+                    break;
+                case 3:
+                    drawModernTooltip(graphics, "Gỗ Thông Dụng", "Khai thác các loại gỗ cơ bản",
+                            "Bật chọn các loại cây gỗ phổ biến nhất trong thế giới.",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
+                    break;
+            }
+        }
+    }
+
+    private void drawTabTooltip(GuiGraphics graphics, int tab, int mouseX, int mouseY) {
+        switch (tab) {
+            case 0:
+                drawModernTooltip(graphics, "Tab Quặng (Khoáng Sản)", "Cấu hình danh sách quặng khai thác",
+                        "Tùy chọn 10 loại khoáng sản (Kim Cương, Mảnh Cổ Đại, Ngọc Lục Bảo, v.v.) muốn bot tự động tìm kiếm.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                break;
+            case 1:
+                drawModernTooltip(graphics, "Tab Chặt Cây", "Cấu hình danh sách cây gỗ khai thác",
+                        "Tùy chọn 11 loại gỗ (Sồi, Bạch Dương, Tre, Anh Đào, v.v.) muốn bot tự động đốn hạ.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
+                break;
+            case 2:
+                drawModernTooltip(graphics, "Tab Đi Lại (Di Chuyển)", "Cấu hình vượt địa hình & di chuyển",
+                        "Tùy chỉnh Chạy Nhanh, Nhảy Parkour, Vượt Nước, Đào 1 Block (Crawl) và Đào Thẳng Xuống.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                break;
+            case 3:
+                drawModernTooltip(graphics, "Tab Sinh Tồn", "Cấu hình bảo vệ mạng sống & túi đồ",
+                        "Tự Ăn, Tự Cầm Totem, Tự Đăng Xuất Khi Máu Thấp, Cất Đồ Shulker và Tự Lọc Ném Bỏ Rác.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
+                break;
+            case 4:
+                drawModernTooltip(graphics, "Tab Giao Diện", "Cấu hình hiển thị & hiệu năng",
+                        "Tùy chỉnh HUD thống kê, Đặt khối 1-tick, Giới hạn FPS, Chế độ Streamer và Tầng Y đào.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
+                break;
+            case 5:
+                drawModernTooltip(graphics, "Tab Chỉ Số (Giám Sát)", "Bảng thống kê phần cứng & phiên đào",
+                        "Theo dõi thời gian thực FPS, CPU, RAM, GPU, thời gian đào, tốc độ khối/giờ và số kim cương thu được.",
+                        mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
+                break;
         }
     }
 
@@ -1128,57 +1491,57 @@ public class AutoMineScreen extends Screen implements Helper {
         if (oreDiamond) {
             boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
-            oreNames.add("Diamond");
+            oreNames.add("Kim Cương");
         }
         if (oreLapis) {
             boms.add(new BlockOptionalMeta(Blocks.LAPIS_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_LAPIS_ORE));
-            oreNames.add("Lapis");
+            oreNames.add("Ngọc Lưu Ly");
         }
         if (oreRedstone) {
             boms.add(new BlockOptionalMeta(Blocks.REDSTONE_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_REDSTONE_ORE));
-            oreNames.add("Redstone");
+            oreNames.add("Đá Đỏ");
         }
         if (oreGold) {
             boms.add(new BlockOptionalMeta(Blocks.GOLD_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_GOLD_ORE));
             boms.add(new BlockOptionalMeta(Blocks.NETHER_GOLD_ORE));
-            oreNames.add("Gold");
+            oreNames.add("Vàng");
         }
         if (oreIron) {
             boms.add(new BlockOptionalMeta(Blocks.IRON_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_IRON_ORE));
-            oreNames.add("Iron");
+            oreNames.add("Sắt");
         }
         if (oreEmerald) {
             boms.add(new BlockOptionalMeta(Blocks.EMERALD_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_EMERALD_ORE));
-            oreNames.add("Emerald");
+            oreNames.add("Ngọc Lục Bảo");
         }
         if (oreDebris) {
             boms.add(new BlockOptionalMeta(Blocks.ANCIENT_DEBRIS));
-            oreNames.add("Ancient Debris");
+            oreNames.add("Mảnh Cổ Đại");
         }
         if (oreCopper) {
             boms.add(new BlockOptionalMeta(Blocks.COPPER_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COPPER_ORE));
-            oreNames.add("Copper");
+            oreNames.add("Đồng");
         }
         if (oreCoal) {
             boms.add(new BlockOptionalMeta(Blocks.COAL_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COAL_ORE));
-            oreNames.add("Coal");
+            oreNames.add("Than Đá");
         }
         if (oreQuartz) {
             boms.add(new BlockOptionalMeta(Blocks.NETHER_QUARTZ_ORE));
-            oreNames.add("Quartz");
+            oreNames.add("Thạch Anh");
         }
 
         if (boms.isEmpty()) {
             boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
-            oreNames.add("Diamond (Default)");
+            oreNames.add("Kim Cương (Mặc Định)");
         }
 
         baritone.getPathingBehavior().cancelSegmentIfSafe();

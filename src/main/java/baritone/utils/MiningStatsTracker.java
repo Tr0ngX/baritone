@@ -60,9 +60,9 @@ public final class MiningStatsTracker {
                 new ItemStack(Items.EMERALD_ORE),
                 Items.EMERALD, "Cục Lục Bảo",
                 Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE),
-        ANCIENT_DEBRIS("Debris", "Ancient Debris", 0xFFC084FC, () -> AutoMineScreen.oreDebris,
+        ANCIENT_DEBRIS("Mảnh Cổ Đại", "Ancient Debris", 0xFFC084FC, () -> AutoMineScreen.oreDebris,
                 new ItemStack(Items.ANCIENT_DEBRIS),
-                Items.ANCIENT_DEBRIS, "Mảnh Debris",
+                Items.ANCIENT_DEBRIS, "Mảnh Vỡ Cổ Đại",
                 Blocks.ANCIENT_DEBRIS),
         GOLD("Vàng", "Gold", 0xFFFBBF24, () -> AutoMineScreen.oreGold,
                 new ItemStack(Items.GOLD_ORE),
@@ -72,25 +72,25 @@ public final class MiningStatsTracker {
                 new ItemStack(Items.IRON_ORE),
                 Items.RAW_IRON, "Sắt Thô",
                 Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE),
-        REDSTONE("Redstone", "Redstone", 0xFFF87171, () -> AutoMineScreen.oreRedstone,
+        REDSTONE("Đá Đỏ", "Redstone", 0xFFF87171, () -> AutoMineScreen.oreRedstone,
                 new ItemStack(Items.REDSTONE_ORE),
                 Items.REDSTONE, "Bột Đá Đỏ",
                 Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE),
-        LAPIS("Lapis", "Lapis", 0xFF60A5FA, () -> AutoMineScreen.oreLapis,
+        LAPIS("Ngọc Lưu Ly", "Lapis", 0xFF60A5FA, () -> AutoMineScreen.oreLapis,
                 new ItemStack(Items.LAPIS_ORE),
-                Items.LAPIS_LAZULI, "Cục Lapis",
+                Items.LAPIS_LAZULI, "Ngọc Lưu Ly",
                 Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE),
         COPPER("Đồng", "Copper", 0xFFFB923C, () -> AutoMineScreen.oreCopper,
                 new ItemStack(Items.COPPER_ORE),
                 Items.RAW_COPPER, "Đồng Thô",
                 Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE),
-        COAL("Than", "Coal", 0xFF94A3B8, () -> AutoMineScreen.oreCoal,
+        COAL("Than Đá", "Coal", 0xFF94A3B8, () -> AutoMineScreen.oreCoal,
                 new ItemStack(Items.COAL_ORE),
-                Items.COAL, "Cục Than",
+                Items.COAL, "Than Đá",
                 Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE),
         QUARTZ("Thạch Anh", "Quartz", 0xFFF1F5F9, () -> AutoMineScreen.oreQuartz,
                 new ItemStack(Items.NETHER_QUARTZ_ORE),
-                Items.QUARTZ, "Thạch Anh",
+                Items.QUARTZ, "Thạch Anh Nether",
                 Blocks.NETHER_QUARTZ_ORE);
 
         private final String nameVi;
@@ -590,7 +590,7 @@ public final class MiningStatsTracker {
         int curY = y + 6;
 
         // Header Title
-        String title = isChop ? "AUTOCHOP STATS" : "AUTOMINE STATS";
+        String title = isChop ? "THỐNG KÊ CHẶT CÂY" : "THỐNG KÊ ĐÀO KHOÁNG";
         drawText(guiGraphics, font, title, x + 6, curY, themeColor, true);
         String statusDot = isMining ? "§a●" : "§7○";
         drawText(guiGraphics, font, statusDot, x + width - 13, curY, 0xFFFFFFFF, true);
@@ -598,7 +598,8 @@ public final class MiningStatsTracker {
 
         // Time & Rate row
         String timeStr = getFormattedDuration();
-        String rateStr = String.format("%,d/h", getBlocksPerHour());
+        String rateUnit = isChop ? " khúc/h" : " khối/h";
+        String rateStr = String.format("%,d%s", getBlocksPerHour(), rateUnit);
         drawText(guiGraphics, font, "§8" + timeStr + " §7| §e" + rateStr, x + 6, curY, 0xFF94A3B8, true);
         curY += 12;
 
@@ -609,7 +610,7 @@ public final class MiningStatsTracker {
         // Total Blocks Mined row
         String totalLabel = isChop ? "Đã chặt:" : "Đã đào:";
         drawText(guiGraphics, font, totalLabel, x + 6, curY, 0xFFE2E8F0, true);
-        String unit = isChop ? " log" : " blk";
+        String unit = isChop ? " khúc" : " khối";
         String totalStr = String.format("%,d%s", totalBlocksMined.get(), unit);
         int totalW = font.width(totalStr);
         drawText(guiGraphics, font, "§e" + totalStr, x + width - totalW - 6, curY, 0xFFFBBF24, true);
