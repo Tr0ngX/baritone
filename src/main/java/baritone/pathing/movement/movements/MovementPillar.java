@@ -37,9 +37,13 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.phys.Vec3;
 
+import baritone.api.utils.Helper;
 import java.util.Set;
 
 public class MovementPillar extends Movement {
+
+    private static BlockPos lastFailedPillarPos = null;
+    private static int persistentPillarFails = 0;
 
     private int placeAttempts = 0;
     private int pillarTicks = 0;
@@ -228,9 +232,34 @@ public class MovementPillar extends Movement {
                 Block fr = frState.getBlock();
                 // TODO: Evaluate usage of getMaterial().isReplaceable()
                 if (!(fr instanceof AirBlock || frState.canBeReplaced())) {
-                    if (placeAttempts > 2) {
-                        // Đã thử đặt block nhiều lần mà không leo lên được và giờ lại định đào xuống -> Dừng ngay vòng lặp đặt/đào!
-                        logDebug("Detected place-and-break pillar loop at " + src + ". Failing movement immediately.");
+                    // 1. Kiểm tra xem có phải do trần hầm (đập đầu) cản trở việc nhảy lên không
+                    BlockPos ceiling = src.above(2);
+                    BlockState ceilingState = BlockStateInterface.get(ctx, ceiling);
+                    if (!(ceilingState.getBlock() instanceof AirBlock || ceilingState.canBeReplaced())) {
+                        var rotCeil = RotationUtils.reachable(ctx, ceiling, ctx.playerController().getBlockReachDistance());
+                        if (rotCeil.isPresent()) {
+                            Helper.HELPER.logDirect("§6[MovementPillar] Trần hầm tại " + ceiling.toShortString() + " cản trở nhảy lên! FORCE: Đào trần giải phóng đường...");
+                            state.setTarget(new MovementState.MovementTarget(rotCeil.get(), true));
+                            state.setInput(Input.JUMP, false);
+                            MovementHelper.switchToBestToolFor(ctx, ceilingState);
+                            state.setInput(Input.CLICK_LEFT, true);
+                            return state;
+                        }
+                    }
+
+                    if (src.equals(lastFailedPillarPos)) {
+                        persistentPillarFails++;
+                    } else {
+                        lastFailedPillarPos = src;
+                        persistentPillarFails = 1;
+                    }
+
+                    if (placeAttempts > 1 || persistentPillarFails >= 2) {
+                        // Đã thử đặt block mà không leo lên được và lại định đào xuống -> Dừng ngay vòng lặp đặt/đào!
+                        Helper.HELPER.logDirect("§c[MovementPillar] Phát hiện vòng lặp nhảy lên đặt block rồi đào đi tại " + src.toShortString() + "! FORCE: Tắt Pillar để A* tìm đường đi khác!");
+                        Baritone.settings().noPillar.value = true;
+                        persistentPillarFails = 0;
+                        lastFailedPillarPos = null;
                         return state.setStatus(MovementStatus.FAILED);
                     }
                     RotationUtils.reachable(ctx, src, ctx.playerController().getBlockReachDistance())

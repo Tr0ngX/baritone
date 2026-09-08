@@ -5246,6 +5246,12 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
 
         BetterBlockPos currentFeet = ctx.playerFeet();
 
+        // ƯU TIÊN CAO NHẤT: Phát hiện và FORCE chọn ngay 1 phương án giải kẹt khi bị vòng lặp nhảy lên đặt block rồi đào đi!
+        if (placeBreakOscillationCount >= 2) {
+            handlePlaceBreakLoopResolution(currentFeet);
+            return;
+        }
+
         // Cập nhật circular buffer 120 ticks để phát hiện bot bị kẹt dao động qua lại (ping-pong loop)
         recentPositions[recentPosIndex] = currentFeet;
         recentPosIndex = (recentPosIndex + 1) % RECENT_POS_BUFFER_SIZE;
@@ -5308,21 +5314,34 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 stuckTicks++;
             }
         } else {
+            // Chỉ reset placeBreakOscillationCount nếu thực sự di chuyển ngang (horizontal dist >= 1.5 block)
+            // Nhảy lên nhảy xuống tại chỗ (cùng tọa độ X, Z) KHÔNG ĐƯỢC reset để phát hiện vòng lặp!
+            if (lastStuckCheckPos != null) {
+                double hDistSq = (currentFeet.x - lastStuckCheckPos.x) * (currentFeet.x - lastStuckCheckPos.x)
+                        + (currentFeet.z - lastStuckCheckPos.z) * (currentFeet.z - lastStuckCheckPos.z);
+                if (hDistSq >= 2.25) {
+                    placeBreakOscillationCount = 0;
+                    placedThisCycle = false;
+                }
+            } else {
+                placeBreakOscillationCount = 0;
+                placedThisCycle = false;
+            }
             lastStuckCheckPos = currentFeet;
             stuckTicks = 0;
-            placeBreakOscillationCount = 0;
-            placedThisCycle = false;
             if (lastAntiStuckPos != null && currentFeet.distSqr(lastAntiStuckPos) >= 4) {
                 stuckRetries = 0;
                 lastAntiStuckPos = null;
                 lastStuckOrePos = null;
             }
-            // Đã thực sự di chuyển sang block khác → Cho phép nhảy+đặt block trở lại ngay lập tức
+            // Đã thực sự di chuyển sang block khác → Chỉ cho phép nhảy+đặt block trở lại nếu đã ra xa vị trí kẹt (>= 3 blocks)
             if (Baritone.settings().noPillar.value) {
-                pillarFailCount = 0;
-                lastPillarFailPos = null;
-                Baritone.settings().noPillar.value = false;
-                logDirect("§a[AntiPillarLoop] Đã di chuyển sang block khác, cho phép nhảy+đặt block trở lại.");
+                if (lastPillarFailPos == null || currentFeet.distSqr(lastPillarFailPos) >= 9) {
+                    pillarFailCount = 0;
+                    lastPillarFailPos = null;
+                    Baritone.settings().noPillar.value = false;
+                    logDirect("§a[AntiPillarLoop] Đã di chuyển ra xa vị trí kẹt, cho phép nhảy+đặt block trở lại.");
+                }
             }
         }
 
@@ -5558,6 +5577,81 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             forceReroute = true;
             return;
         }
+    }
+
+    private void handlePlaceBreakLoopResolution(BetterBlockPos currentFeet) {
+        logDirect("§c[AntiLoop] Phát hiện vòng lặp nhảy lên đặt block rồi đào đi tại " + currentFeet.toShortString() + "!");
+        stuckTicks = 0;
+        recentPosCount = 0;
+        placeBreakOscillationCount = 0;
+        placedThisCycle = false;
+        lastPlacedBlockPos = null;
+        lastBrokenBlockPos = null;
+
+        // PHƯƠNG ÁN 1: Đập đầu vào trần (Head Ceiling Obstruction)
+        BlockPos ceiling = currentFeet.above(2);
+        BlockState ceilingState = ctx.world().getBlockState(ceiling);
+        if (!ceilingState.isAir() && !ceilingState.canBeReplaced() && ceilingState.getDestroySpeed(ctx.world(), ceiling) >= 0) {
+            Optional<Rotation> rot = RotationUtils.reachable(ctx, ceiling);
+            if (rot.isPresent()) {
+                logDirect("§6[AntiLoop] Trần hầm cản trở nhảy lên! FORCE Phương án 1: Đào thông trần tại " + ceiling.toShortString() + " để mở đường!");
+                activeMiningBlock = ceiling;
+                activeMiningBlockIsObstructing = true;
+                activeMiningTicks = 0;
+                baritone.getPathingBehavior().cancelSegmentIfSafe();
+                baritone.getInputOverrideHandler().clearAllKeys();
+                baritone.getLookBehavior().updateTarget(rot.get(), true);
+                MovementHelper.switchToBestToolFor(ctx, ceilingState);
+                baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                return;
+            }
+        }
+
+        // PHƯƠNG ÁN 2: Quặng trong tầm với (<= 4.5 blocks)
+        if (knownOreLocations != null && !knownOreLocations.isEmpty()) {
+            for (BlockPos ore : knownOreLocations) {
+                if (currentFeet.distSqr(ore) <= 20.25) {
+                    Optional<Rotation> rot = RotationUtils.reachable(ctx, ore);
+                    if (rot.isPresent()) {
+                        logDirect("§a[AntiLoop] Quặng tại " + ore.toShortString() + " trong tầm với! FORCE Phương án 2: Đào trực tiếp từ dưới đất!");
+                        activeMiningBlock = ore;
+                        activeMiningBlockIsObstructing = false;
+                        activeMiningTicks = 0;
+                        baritone.getPathingBehavior().cancelSegmentIfSafe();
+                        baritone.getInputOverrideHandler().clearAllKeys();
+                        baritone.getLookBehavior().updateTarget(rot.get(), true);
+                        BlockState oreState = ctx.world().getBlockState(ore);
+                        MovementHelper.switchToBestToolFor(ctx, oreState);
+                        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // PHƯƠNG ÁN 3: Tắt Pillar, ép A* tìm đường đi khác (đào bậc/đường vòng)
+        logDirect("§c[AntiLoop] FORCE Phương án 3: Tắt tính năng Pillar (noPillar = true), ép A* tìm đường khác vòng qua!");
+        Baritone.settings().noPillar.value = true;
+        lastPillarFailPos = currentFeet;
+        pillarFailCount = 4;
+
+        if (knownOreLocations != null && !knownOreLocations.isEmpty()) {
+            Optional<BlockPos> closest = knownOreLocations.stream().min(Comparator.comparingDouble(currentFeet::distSqr));
+            if (closest.isPresent() && currentFeet.distSqr(closest.get()) <= 36) {
+                BlockPos target = closest.get();
+                blacklist.add(target);
+                knownOreLocations.remove(target);
+                oreMemory.remove(target);
+                if (lockedTargetOre != null && lockedTargetOre.equals(target)) {
+                    lockedTargetOre = null;
+                }
+                logDirect("§c[AntiLoop] Đã BLACKLIST quặng kẹt tại " + target.toShortString() + " để không bị loop!");
+            }
+        }
+
+        baritone.getInputOverrideHandler().clearAllKeys();
+        baritone.getPathingBehavior().cancelEverything();
+        forceReroute = true;
     }
 
     private PathingCommand handleAutoEat(boolean isSafeToCancel) {
