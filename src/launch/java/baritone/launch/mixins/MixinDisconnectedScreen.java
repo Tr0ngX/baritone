@@ -41,6 +41,12 @@ public abstract class MixinDisconnectedScreen extends Screen {
     @Unique
     private Button baritoneTpBtn;
 
+    @Unique
+    private Button baritoneOpenPhotoBtn;
+
+    @Unique
+    private Button baritoneZoomBtn;
+
     protected MixinDisconnectedScreen(Component title) {
         super(title);
     }
@@ -65,38 +71,53 @@ public abstract class MixinDisconnectedScreen extends Screen {
         int btnX = backButton != null ? backButton.getX() : (this.width - btnW) / 2;
 
         int btnY;
+        int totalExtraH = 2 * btnH + 4;
         if (backButton != null) {
             // Nút tiện ích đặt ngay DƯỚI nút Back to Server List đúng theo yêu cầu người dùng
             int desiredY = backButton.getY() + backButton.getHeight() + 6;
             // Kiểm tra responsive: nếu nút bị chạm hoặc tràn mép dưới màn hình (cách mép dưới < 6px)
-            if (desiredY + btnH > this.height - 6) {
-                int shiftUp = (desiredY + btnH) - (this.height - 6);
+            if (desiredY + totalExtraH > this.height - 6) {
+                int shiftUp = (desiredY + totalExtraH) - (this.height - 6);
                 backButton.setY(Math.max(10, backButton.getY() - shiftUp));
                 btnY = backButton.getY() + backButton.getHeight() + 6;
             } else {
                 btnY = desiredY;
             }
         } else {
-            btnY = this.height - btnH - 10;
+            btnY = this.height - totalExtraH - 10;
         }
 
-        // Chia đôi thành 2 nút đối xứng thanh lịch ngay bên dưới nút Back:
-        // Trái: [📋 Chép XYZ (C)]
-        // Phải: [📍 Chép /tp (T)]
+        // Chia đôi thành 2 hàng nút đối xứng thanh lịch ngay bên dưới nút Back:
+        // Hàng 1: [📋 Chép XYZ (C)]  |  [📍 Chép /tp (T)]
+        // Hàng 2: [📸 Mở Ảnh (O)]     |  [🔍 Phóng To (Z)]
         int halfW = (btnW - 4) / 2;
+        int row1Y = btnY;
+        int row2Y = btnY + btnH + 4;
 
         this.baritoneCopyBtn = Button.builder(
                 Component.literal("§e📋 Chép XYZ §7(C)"),
                 btn -> copyCoordsAction()
-        ).bounds(btnX, btnY, halfW, btnH).build();
+        ).bounds(btnX, row1Y, halfW, btnH).build();
 
         this.baritoneTpBtn = Button.builder(
                 Component.literal("§b📍 Chép /tp §7(T)"),
                 btn -> copyTpAction()
-        ).bounds(btnX + halfW + 4, btnY, btnW - halfW - 4, btnH).build();
+        ).bounds(btnX + halfW + 4, row1Y, btnW - halfW - 4, btnH).build();
+
+        this.baritoneOpenPhotoBtn = Button.builder(
+                Component.literal("§a📸 Mở Ảnh §7(O)"),
+                btn -> AutoLogoutTracker.openScreenshotFile()
+        ).bounds(btnX, row2Y, halfW, btnH).build();
+
+        this.baritoneZoomBtn = Button.builder(
+                Component.literal("§d🔍 Phóng To §7(Z)"),
+                btn -> AutoLogoutTracker.setZoomed(!AutoLogoutTracker.isZoomed())
+        ).bounds(btnX + halfW + 4, row2Y, btnW - halfW - 4, btnH).build();
 
         this.addRenderableWidget(this.baritoneCopyBtn);
         this.addRenderableWidget(this.baritoneTpBtn);
+        this.addRenderableWidget(this.baritoneOpenPhotoBtn);
+        this.addRenderableWidget(this.baritoneZoomBtn);
     }
 
     @Unique
@@ -125,8 +146,21 @@ public abstract class MixinDisconnectedScreen extends Screen {
     }
 
     @Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        if (AutoLogoutTracker.hasLoggedOut()) {
+            if (AutoLogoutTracker.handleDisconnectedClick(event.x(), event.y(), event.button())) {
+                return true;
+            }
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
     public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
         if (AutoLogoutTracker.hasLoggedOut()) {
+            if (AutoLogoutTracker.handleDisconnectedKey(event.key())) {
+                return true;
+            }
             if (event.key() == GLFW.GLFW_KEY_C) {
                 copyCoordsAction();
                 return true;
