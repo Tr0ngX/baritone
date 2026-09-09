@@ -21,17 +21,9 @@ import baritone.Baritone;
 import baritone.api.event.events.TickEvent;
 import baritone.api.utils.BaritoneFileLogger;
 import baritone.api.utils.Helper;
-import baritone.api.utils.SettingsUtil;
 import baritone.utils.AutoLogoutTracker;
-import baritone.utils.AutoMineConfig;
-import baritone.utils.AutoMineScreen;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import baritone.api.event.events.type.EventState;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
-import net.minecraft.tags.FluidTags;
-import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -39,84 +31,23 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.phys.AABB;
 
 /**
  * Hành vi Bảo hộ Khẩn cấp (Emergency Safety Behavior).
  * Tự động ngắt kết nối / Logout ngay lập tức khi:
- * 1. Rơi vào hồ Lava và không còn bất kỳ Totem nào.
- * 2. Máu tụt còn nửa thanh (<= 50% max HP hoặc <= 10 HP) và không còn bất kỳ Totem nào.
+ * 1. Bị cháy (isOnFire) liên tục trên 10 giây mà không có Kháng Lửa.
+ * 2. Máu tụt nguy kịch (<= 6 HP) hoặc máu thấp + hết Totem.
+ * 3. Phát hiện người chơi khác đến gần.
  * Nhằm bảo toàn tuyệt đối 100% trang bị và tính mạng của người chơi.
  */
 public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
     private int tickCount = 0;
-    private int lavaTicks = 0;
+    /** Số tick liên tục đang bị cháy (isOnFire). 200 ticks = 10 giây. */
+    private int fireTicks = 0;
 
     public EmergencySafetyBehavior(Baritone baritone) {
         super(baritone);
-    }
-
-    /**
-     * Kiểm tra chính xác người chơi có ĐANG THỰC SỰ RƠI VÀO / CHÌM TRONG HỒ LAVA hay không.
-     * Đảm bảo tiêu chuẩn: "PHẢI RƠI VÀO HỒ LAVA MỚI TÍNH".
-     * Loại trừ 100%:
-     * - Đi ngang qua hoặc đứng an toàn trên bờ đá cạnh mép hồ dung nham.
-     * - Đang có hiệu ứng Kháng Lửa (Fire Resistance) - an toàn tuyệt đối.
-     * - Bị bắt lửa trên cạn sau khi đã thoát lên bờ (không còn chìm trong hồ dung nham).
-     */
-    public static boolean isTouchingLava(baritone.api.utils.IPlayerContext ctx) {
-        if (ctx == null || ctx.player() == null || ctx.world() == null) {
-            return false;
-        }
-
-        // 1. Nếu có thuốc kháng lửa thì an toàn tuyệt đối trong dung nham -> Không tính là nguy hiểm
-        if (ctx.player().hasEffect(MobEffects.FIRE_RESISTANCE)) {
-            return false;
-        }
-
-        // 2. Cờ vật lý chuẩn của Minecraft Entity (LocalPlayer): hitbox đang ngập trong dung nham
-        if (ctx.player().isInLava() || ctx.player().isEyeInFluid(FluidTags.LAVA)) {
-            return true;
-        }
-
-        // 3. Chiều cao chất lỏng dung nham ngập trên cơ thể > 0.05m (ngập ít nhất 5cm)
-        try {
-            if (ctx.player().getFluidHeight(FluidTags.LAVA) > 0.05) {
-                return true;
-            }
-        } catch (Throwable ignored) {}
-
-        // 4. Khối tại vị trí chân (playerFeet) là dung nham
-        BlockPos feet = ctx.playerFeet();
-        if (ctx.world().getFluidState(feet).is(FluidTags.LAVA)
-                || ctx.world().getBlockState(feet).is(Blocks.LAVA)) {
-            return true;
-        }
-
-        // 5. Quét AABB thu nhỏ (deflate 0.08m) để loại bỏ hoàn toàn việc đứng trên đá sượt mép khối dung nham
-        AABB innerBox = ctx.player().getBoundingBox().deflate(0.08, 0.0, 0.08);
-        int minX = Mth.floor(innerBox.minX);
-        int maxX = Mth.floor(innerBox.maxX);
-        int minY = Mth.floor(innerBox.minY);
-        int maxY = Mth.floor(innerBox.maxY);
-        int minZ = Mth.floor(innerBox.minZ);
-        int maxZ = Mth.floor(innerBox.maxZ);
-
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    if (ctx.world().getFluidState(pos).is(FluidTags.LAVA)
-                            || ctx.world().getBlockState(pos).is(Blocks.LAVA)) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
     }
 
     @Override
@@ -136,46 +67,39 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
         boolean checkDanger = Baritone.settings().autoLogoutOnDanger.value;
         boolean checkPlayer = Baritone.settings().autoLogoutOnPlayer.value;
         if (!checkDanger && !checkPlayer) {
-            lavaTicks = 0;
+            fireTicks = 0;
             return;
         }
         if (ctx.player() == null || ctx.world() == null) {
-            lavaTicks = 0;
+            fireTicks = 0;
             return;
         }
         // Không logout nếu đang ở chế độ Sáng tạo (Creative) hoặc Khán giả (Spectator)
         if (ctx.player().isCreative() || ctx.player().isSpectator()) {
-            lavaTicks = 0;
+            fireTicks = 0;
             return;
         }
 
-        // 1. Kiểm tra trạng thái thực sự rơi vào hồ dung nham (chỉ khi checkDanger bật):
+        // === PHÁT HIỆN CHÁY ===
+        // Đơn giản và đáng tin cậy: chỉ cần check isOnFire()
+        // isOnFire() = true liên tục khi ở trong lava (không bị bobbing reset như isInLava())
+        // Bỏ qua nếu có thuốc Kháng Lửa (Fire Resistance)
         boolean hasFireResistance = ctx.player().hasEffect(MobEffects.FIRE_RESISTANCE);
-        boolean inLava = isTouchingLava(ctx);
-        // Kiểm tra thêm trường hợp bơi/nhấp nhô (bobbing) trên mặt hồ dung nham mà không chạm đất cứng:
-        boolean bobbingInLavaLake = !hasFireResistance && !ctx.player().onGround()
-                && (ctx.world().getFluidState(ctx.playerFeet()).is(FluidTags.LAVA)
-                || ctx.world().getFluidState(ctx.playerFeet().below()).is(FluidTags.LAVA));
-        boolean trulyInLava = (inLava || bobbingInLavaLake) && !hasFireResistance;
+        boolean onFire = ctx.player().isOnFire() && !hasFireResistance;
 
         if (checkDanger) {
-            if (trulyInLava) {
-                // Đang chìm trong hồ dung nham: tích lũy liên tục mỗi tick (20 ticks = 1 giây)
-                lavaTicks = Math.min(100, lavaTicks + 1);
+            if (onFire) {
+                fireTicks = Math.min(400, fireTicks + 1); // cap 20 giây
             } else {
-                // ĐÃ THOÁT RA KHỎI HỒ LAVA (đã nhảy lên bờ hoặc không còn trong dung nham):
-                // Reset ngay lập tức về 0! Tuyệt đối không kick người chơi sau khi đã thoát lên bờ dập lửa!
-                lavaTicks = 0;
+                fireTicks = 0; // Hết cháy = reset
             }
         } else {
-            lavaTicks = 0;
+            fireTicks = 0;
         }
 
         String dangerReason = null;
 
         // TRƯỜNG HỢP 1: PHÁT HIỆN NGƯỜI CHƠI ĐẾN GẦN (KỂ CẢ DÙNG THUỐC TÀNG HÌNH / INVIS)
-        // Ưu tiên cao nhất: nếu phát hiện player khác xâm nhập vùng an toàn -> Logout ngay lập tức!
-        // (Áp dụng Grace Period khi vừa vào thế giới để không bị kick oan do người chơi ở spawn/lobby)
         if (checkPlayer && !inGracePeriod) {
             AutoLogoutTracker.DetectedPlayerInfo playerThreat = AutoLogoutTracker.scanForNearbyPlayer(ctx);
             if (playerThreat != null) {
@@ -183,19 +107,18 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             }
         }
 
-        // TRƯỜNG HỢP 2: LAVA (chỉ khi checkDanger bật, thực sự rơi vào hồ lava và không có thuốc kháng lửa)
-        // Đúng tiêu chuẩn yêu cầu: Phải ngâm mình trong hồ LAVA liên tục đúng 3 giây (60 ticks) mới kick!
-        if (dangerReason == null && checkDanger && trulyInLava) {
-            if (lavaTicks >= 60) {
-                dangerReason = "Rơi vào hồ LAVA liên tục quá 3 giây mà không thể thoát ra!";
+        // TRƯỜNG HỢP 2: CHÁY LIÊN TỤC TRÊN 10 GIÂY (200 ticks)
+        // Logic đơn giản: bị cháy (lava/lửa/magma) liên tục 10s mà không dập được = kick
+        if (dangerReason == null && checkDanger && onFire) {
+            if (fireTicks >= 200) {
+                dangerReason = "Bị CHÁY liên tục quá 10 giây mà không dập được lửa!";
             } else if (ctx.player().getHealth() <= 6.0f) {
-                // Ngoại lệ bảo toàn mạng sống duy nhất trong 3 giây: Nếu máu tụt xuống mức cực kỳ nguy kịch (<= 3 tim)
-                // Kick khẩn cấp ngay để cứu mạng và bảo vệ toàn bộ trang bị quý giá!
-                dangerReason = "Bị rơi vào hồ LAVA và MÁU NGUY KỊCH (còn " + String.format(java.util.Locale.ROOT, "%.1f", ctx.player().getHealth()) + " HP)!";
+                // Máu nguy kịch (<= 3 tim) + đang cháy = kick khẩn cấp ngay
+                dangerReason = "Đang CHÁY và MÁU NGUY KỊCH (còn " + String.format(java.util.Locale.ROOT, "%.1f", ctx.player().getHealth()) + " HP)!";
             }
         }
 
-        // TRƯỜNG HỢP 3: MẤT MÁU NGUY HIỂM / QUÁI ĐÁNH / ĐÓI / TÉ NGÃ
+        // TRƯỜNG HỢP 3: MẤT MÁU NGUY HIỂM / QUÁI ĐÁNH / ĐÓI / TÉ NGÃ (không liên quan đến lửa)
         if (dangerReason == null && checkDanger) {
             int totemCount = getTotemCount();
             float health = ctx.player().getHealth();
@@ -207,14 +130,13 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
                 String cause = detectDamageCause(ctx);
                 dangerReason = cause + " (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
             } else if (health <= 6.0f) {
-                // Máu cực kỳ nguy kịch (<= 3 tim): Kể cả còn Totem cũng kick để bảo toàn tính mạng
                 String cause = detectDamageCause(ctx);
                 dangerReason = cause + " (Máu nguy kịch: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP)!";
             }
         }
 
         if (dangerReason != null) {
-            lavaTicks = 0;
+            fireTicks = 0;
             AutoLogoutTracker.performAutoLogout(ctx, dangerReason);
         }
     }
@@ -307,7 +229,7 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
     @Override
     public void onWorldEvent(baritone.api.event.events.WorldEvent event) {
         if (event.getWorld() == null) {
-            lavaTicks = 0;
+            fireTicks = 0;
         } else {
             AutoLogoutTracker.onWorldJoined();
         }
