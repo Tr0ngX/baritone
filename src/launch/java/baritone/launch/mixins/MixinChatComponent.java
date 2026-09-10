@@ -39,7 +39,9 @@ public class MixinChatComponent {
     private Component onAddMessage(Component message) {
         if (message != null) {
             try {
-                baritone.utils.DiscordManager.updateBalanceIfDetected(message.getString());
+                String str = message.getString();
+                baritone.utils.DiscordManager.updateBalanceIfDetected(str);
+                baritone.utils.hud.BottingDashboardOverlay.addRecentChat(str);
             } catch (Throwable ignored) {}
         }
         return StreamerUtil.censorComponent(message);

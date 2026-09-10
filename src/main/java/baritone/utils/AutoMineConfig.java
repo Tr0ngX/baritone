@@ -97,6 +97,8 @@ public final class AutoMineConfig {
         public boolean optStreamerMode = false;
         public boolean optHideScoreboard = false;
         public boolean optHidePlayerName = false;
+        public boolean optBottingMode = false;
+        public int optBottingFps = 10;
 
         // === DISCORD WEBHOOK & TELEMETRY ===
         public String discordWebhookUrl = "";
@@ -203,6 +205,10 @@ public final class AutoMineConfig {
         AutoMineScreen.optStreamerMode = data.optStreamerMode;
         AutoMineScreen.optHideScoreboard = data.optHideScoreboard;
         AutoMineScreen.optHidePlayerName = data.optHidePlayerName;
+        AutoMineScreen.optBottingMode = data.optBottingMode;
+        AutoMineScreen.optBottingFps = data.optBottingFps > 0 ? data.optBottingFps : 10;
+        Baritone.settings().bottingMode.value = data.optBottingMode;
+        Baritone.settings().bottingFps.value = AutoMineScreen.optBottingFps;
 
         // Tầng Y
         AutoMineScreen.optTargetY = data.optTargetY;
@@ -265,6 +271,8 @@ public final class AutoMineConfig {
             Baritone.settings().sprintAscends.value = AutoMineScreen.optAutoSprint;
             Baritone.settings().overshootTraverse.value = AutoMineScreen.optOvershoot;
             Baritone.settings().sprintInWater.value = AutoMineScreen.optWaterSprint;
+            Baritone.settings().bottingMode.value = AutoMineScreen.optBottingMode;
+            Baritone.settings().bottingFps.value = AutoMineScreen.optBottingFps > 0 ? AutoMineScreen.optBottingFps : 10;
 
             int targetY = AutoMineScreen.optTargetY == 999 ? -54 : AutoMineScreen.optTargetY;
             Baritone.settings().legitMineYLevel.value = targetY;
@@ -337,6 +345,8 @@ public final class AutoMineConfig {
             data.optStreamerMode = AutoMineScreen.optStreamerMode;
             data.optHideScoreboard = AutoMineScreen.optHideScoreboard;
             data.optHidePlayerName = AutoMineScreen.optHidePlayerName;
+            data.optBottingMode = Baritone.settings().bottingMode.value;
+            data.optBottingFps = Baritone.settings().bottingFps.value;
 
             // Tầng Y
             data.optTargetY = AutoMineScreen.optTargetY;

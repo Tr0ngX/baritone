@@ -115,6 +115,8 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optStreamerMode = false;
     public static boolean optHideScoreboard = false;
     public static boolean optHidePlayerName = false;
+    public static boolean optBottingMode = false;
+    public static int optBottingFps = 10;
     public static boolean optStrictOneDirection = true;
     public static int optTargetY = -54;
 
@@ -524,6 +526,14 @@ public class AutoMineScreen extends Screen implements Helper {
                 "Khi bật: ESP bị ép tắt và không cho bật lại, animation goal/path chuyển tĩnh, tooltip gọn. Dùng khi treo máy farm hàng nghìn block.",
                 "HUD", 0xFFF59E0B, () -> Baritone.settings().heavyFarmMode.value, () -> {
             Baritone.settings().heavyFarmMode.value = !Baritone.settings().heavyFarmMode.value;
+            AutoMineConfig.save();
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.OBSIDIAN), "Chế độ Botting (Màn hình đen)", "Cực tối ưu botting: Đen màn hình, ngắt 3D, khóa 10 FPS",
+                "Tối ưu cực hạn khi cắm bot/treo farm nhiều acc: Dừng 100% render thế giới 3D (GPU ~0%), khóa 10 FPS native, màn hình đen kèm bảng điều khiển Botting Dashboard. Vẫn tự động chụp ảnh thực tế khi gửi Discord Webhook.",
+                "HUD", 0xFF0EA5E9, () -> Baritone.settings().bottingMode.value, () -> {
+            boolean next = !Baritone.settings().bottingMode.value;
+            Baritone.settings().bottingMode.value = next;
+            optBottingMode = next;
             AutoMineConfig.save();
         }));
         allModules.add(new ModuleItem(new ItemStack(Items.NOTE_BLOCK), "Âm thanh giao diện", "Tiếng click vanilla nhẹ khi đổi trạng thái",

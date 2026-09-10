@@ -17,6 +17,7 @@
 
 package baritone.utils;
 
+import baritone.api.BaritoneAPI;
 import baritone.api.utils.BaritoneFileLogger;
 import baritone.api.utils.Helper;
 import com.mojang.blaze3d.pipeline.RenderTarget;
@@ -27,17 +28,24 @@ import net.minecraft.util.Util;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
  * Helper chụp ảnh màn hình Siêu Sạch (Clean Screenshot Capture).
  * Chụp framebuffer ngay tại thời điểm render xong Thế giới + HUD Thống kê đào khoáng,
  * TRƯỚC KHI bất kỳ Screen nào (Game Menu ESC, Túi đồ E, GUI F4) được vẽ đè lên.
+ * Tương thích 100% với Chế độ Botting (Màn hình đen): Tự động bật render 1 frame thực tế để chụp.
  */
 public final class CleanScreenshotHelper implements Helper {
 
-    private static final AtomicBoolean CAPTURE_REQUESTED = new AtomicBoolean(false);
+    public enum CaptureState {
+        IDLE,
+        REQUESTED,
+        LEVEL_RENDERED
+    }
+
+    private static final AtomicReference<CaptureState> STATE = new AtomicReference<>(CaptureState.IDLE);
     private static volatile Consumer<byte[]> pendingCallback = null;
 
     private CleanScreenshotHelper() {}
@@ -50,13 +58,14 @@ public final class CleanScreenshotHelper implements Helper {
      */
     public static void requestCleanScreenshot(Consumer<byte[]> callback) {
         pendingCallback = callback;
-        CAPTURE_REQUESTED.set(true);
+        STATE.set(CaptureState.REQUESTED);
 
         // Đặt timeout 2.5s đề phòng trường hợp game đang ở trạng thái không render level
         Util.ioPool().execute(() -> {
             try {
                 Thread.sleep(2500L);
-                if (CAPTURE_REQUESTED.compareAndSet(true, false)) {
+                if (STATE.compareAndSet(CaptureState.REQUESTED, CaptureState.IDLE)
+                        || STATE.compareAndSet(CaptureState.LEVEL_RENDERED, CaptureState.IDLE)) {
                     Consumer<byte[]> cb = pendingCallback;
                     pendingCallback = null;
                     if (cb != null) {
@@ -72,7 +81,25 @@ public final class CleanScreenshotHelper implements Helper {
      * Kiểm tra xem hiện tại có đang yêu cầu chụp ảnh sạch hay không.
      */
     public static boolean isCaptureRequested() {
-        return CAPTURE_REQUESTED.get();
+        CaptureState s = STATE.get();
+        return s == CaptureState.REQUESTED || s == CaptureState.LEVEL_RENDERED;
+    }
+
+    /**
+     * Đánh dấu frame hiện tại đã cho phép LevelRenderer render thế giới 3D thực tế.
+     */
+    public static void markLevelRendered() {
+        STATE.compareAndSet(CaptureState.REQUESTED, CaptureState.LEVEL_RENDERED);
+    }
+
+    /**
+     * Kiểm tra xem framebuffer đã sẵn sàng chụp ảnh hay chưa.
+     */
+    public static boolean isReadyForCapture() {
+        if (!BaritoneAPI.getSettings().bottingMode.value) {
+            return isCaptureRequested();
+        }
+        return STATE.get() == CaptureState.LEVEL_RENDERED;
     }
 
     /**
@@ -80,7 +107,11 @@ public final class CleanScreenshotHelper implements Helper {
      * và trước khi Screen (ESC / E / GUI) được render.
      */
     public static void captureOnRenderThread(RenderTarget renderTarget) {
-        if (!CAPTURE_REQUESTED.compareAndSet(true, false)) {
+        if (!isReadyForCapture()) {
+            return;
+        }
+
+        if (STATE.getAndSet(CaptureState.IDLE) == CaptureState.IDLE) {
             return;
         }
 

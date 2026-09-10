@@ -67,6 +67,27 @@ public class MixinGui {
     }
 
     /**
+     * Chế độ Botting (Màn hình đen):
+     * Khi bottingMode bật và không có yêu cầu chụp ảnh Webhook,
+     * vẽ toàn bộ màn hình màu đen tuyền (0xFF000000) và vẽ bảng điều khiển BottingDashboardOverlay
+     * nếu người chơi không mở Screen nào (F4 ClickGUI, ESC, Inventory).
+     * Huỷ bỏ hoàn toàn render HUD vanilla để tiết kiệm triệt để CPU/draw calls.
+     */
+    @Inject(method = "render", at = @At("HEAD"), cancellable = true)
+    private void onRenderHead(GuiGraphics guiGraphics, DeltaTracker deltaTracker, CallbackInfo ci) {
+        if (baritone.api.BaritoneAPI.getSettings().bottingMode.value && !baritone.utils.CleanScreenshotHelper.isCaptureRequested()) {
+            guiGraphics.fill(0, 0, guiGraphics.guiWidth(), guiGraphics.guiHeight(), 0xFF000000);
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.screen == null && mc.font != null) {
+                try {
+                    baritone.utils.hud.BottingDashboardOverlay.render(guiGraphics, mc);
+                } catch (Throwable ignored) {}
+            }
+            ci.cancel();
+        }
+    }
+
+    /**
      * Vẽ HUD đào quặng độc lập (OreHudOverlay) lên màn hình.
      * Overlay tự ẩn khi tắt GUI (F1), mở debug (F3), tắt thống kê hoặc không mining.
      */
@@ -78,7 +99,7 @@ public class MixinGui {
                 baritone.utils.hud.OreHudOverlay.getInstance().render(guiGraphics, mc.font);
             } catch (Throwable ignored) {}
         }
-        if (baritone.utils.CleanScreenshotHelper.isCaptureRequested()) {
+        if (baritone.utils.CleanScreenshotHelper.isReadyForCapture()) {
             try {
                 baritone.utils.CleanScreenshotHelper.captureOnRenderThread(mc.getMainRenderTarget());
             } catch (Throwable ignored) {}

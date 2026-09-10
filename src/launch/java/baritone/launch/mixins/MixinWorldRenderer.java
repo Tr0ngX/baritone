@@ -42,6 +42,21 @@ public class MixinWorldRenderer {
 
     @Inject(
             method = "renderLevel",
+            at = @At("HEAD"),
+            cancellable = true
+    )
+    private void onPreRenderLevel(final GraphicsResourceAllocator graphicsResourceAllocator, final DeltaTracker deltaTracker, final boolean bl, final Camera camera, final Matrix4f matrix4f, final Matrix4f matrix4f2, final Matrix4f matrix4f3, final GpuBufferSlice gpuBufferSlice, final Vector4f vector4f, final boolean bl2, final CallbackInfo ci) {
+        if (BaritoneAPI.getSettings().bottingMode.value) {
+            if (baritone.utils.CleanScreenshotHelper.isCaptureRequested()) {
+                baritone.utils.CleanScreenshotHelper.markLevelRendered();
+            } else {
+                ci.cancel();
+            }
+        }
+    }
+
+    @Inject(
+            method = "renderLevel",
             at = @At("RETURN")
     )
     private void onStartHand(final GraphicsResourceAllocator graphicsResourceAllocator, final DeltaTracker deltaTracker, final boolean bl, final Camera camera, final Matrix4f matrix4f, final Matrix4f matrix4f2, final Matrix4f matrix4f3, final GpuBufferSlice gpuBufferSlice, final Vector4f vector4f, final boolean bl2, final CallbackInfo ci) {

@@ -1915,6 +1915,16 @@ public final class Settings {
     public final Setting<Integer> antiTrap5x5Radius = new Setting<>(2);
 
     /**
+     * Che do botting toi uu cuc han: den toan bo man hinh, ngung render the gioi 3D va gioi han 10 FPS de tiet kiem toi da GPU va CPU.
+     */
+    public final Setting<Boolean> bottingMode = new Setting<>(false);
+
+    /**
+     * Gioi han FPS khi o che do botting man hinh den (mac dinh 10 FPS).
+     */
+    public final Setting<Integer> bottingFps = new Setting<>(10);
+
+    /**
      * A map of lowercase setting field names to their respective setting
      */
     public final Map<String, Setting<?>> byLowerName;
