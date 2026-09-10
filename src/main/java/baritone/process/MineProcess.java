@@ -191,6 +191,11 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int recentPosCount = 0;
     private BetterBlockPos lastAntiStuckPos = null;
 
+    // 5x5 Confinement & Emergency Escape (sau 1 phut ket trong 5x5 thi tam tat AntiStuck 10s de doi huong)
+    private BetterBlockPos confinementAnchorPos = null;
+    private int confinedIn5x5Ticks = 0;
+    private int antiStuckSuspensionCooldownTicks = 0;
+
     private enum ShulkerStorageState {
         IDLE,
         SHOP_PREPARE_SLOT,
@@ -339,6 +344,14 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         lastPillarFailPos = null;
         pillarFailCount = 0;
         Baritone.settings().noPillar.value = false;
+
+        // Tạm tắt AntiStuck trong 10s để bot tự do bứt phá theo hướng mới
+        int suspensionTicks = Baritone.settings().antiTrap5x5SuspensionTicks.value;
+        antiStuckSuspensionCooldownTicks = suspensionTicks > 0 ? suspensionTicks : 200;
+        confinedIn5x5Ticks = 0;
+        if (ctx.player() != null) {
+            confinementAnchorPos = ctx.playerFeet();
+        }
 
         // Giải phóng chuột và mục tiêu đào kẹt
         activeMiningBlock = null;
@@ -888,6 +901,9 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         recentPosCount = 0;
         lastAntiStuckPos = null;
         lastPillarFailPos = null;
+        confinementAnchorPos = null;
+        confinedIn5x5Ticks = 0;
+        antiStuckSuspensionCooldownTicks = 0;
         pendingDropSlots.clear();
         dropCooldown = 0;
         if (shulkerState != ShulkerStorageState.IDLE) {
@@ -5276,6 +5292,46 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return;
         }
 
+        // TẠM THỜI TẮT TOÀN BỘ CƠ CHẾ CHỐNG KẸT TRONG 10S (200 TICKS) ĐỂ BỨT PHÁ HƯỚNG ĐI MỚI
+        if (antiStuckSuspensionCooldownTicks > 0) {
+            antiStuckSuspensionCooldownTicks--;
+            stuckTicks = 0;
+            recentPosCount = 0;
+            placeBreakOscillationCount = 0;
+            placedThisCycle = false;
+            if (antiStuckSuspensionCooldownTicks == 0) {
+                logDirect("§a[AntiTrap-5x5] Đã qua 10s bứt phá hướng mới! Bật lại toàn bộ cơ chế chống kẹt.");
+                if (ctx.player() != null) {
+                    confinementAnchorPos = ctx.playerFeet();
+                    confinedIn5x5Ticks = 0;
+                }
+            }
+            return;
+        }
+
+        BetterBlockPos currentFeet = ctx.playerFeet();
+        int radius = Baritone.settings().antiTrap5x5Radius.value;
+        int timeoutTicks = Baritone.settings().antiTrap5x5TimeoutTicks.value;
+
+        // KIỂM TRA ĐỨNG YÊN / QUẨN QUANH TRONG PHẠM VI 5x5 SUỐT 1 PHÚT (1200 TICKS = 60S):
+        if (confinementAnchorPos == null) {
+            confinementAnchorPos = currentFeet;
+            confinedIn5x5Ticks = 0;
+        } else {
+            if (Math.abs(currentFeet.x - confinementAnchorPos.x) <= radius
+                    && Math.abs(currentFeet.z - confinementAnchorPos.z) <= radius
+                    && Math.abs(currentFeet.y - confinementAnchorPos.y) <= 4) {
+                confinedIn5x5Ticks++;
+                if (confinedIn5x5Ticks >= timeoutTicks) {
+                    trigger5x5EmergencyEscape(currentFeet);
+                    return;
+                }
+            } else {
+                confinementAnchorPos = currentFeet;
+                confinedIn5x5Ticks = 0;
+            }
+        }
+
         // Theo dõi hành động đặt block và đào block để phát hiện vòng lặp "đặt lên rồi đào xuống"
         HitResult hit = ctx.objectMouseOver();
         if (hit instanceof BlockHitResult bhr) {
@@ -5302,8 +5358,6 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 }
             }
         }
-
-        BetterBlockPos currentFeet = ctx.playerFeet();
 
         // ƯU TIÊN CAO NHẤT: Phát hiện và FORCE chọn ngay 1 phương án giải kẹt khi bị vòng lặp nhảy lên đặt block rồi đào đi!
         if (placeBreakOscillationCount >= 2) {
@@ -5636,6 +5690,84 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             forceReroute = true;
             return;
         }
+    }
+
+    private void trigger5x5EmergencyEscape(BetterBlockPos currentFeet) {
+        int suspensionTicks = Baritone.settings().antiTrap5x5SuspensionTicks.value;
+        this.antiStuckSuspensionCooldownTicks = suspensionTicks > 0 ? suspensionTicks : 200; // 10s = 200 ticks
+        this.confinedIn5x5Ticks = 0;
+        this.confinementAnchorPos = currentFeet;
+
+        // Xóa sạch trạng thái kẹt và các bộ đếm vòng lặp
+        this.stuckTicks = 0;
+        this.stuckRetries = 0;
+        this.recentPosCount = 0;
+        this.placeBreakOscillationCount = 0;
+        this.placedThisCycle = false;
+        this.lastPlacedBlockPos = null;
+        this.lastBrokenBlockPos = null;
+        this.lastPillarFailPos = null;
+        this.pillarFailCount = 0;
+        Baritone.settings().noPillar.value = false;
+
+        // Dừng đập block / giải phóng chuột
+        this.activeMiningBlock = null;
+        this.activeMiningTicks = 0;
+        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
+        baritone.getInputOverrideHandler().clearAllKeys();
+
+        // Blacklist toàn bộ quặng / mục tiêu trong bán kính 4 block xung quanh vị trí kẹt 5x5
+        if (knownOreLocations != null) {
+            for (BlockPos p : new ArrayList<>(knownOreLocations)) {
+                if (Math.abs(p.getX() - currentFeet.x) <= 4 && Math.abs(p.getZ() - currentFeet.z) <= 4) {
+                    blacklist.add(p);
+                    knownOreLocations.remove(p);
+                    oreMemory.remove(p);
+                }
+            }
+        }
+        for (BlockPos p : new ArrayList<>(oreMemory)) {
+            if (Math.abs(p.getX() - currentFeet.x) <= 4 && Math.abs(p.getZ() - currentFeet.z) <= 4) {
+                blacklist.add(p);
+                oreMemory.remove(p);
+            }
+        }
+        this.lockedTargetOre = null;
+
+        // Đổi sang hướng đi mới (xoay 90 độ theo chiều kim đồng hồ)
+        if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+            net.minecraft.core.Direction dir = (ctx.player() != null) ? ctx.player().getDirection() : net.minecraft.core.Direction.NORTH;
+            tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+        }
+        net.minecraft.core.Direction newDir = tunnelDirection.getClockWise();
+        tunnelDirection = newDir;
+
+        // Reset các mốc hầm cũ và thiết lập branchPoint mới
+        this.stairOriginPos = null;
+        this.shaftOriginPos = null;
+        this.tunnelOriginPos = null;
+        this.currentTunnelTarget = null;
+        this.branchPoint = currentFeet.relative(newDir.getOpposite(), 16);
+        this.branchPointRunaway = null;
+        this.bedrockEscapeActive = false;
+        this.forceReroute = true;
+
+        // Hủy segment đang đi để A* tính toán lại ngay theo hướng mới
+        baritone.getPathingBehavior().cancelSegmentIfSafe();
+
+        String dirName = newDir.getName().toUpperCase();
+        logDirect("§e[AntiTrap-5x5] Phát hiện bot bị kẹt/đứng yên trong phạm vi 5x5 suốt 1 phút!");
+        logDirect("§a[AntiTrap-5x5] TẠM TẮT toàn bộ cơ chế chống kẹt trong 10s, bứt phá hướng mới: " + dirName + "!");
+
+        try {
+            DiscordManager.getInstance().sendAlert(
+                    "🚨 [AntiTrap 5x5 - Bứt Phá Lối Đi Mới]",
+                    "Bot bị đứng yên/kẹt trong phạm vi 5x5 suốt 1 phút tại " + currentFeet.toShortString() + "!\n" +
+                    "Đã tạm tắt toàn bộ cơ chế chống kẹt trong 10s và ép đổi hướng mới sang **" + dirName + "**.",
+                    0xFFAA00
+            );
+        } catch (Throwable ignored) {}
     }
 
     private void handlePlaceBreakLoopResolution(BetterBlockPos currentFeet) {

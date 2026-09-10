@@ -1845,6 +1845,21 @@ public final class Settings {
     public final Setting<Boolean> discordAlertOnDeath = new Setting<>(true);
 
     /**
+     * So tick dung yen trong pham vi 5x5 truoc khi kich hoat co che but pha loi di moi (mac dinh 1200 ticks = 60s / 1 phut).
+     */
+    public final Setting<Integer> antiTrap5x5TimeoutTicks = new Setting<>(1200);
+
+    /**
+     * So tick tam thoi tat toan bo co che chong ket sau khi doi huong de but pha (mac dinh 200 ticks = 10s).
+     */
+    public final Setting<Integer> antiTrap5x5SuspensionTicks = new Setting<>(200);
+
+    /**
+     * Ban kinh pham vi kiem tra ket giam cam (mac dinh 2 blocks -> vung 5x5 blocks).
+     */
+    public final Setting<Integer> antiTrap5x5Radius = new Setting<>(2);
+
+    /**
      * A map of lowercase setting field names to their respective setting
      */
     public final Map<String, Setting<?>> byLowerName;
