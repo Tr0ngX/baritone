@@ -1,9 +1,6 @@
 {
   "category.baritone": "Baritone",
-  "key.baritone.automine_gui": "Mở Menu AutoMine (Phím M)",
-  "key.baritone.never_kick": "Bật/Tắt Không Bao Giờ Kick",
-  "key.baritone.auto_logout": "Bật/Tắt Tự Thoát Khẩn Cấp",
-  "key.baritone.panic_logout": "Thoát Khẩn Cấp Tức Thì (Panic)",
+  "key.baritone.automine_gui": "Mở Menu AutoMine (F4)",
   "key.baritone.cancel": "Hủy / Dừng Baritone",
   "key.baritone.pause": "Tạm dừng / Tiếp tục Baritone"
 }

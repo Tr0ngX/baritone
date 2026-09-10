@@ -1,9 +1,6 @@
 {
   "category.baritone": "Baritone",
-  "key.baritone.automine_gui": "Open AutoMine Menu (Key M)",
-  "key.baritone.never_kick": "Toggle Never Kick Mode",
-  "key.baritone.auto_logout": "Toggle Auto-Logout On Danger",
-  "key.baritone.panic_logout": "Instant Panic Logout",
+  "key.baritone.automine_gui": "Open AutoMine Menu (F4)",
   "key.baritone.cancel": "Cancel / Stop Baritone",
   "key.baritone.pause": "Pause / Resume Baritone"
 }
