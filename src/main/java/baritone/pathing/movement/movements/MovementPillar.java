@@ -42,10 +42,6 @@ import java.util.Set;
 
 public class MovementPillar extends Movement {
 
-    private static BlockPos lastFailedPillarPos = null;
-    private static int persistentPillarFails = 0;
-
-    private int placeAttempts = 0;
     private int pillarTicks = 0;
 
     public MovementPillar(IBaritone baritone, BetterBlockPos start, BetterBlockPos end) {
@@ -55,7 +51,6 @@ public class MovementPillar extends Movement {
     @Override
     public void reset() {
         super.reset();
-        placeAttempts = 0;
         pillarTicks = 0;
     }
 
@@ -196,81 +191,65 @@ public class MovementPillar extends Movement {
             return state;
         } else {
             pillarTicks++;
-            if (pillarTicks > 60) {
-                // Kẹt hành động pillar quá 60 tick (3 giây) mà không leo lên được
+            if (pillarTicks > 80) {
+                // Kẹt hành động pillar quá 80 tick (4 giây) mà không leo lên được
                 logDebug("MovementPillar timeout (" + pillarTicks + " ticks). Failing movement.");
                 return state.setStatus(MovementStatus.FAILED);
             }
 
-            // Get ready to place a throwaway block
+            // 1. Kiểm tra xem có trần hầm cản trở nhảy lên không (đập đầu)
+            BetterBlockPos ceiling = src.above(2);
+            BlockState ceilingState = BlockStateInterface.get(ctx, ceiling);
+            if (!MovementHelper.canWalkThrough(ctx, ceiling)) {
+                var rotCeil = RotationUtils.reachable(ctx, ceiling, ctx.playerController().getBlockReachDistance());
+                if (rotCeil.isPresent()) {
+                    state.setTarget(new MovementState.MovementTarget(rotCeil.get(), true));
+                    state.setInput(Input.JUMP, false);
+                    MovementHelper.switchToBestToolFor(ctx, ceilingState);
+                    state.setInput(Input.CLICK_LEFT, true);
+                    return state;
+                }
+            }
+
+            // 2. Chuẩn bị block xây dựng để kê chân
             if (!((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, src.x, src.y, src.z)) {
                 return state.setStatus(MovementStatus.UNREACHABLE);
             }
 
-            state.setInput(Input.SNEAK, true);
-            // since (lower down) we only right click once player.isSneaking, and that happens the tick after we request to sneak
-
             double diffX = ctx.player().position().x - (dest.getX() + 0.5);
             double diffZ = ctx.player().position().z - (dest.getZ() + 0.5);
             double dist = Math.sqrt(diffX * diffX + diffZ * diffZ);
-            double flatMotion = Math.sqrt(ctx.player().getDeltaMovement().x * ctx.player().getDeltaMovement().x + ctx.player().getDeltaMovement().z * ctx.player().getDeltaMovement().z);
-            if (dist > 0.15) {
-                // Di chuyển vào đúng tâm block trước khi nhảy để tránh trôi dạt và đập đầu vào mép tường
+
+            // 3. Căn chỉnh vị trí & Nhảy
+            if (dist > 0.22 && ctx.player().onGround()) {
+                // Đang đứng lệch tâm block -> Bước về tâm block trước khi nhảy
                 state.setInput(Input.MOVE_FORWARD, true);
                 state.setTarget(new MovementState.MovementTarget(rotation, true));
+                state.setInput(Input.JUMP, false);
             } else {
-                // Đã đứng ngay tâm block -> Nhìn thẳng 90 độ xuống mặt sàn để đặt block chuẩn xác 100%
+                // Đã đứng trong phạm vi an toàn của block -> Nhìn thẳng xuống sàn và nhảy lên
                 state.setTarget(new MovementState.MovementTarget(ctx.playerRotations().withPitch(90.0F), true));
-                if (flatMotion < 0.12) {
-                    // Giữ phím nhảy trong suốt pha đi lên để đạt độ cao tối đa (+1.25 block), chỉ thả khi đã lên đỉnh
-                    state.setInput(Input.JUMP, ctx.player().position().y < dest.getY() || ctx.player().onGround());
-                }
+                // Giữ phím nhảy trong suốt pha đi lên cho tới khi chân chạm ngưỡng dest.getY()
+                state.setInput(Input.JUMP, ctx.player().position().y < dest.getY() || ctx.player().onGround());
             }
 
+            // 4. Đặt block khi người chơi đã đạt tới đỉnh cú nhảy
             if (!blockIsThere) {
                 BlockState frState = BlockStateInterface.get(ctx, src);
                 Block fr = frState.getBlock();
-                // TODO: Evaluate usage of getMaterial().isReplaceable()
                 if (!(fr instanceof AirBlock || frState.canBeReplaced())) {
-                    // 1. Kiểm tra xem có phải do trần hầm (đập đầu) cản trở việc nhảy lên không
-                    BlockPos ceiling = src.above(2);
-                    BlockState ceilingState = BlockStateInterface.get(ctx, ceiling);
-                    if (!(ceilingState.getBlock() instanceof AirBlock || ceilingState.canBeReplaced())) {
-                        var rotCeil = RotationUtils.reachable(ctx, ceiling, ctx.playerController().getBlockReachDistance());
-                        if (rotCeil.isPresent()) {
-                            Helper.HELPER.logDirect("§6[MovementPillar] Trần hầm tại " + ceiling.toShortString() + " cản trở nhảy lên! FORCE: Đào trần giải phóng đường...");
-                            state.setTarget(new MovementState.MovementTarget(rotCeil.get(), true));
-                            state.setInput(Input.JUMP, false);
-                            MovementHelper.switchToBestToolFor(ctx, ceilingState);
-                            state.setInput(Input.CLICK_LEFT, true);
-                            return state;
-                        }
+                    if (!MovementHelper.canWalkOn(ctx, src)) {
+                        RotationUtils.reachable(ctx, src, ctx.playerController().getBlockReachDistance())
+                                .map(rot -> new MovementState.MovementTarget(rot, true))
+                                .ifPresent(state::setTarget);
+                        state.setInput(Input.JUMP, false);
+                        state.setInput(Input.CLICK_LEFT, true);
+                        blockIsThere = false;
                     }
-
-                    if (src.equals(lastFailedPillarPos)) {
-                        persistentPillarFails++;
-                    } else {
-                        lastFailedPillarPos = src;
-                        persistentPillarFails = 1;
-                    }
-
-                    if (placeAttempts > 1 || persistentPillarFails >= 2) {
-                        // Đã thử đặt block mà không leo lên được và lại định đào xuống -> Dừng ngay vòng lặp đặt/đào!
-                        Helper.HELPER.logDirect("§c[MovementPillar] Phát hiện vòng lặp nhảy lên đặt block rồi đào đi tại " + src.toShortString() + "! FORCE: Tắt Pillar để A* tìm đường đi khác!");
-                        Baritone.settings().noPillar.value = true;
-                        persistentPillarFails = 0;
-                        lastFailedPillarPos = null;
-                        return state.setStatus(MovementStatus.FAILED);
-                    }
-                    RotationUtils.reachable(ctx, src, ctx.playerController().getBlockReachDistance())
-                            .map(rot -> new MovementState.MovementTarget(rot, true))
-                            .ifPresent(state::setTarget);
-                    state.setInput(Input.JUMP, false); // breaking is like 5x slower when you're jumping
-                    state.setInput(Input.CLICK_LEFT, true);
-                    blockIsThere = false;
-                } else if (ctx.player().position().y >= dest.getY() && (ctx.isLookingAt(src.below()) || ctx.isLookingAt(src) || ctx.playerRotations().getPitch() >= 80.0F)) {
-                    placeAttempts++;
+                } else if (ctx.player().position().y >= dest.getY() - 0.05
+                        && (ctx.isLookingAt(src.below()) || ctx.isLookingAt(src) || ctx.playerRotations().getPitch() >= 80.0F)) {
                     state.setInput(Input.CLICK_RIGHT, true);
+                    state.setInput(Input.JUMP, false);
                 }
             }
         }

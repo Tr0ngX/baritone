@@ -5447,15 +5447,24 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
                 lastAntiStuckPos = null;
                 lastStuckOrePos = null;
             }
-            // Đã thực sự di chuyển sang block khác → Chỉ cho phép nhảy+đặt block trở lại nếu đã ra xa vị trí kẹt (>= 3 blocks)
+            // Đã thực sự di chuyển sang block khác hoặc quá 5s → Phục hồi tính năng nhảy+đặt block (Pillar)
             if (Baritone.settings().noPillar.value) {
-                if (lastPillarFailPos == null || currentFeet.distSqr(lastPillarFailPos) >= 9) {
+                long now = System.currentTimeMillis();
+                if (lastPillarFailPos == null || currentFeet.distSqr(lastPillarFailPos) >= 1 || (now - lastPillarFailTime > 5000)) {
                     pillarFailCount = 0;
                     lastPillarFailPos = null;
                     Baritone.settings().noPillar.value = false;
-                    logDirect("§a[AntiPillarLoop] Đã di chuyển ra xa vị trí kẹt, cho phép nhảy+đặt block trở lại.");
+                    logDirect("§a[AntiPillarLoop] Đã phục hồi tính năng nhảy+đặt block (Pillar)!");
                 }
             }
+        }
+
+        // Tự động phục hồi Pillar sau 5 giây ngay cả khi chưa di chuyển
+        if (Baritone.settings().noPillar.value && (System.currentTimeMillis() - lastPillarFailTime > 5000)) {
+            pillarFailCount = 0;
+            lastPillarFailPos = null;
+            Baritone.settings().noPillar.value = false;
+            logDirect("§a[AntiPillarLoop] Đã hết 5s tạm dừng, phục hồi tính năng nhảy+đặt block (Pillar)!");
         }
 
         // === PHÁT HIỆN PILLAR LOOP ===

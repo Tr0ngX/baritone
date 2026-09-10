@@ -274,6 +274,103 @@ public final class ClickGuiTheme {
         }
     }
 
+    // === LIQUIDBOUNCE DROPDOWN STYLE (sidebar + module rows) ===
+
+    public static final int BG_SIDEBAR = 0xE6060B16;
+    public static final int BG_ROW = 0xCC0B1220;
+    public static final int BG_ROW_HOVER = 0xE0131F33;
+    public static final int BG_DROPDOWN = 0xF5060C16;
+    public static final int BORDER_ROW = 0x1E38BDF8;
+
+    /**
+     * Nút sidebar dọc kiểu LiquidBounce: icon + label, active có vạch accent trái + nền tint.
+     */
+    public static void drawSidebarButton(GuiGraphics g, Font font, ItemStack iconItem, String label,
+                                         int x, int y, int w, int h,
+                                         boolean active, boolean hover, int accentColor) {
+        int bg = active ? ((accentColor & 0x00FFFFFF) | 0x28000000)
+                : (hover ? 0x1AFFFFFF : 0x00000000);
+        if (bg != 0) {
+            g.fill(x, y, x + w, y + h, bg);
+        }
+        // Vạch accent trái 2px khi active/hover
+        if (active) {
+            g.fill(x, y + 2, x + 2, y + h - 2, accentColor);
+        } else if (hover) {
+            g.fill(x, y + 2, x + 2, y + h - 2, (accentColor & 0x00FFFFFF) | 0x60000000);
+        }
+        boolean hasIcon = (iconItem != null && !iconItem.isEmpty());
+        int textX = x + (hasIcon ? 24 : 10);
+        if (hasIcon) {
+            g.renderFakeItem(iconItem, x + 5, y + (h - 16) / 2);
+        }
+        int textColor = active ? 0xFFFFFFFF : (hover ? 0xFFE2E8F0 : 0xFF94A3B8);
+        String shown = label;
+        int maxW = w - (textX - x) - 6;
+        if (font.width(shown) > maxW) {
+            shown = font.plainSubstrByWidth(shown, Math.max(8, maxW - 6)) + "..";
+        }
+        drawText(g, font, shown, textX, y + (h - 8) / 2, textColor, active);
+        if (active) {
+            g.fill(x + 1, y + h - 1, x + w - 1, y + h, (accentColor & 0x00FFFFFF) | 0x50000000);
+        }
+    }
+
+    /**
+     * Header nhóm trong dropdown (vd: QUẶNG QUÝ HIẾM / QUẶNG THƯỜNG).
+     */
+    public static void drawGroupHeader(GuiGraphics g, Font font, String text, int x, int y, int w, int accentColor) {
+        drawText(g, font, text, x + 2, y + 2, accentColor, false);
+        int lineY = y + 11;
+        g.fill(x + 2 + font.width(text) + 6, lineY, x + w - 2, lineY + 1, 0x1EFFFFFF);
+    }
+
+    /**
+     * Row module full-width kiểu LB: nền + viền hairline + laser trên khi active/hover.
+     * Phần dropdown body (nếu expanded) do caller vẽ tiếp bên dưới bằng drawDropdownBody.
+     */
+    public static void drawModuleRow(GuiGraphics g, int x, int y, int w, int h,
+                                     int accentColor, boolean active, boolean hover, boolean expanded) {
+        int bgTop = hover ? 0xEE142136 : (active ? 0xE60D1D33 : 0xCC0B1220);
+        int bgBottom = hover ? 0xFA0D1728 : (active ? 0xF2081424 : 0xE0060B16);
+        g.fillGradient(x, y, x + w, y + h, bgTop, bgBottom);
+        int border = hover ? ((accentColor & 0x00FFFFFF) | 0x90000000)
+                : (active ? ((accentColor & 0x00FFFFFF) | 0x60000000) : BORDER_ROW);
+        drawOutline(g, x, y, w, h, border);
+        // Vạch đứng trái
+        g.fill(x + 1, y + 2, x + 3, y + h - 2,
+                active ? accentColor : (hover ? ((accentColor & 0x00FFFFFF) | 0x80000000) : 0x3064748B));
+        // Laser trên khi active/hover
+        if (active || hover) {
+            int laserAlpha = active ? 0xFF000000 : 0x95000000;
+            g.fill(x + 2, y, x + w - 2, y + 1, (accentColor & 0x00FFFFFF) | laserAlpha);
+        }
+        // Viền dưới nối dropdown khi expanded
+        if (expanded) {
+            g.fill(x + 1, y + h - 1, x + w - 1, y + h, (accentColor & 0x00FFFFFF) | 0x40000000);
+        }
+    }
+
+    /**
+     * Thân dropdown mở rộng bên dưới row: nền tối sâu + viền 2 bên + đáy.
+     */
+    public static void drawDropdownBody(GuiGraphics g, int x, int y, int w, int h, int accentColor) {
+        g.fill(x, y, x + w, y + h, BG_DROPDOWN);
+        int edge = (accentColor & 0x00FFFFFF) | 0x35000000;
+        g.fill(x, y, x + 1, y + h, edge);
+        g.fill(x + w - 1, y, x + w, y + h, edge);
+        g.fill(x, y + h - 1, x + w, y + h, edge);
+    }
+
+    /**
+     * Mũi tên expand ▼/▲ vẽ bằng text để nhẹ, hitbox do caller quản lý.
+     */
+    public static void drawExpandArrow(GuiGraphics g, Font font, int x, int y, boolean expanded, boolean hover, int accentColor) {
+        String arrow = expanded ? "▾" : "▸";
+        int col = hover ? 0xFFFFFFFF : (expanded ? accentColor : 0xFF94A3B8);
+        drawText(g, font, arrow, x, y, col, hover);
+    }
+
     /**
      * Vẽ thanh tiến trình hiện đại (Modern Progress Bar).
      */

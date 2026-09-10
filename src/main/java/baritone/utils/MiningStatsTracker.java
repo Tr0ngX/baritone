@@ -260,6 +260,10 @@ public final class MiningStatsTracker {
         return getDropItemCount(Items.DIAMOND);
     }
 
+    public long getSessionStartTime() {
+        return sessionStartTime;
+    }
+
     /**
      * Tự động quét và cập nhật số lượng vật phẩm/cục quặng rơi ra thực tế nhặt được vào túi đồ.
      * Hỗ trợ đầy đủ hiệu ứng Gia Vận (Fortune 1-3), không bị mất số lượng khi cất vào Shulker hay Rương Ender.

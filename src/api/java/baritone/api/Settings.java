@@ -1822,19 +1822,24 @@ public final class Settings {
     public final Setting<Boolean> allowWalkOnMagmaBlocks = new Setting<>(false);
 
     /**
-     * URL Webhook cua Discord de gui Telemetry va canh bao
+     * URL Webhook cua Discord de gui bao cao ket qua farm
      */
     public final Setting<String> discordWebhookUrl = new Setting<>("");
 
     /**
-     * Thoi gian dinh ky (giay) gui Telemetry len Discord Webhook
+     * Thoi gian dinh ky (giay) gui bao cao ket qua farm len Discord Webhook (mac dinh 300 giay = 5 phut)
      */
-    public final Setting<Integer> discordWebhookInterval = new Setting<>(15);
+    public final Setting<Integer> discordWebhookInterval = new Setting<>(300);
 
     /**
      * Bat/tat gui thong tin len Discord Webhook
      */
     public final Setting<Boolean> discordWebhookEnabled = new Setting<>(true);
+
+    /**
+     * Bat/tat chup anh man hinh game dinh kem vao tin nhan Discord
+     */
+    public final Setting<Boolean> discordCaptureScreen = new Setting<>(true);
 
     /**
      * Bot Token cua Discord bot de lang nghe lenh dieu khien tu xa

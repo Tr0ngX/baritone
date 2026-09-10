@@ -29,11 +29,16 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.Util;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -43,8 +48,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -74,8 +85,13 @@ public final class DiscordManager implements Helper {
     private final AtomicBoolean isStarted = new AtomicBoolean(false);
     private HttpServer httpServer = null;
     private int currentHttpPort = -1;
-    private long lastTelemetryTime = 0;
     private String lastPolledDiscordMessageId = "";
+
+    // Thống kê kết quả farm cho Discord Webhook
+    private final Map<MiningStatsTracker.OreType, Integer> lastReportOreCounts = new ConcurrentHashMap<>();
+    private final Map<Item, Integer> lastReportDropCounts = new ConcurrentHashMap<>();
+    private int lastReportTotalBlocks = 0;
+    private long lastFarmingReportTime = 0;
 
     private DiscordManager() {}
 
@@ -88,8 +104,8 @@ public final class DiscordManager implements Helper {
      */
     public synchronized void start() {
         if (isStarted.compareAndSet(false, true)) {
-            // Task 1: Telemetry định kỳ và Alert
-            scheduler.scheduleWithFixedDelay(this::telemetryTick, 2, 1, TimeUnit.SECONDS);
+            // Task 1: Báo cáo kết quả farm định kỳ (mặc định 5 phút)
+            scheduler.scheduleWithFixedDelay(this::farmingReportTick, 5, 2, TimeUnit.SECONDS);
 
             // Task 2: Polling Discord Bot Channel (nếu có cấu hình bot token)
             scheduler.scheduleWithFixedDelay(this::discordChannelPollTick, 3, 2, TimeUnit.SECONDS);
@@ -230,9 +246,9 @@ public final class DiscordManager implements Helper {
     }
 
     /**
-     * Vòng lặp kiểm tra và gửi Telemetry định kỳ theo giây cấu hình trong discordWebhookInterval.
+     * Vòng lặp kiểm tra và gửi báo cáo kết quả farm định kỳ theo discordWebhookInterval (mặc định 5 phút = 300s).
      */
-    private void telemetryTick() {
+    private void farmingReportTick() {
         try {
             if (!Baritone.settings().discordWebhookEnabled.value) {
                 return;
@@ -244,30 +260,239 @@ public final class DiscordManager implements Helper {
 
             int intervalSec = Baritone.settings().discordWebhookInterval.value;
             if (intervalSec <= 0) {
-                return;
+                intervalSec = 300;
             }
 
             long now = System.currentTimeMillis();
-            if (now - lastTelemetryTime < intervalSec * 1000L) {
+            if (now - lastFarmingReportTime < intervalSec * 1000L) {
                 return;
             }
-            lastTelemetryTime = now;
+            lastFarmingReportTime = now;
 
             LocalPlayer player = Minecraft.getInstance().player;
             if (player == null) {
                 return;
             }
 
-            JsonObject payload = buildDiscordWebhookEmbedPayload(
-                    "⛏️ Baritone Bot Telemetry",
-                    buildTelemetryDescription(player),
-                    0x00D26A, // Xanh lá ngọc bích
-                    buildTelemetryFields(player)
-            );
-
-            sendAsyncToWebhook(webhookUrl, payload.toString());
+            sendFarmingReport(false);
         } catch (Exception e) {
-            logDebug("[DiscordManager] Lỗi gửi telemetry: " + e.getMessage());
+            logDebug("[DiscordManager] Lỗi vòng lặp farming report: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Gửi Báo cáo kết quả farm & đào khoáng lên Discord.
+     * Tự động tính số quặng đào thêm (+delta) trong chu kỳ vừa qua và tổng số quặng đã tích lũy.
+     * Chụp ảnh màn hình đính kèm nếu option discordCaptureScreen đang BẬT.
+     */
+    public void sendFarmingReport(boolean isTest) {
+        try {
+            String webhookUrl = Baritone.settings().discordWebhookUrl.value;
+            if (webhookUrl == null || webhookUrl.trim().isEmpty() || !webhookUrl.startsWith("http")) {
+                if (isTest) {
+                    logDirect("§c[Discord] Vui lòng nhập hoặc [DÁN] Webhook URL trước khi gửi thử!");
+                }
+                return;
+            }
+
+            Minecraft mc = Minecraft.getInstance();
+            boolean captureScreen = Baritone.settings().discordCaptureScreen.value;
+
+            if (captureScreen && mc.getMainRenderTarget() != null) {
+                mc.execute(() -> {
+                    try {
+                        Screenshot.takeScreenshot(mc.getMainRenderTarget(), 1, nativeImage -> {
+                            if (nativeImage == null) {
+                                dispatchFarmingReport(isTest, null);
+                                return;
+                            }
+                            Util.ioPool().execute(() -> {
+                                byte[] imageBytes = null;
+                                try {
+                                    File screenshotsDir = new File(mc.gameDirectory, "screenshots");
+                                    if (!screenshotsDir.exists()) {
+                                        screenshotsDir.mkdirs();
+                                    }
+                                    File targetFile = new File(screenshotsDir, "discord_farm_report.png");
+                                    nativeImage.writeToFile(targetFile);
+                                    imageBytes = Files.readAllBytes(targetFile.toPath());
+                                } catch (Throwable t) {
+                                    logDebug("[DiscordManager] Lỗi xử lý ảnh chụp: " + t.getMessage());
+                                } finally {
+                                    try {
+                                        nativeImage.close();
+                                    } catch (Throwable ignored) {}
+                                }
+                                dispatchFarmingReport(isTest, imageBytes);
+                            });
+                        });
+                    } catch (Throwable t) {
+                        logDebug("[DiscordManager] Không thể gọi Screenshot.takeScreenshot: " + t.getMessage());
+                        dispatchFarmingReport(isTest, null);
+                    }
+                });
+            } else {
+                dispatchFarmingReport(isTest, null);
+            }
+        } catch (Exception e) {
+            logDebug("[DiscordManager] Lỗi gửi báo cáo farm: " + e.getMessage());
+        }
+    }
+
+    private void dispatchFarmingReport(boolean isTest, byte[] screenshotBytes) {
+        try {
+            String webhookUrl = Baritone.settings().discordWebhookUrl.value;
+            if (webhookUrl == null || webhookUrl.trim().isEmpty() || !webhookUrl.startsWith("http")) {
+                return;
+            }
+
+            LocalPlayer player = Minecraft.getInstance().player;
+            String playerName = player != null ? player.getName().getString() : "Tr0ngX";
+            int intervalSec = Baritone.settings().discordWebhookInterval.value;
+            int intervalMin = Math.max(1, intervalSec / 60);
+
+            // 1. Tính toán Delta quặng đào thêm
+            List<String> deltaList = new ArrayList<>();
+            for (MiningStatsTracker.OreType ore : MiningStatsTracker.OreType.values()) {
+                int curOre = MiningStatsTracker.getInstance().getOreCount(ore);
+                int lastOre = lastReportOreCounts.getOrDefault(ore, 0);
+                int deltaOre = curOre - lastOre;
+
+                Item dropItem = ore.getDropItem();
+                int curDrop = dropItem != null ? MiningStatsTracker.getInstance().getDropItemCount(dropItem) : 0;
+                int lastDrop = dropItem != null ? lastReportDropCounts.getOrDefault(dropItem, 0) : 0;
+                int deltaDrop = curDrop - lastDrop;
+
+                if (deltaOre > 0 || deltaDrop > 0) {
+                    if (ore == MiningStatsTracker.OreType.DIAMOND) {
+                        deltaList.add("💎 **Kim Cương:** `+" + deltaDrop + " cục` (`+" + deltaOre + " quặng`)");
+                    } else if (ore == MiningStatsTracker.OreType.EMERALD) {
+                        deltaList.add("🟢 **Lục Bảo:** `+" + deltaDrop + " cục` (`+" + deltaOre + " quặng`)");
+                    } else if (ore == MiningStatsTracker.OreType.ANCIENT_DEBRIS) {
+                        deltaList.add("🟣 **Mảnh Cổ Đại:** `+" + deltaDrop + " mảnh`");
+                    } else {
+                        deltaList.add("⛏️ **" + ore.getNameVi() + ":** `+" + deltaOre + " quặng`");
+                    }
+                }
+            }
+
+            int curTotalBlocks = MiningStatsTracker.getInstance().getTotalBlocksMined();
+            int deltaBlocks = curTotalBlocks - lastReportTotalBlocks;
+
+            if (!isTest) {
+                for (MiningStatsTracker.OreType ore : MiningStatsTracker.OreType.values()) {
+                    lastReportOreCounts.put(ore, MiningStatsTracker.getInstance().getOreCount(ore));
+                    if (ore.getDropItem() != null) {
+                        lastReportDropCounts.put(ore.getDropItem(), MiningStatsTracker.getInstance().getDropItemCount(ore.getDropItem()));
+                    }
+                }
+                lastReportTotalBlocks = curTotalBlocks;
+            }
+
+            StringBuilder deltaSb = new StringBuilder();
+            if (deltaList.isEmpty()) {
+                if (deltaBlocks > 0) {
+                    deltaSb.append("Chưa có quặng mới trong chu kỳ này (`+").append(deltaBlocks).append(" blocks` đất/đá đã đào)\n");
+                } else {
+                    deltaSb.append("Không có biến động trong ").append(intervalMin).append(" phút qua (Bot đang di chuyển hoặc nghỉ)\n");
+                }
+            } else {
+                for (String line : deltaList) {
+                    deltaSb.append(line).append("\n");
+                }
+                if (deltaBlocks > 0) {
+                    deltaSb.append("🧱 **Khối đào thêm:** `+").append(deltaBlocks).append(" blocks`\n");
+                }
+            }
+
+            // 2. Tính toán Tổng số quặng tích lũy
+            List<String> totalList = new ArrayList<>();
+            for (MiningStatsTracker.OreType ore : MiningStatsTracker.OreType.values()) {
+                int curOre = MiningStatsTracker.getInstance().getOreCount(ore);
+                Item dropItem = ore.getDropItem();
+                int curDrop = dropItem != null ? MiningStatsTracker.getInstance().getDropItemCount(dropItem) : 0;
+
+                if (curOre > 0 || curDrop > 0) {
+                    if (ore == MiningStatsTracker.OreType.DIAMOND) {
+                        totalList.add("💎 **Kim Cương:** `" + curDrop + " cục` (`" + curOre + " quặng`)");
+                    } else if (ore == MiningStatsTracker.OreType.EMERALD) {
+                        totalList.add("🟢 **Lục Bảo:** `" + curDrop + " cục` (`" + curOre + " quặng`)");
+                    } else if (ore == MiningStatsTracker.OreType.ANCIENT_DEBRIS) {
+                        totalList.add("🟣 **Mảnh Cổ Đại:** `" + curDrop + " mảnh`");
+                    } else {
+                        totalList.add("⛏️ **" + ore.getNameVi() + ":** `" + curOre + " quặng`");
+                    }
+                }
+            }
+
+            StringBuilder totalSb = new StringBuilder();
+            if (totalList.isEmpty()) {
+                totalSb.append("Chưa đào được quặng nào.\n");
+            } else {
+                for (String line : totalList) {
+                    totalSb.append(line).append("\n");
+                }
+            }
+            totalSb.append("🧱 **Tổng khối đã đào:** `").append(curTotalBlocks).append(" blocks`\n");
+            totalSb.append("⏱️ **Thời gian hoạt động:** `").append(MiningStatsTracker.getInstance().getFormattedDuration()).append("`");
+
+            // 3. Thông tin trạng thái & Tọa độ
+            StringBuilder statusSb = new StringBuilder();
+            if (player != null) {
+                statusSb.append("📍 **Tọa độ:** `X: ").append(player.getBlockX()).append(", Y: ").append(player.getBlockY()).append(", Z: ").append(player.getBlockZ()).append("`\n");
+                statusSb.append("❤️ **Máu:** `").append((int) player.getHealth()).append("/").append((int) player.getMaxHealth()).append("` • ");
+                statusSb.append("🍗 **Đói:** `").append(player.getFoodData().getFoodLevel()).append("/20` • ");
+
+                Inventory inv = player.getInventory();
+                int emptySlots = 0;
+                for (int i = 0; i < 36; i++) {
+                    if (inv.getItem(i).isEmpty()) emptySlots++;
+                }
+                statusSb.append("🎒 **Túi trống:** `").append(emptySlots).append("/36 ô`\n");
+            }
+
+            String state = "Đang nghỉ ngơi / Chờ lệnh";
+            if (BaritoneAPI.getProvider().getPrimaryBaritone().getMineProcess().isActive()) {
+                state = "⛏️ Đang tự động đào khoáng (MineProcess)";
+            } else if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
+                state = "🏃 Đang di chuyển tìm đường (Pathing)";
+            }
+            statusSb.append("⚙️ **Trạng thái:** ").append(state);
+
+            // 4. Tạo Embed Fields
+            JsonArray fields = new JsonArray();
+
+            JsonObject deltaField = new JsonObject();
+            deltaField.addProperty("name", "✨ SỐ QUẶNG ĐÀO ĐƯỢC THÊM (" + intervalMin + " PHÚT QUA)");
+            deltaField.addProperty("value", deltaSb.toString());
+            deltaField.addProperty("inline", false);
+            fields.add(deltaField);
+
+            JsonObject totalField = new JsonObject();
+            totalField.addProperty("name", "📦 TỔNG KẾT QUẢ FARM TÍCH LŨY");
+            totalField.addProperty("value", totalSb.toString());
+            totalField.addProperty("inline", false);
+            fields.add(totalField);
+
+            JsonObject infoField = new JsonObject();
+            infoField.addProperty("name", "📊 VỊ TRÍ & TÌNH TRẠNG BOT");
+            infoField.addProperty("value", statusSb.toString());
+            infoField.addProperty("inline", false);
+            fields.add(infoField);
+
+            String title = isTest ? "🧪 [GỬI THỬ] BÁO CÁO KẾT QUẢ FARM TỪ BARITONE" : "⛏️ [BÁO CÁO FARM] KẾT QUẢ ĐÀO KHOÁNG (" + intervalMin + " PHÚT)";
+            String desc = "**Người chơi:** `" + playerName + "` • **Chu kỳ:** `" + (intervalSec >= 60 ? (intervalSec / 60) + " phút" : intervalSec + "s") + "`\n" +
+                          (screenshotBytes != null ? "📸 *Đã đính kèm ảnh chụp màn hình góc nhìn game thực tế.*" : "ℹ *Chế độ báo cáo văn bản.*");
+
+            JsonObject payload = buildDiscordWebhookEmbedPayload(title, desc, 0x10B981, fields, screenshotBytes != null);
+
+            sendMultipartAsyncToWebhook(webhookUrl, payload.toString(), screenshotBytes);
+
+            if (isTest) {
+                logDirect("§a[Discord] ✔ Đã gửi thành công báo cáo farm test lên Discord! Hãy kiểm tra tin nhắn và ảnh chụp.");
+            }
+        } catch (Exception e) {
+            logDebug("[DiscordManager] Lỗi dispatchFarmingReport: " + e.getMessage());
         }
     }
 
@@ -300,7 +525,7 @@ public final class DiscordManager implements Helper {
                 fields.add(hpField);
             }
 
-            JsonObject payload = buildDiscordWebhookEmbedPayload(title, message, colorHex, fields);
+            JsonObject payload = buildDiscordWebhookEmbedPayload(title, message, colorHex, fields, false);
             sendAsyncToWebhook(webhookUrl, payload.toString());
         } catch (Exception e) {
             logDebug("[DiscordManager] Lỗi gửi alert: " + e.getMessage());
@@ -331,6 +556,56 @@ public final class DiscordManager implements Helper {
                     });
         } catch (Exception e) {
             logDebug("[DiscordManager] Không thể tạo HTTP request webhook: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Gửi multipart/form-data chứa payload_json và file ảnh đính kèm (files[0]).
+     */
+    private void sendMultipartAsyncToWebhook(String url, String jsonPayload, byte[] imageBytes) {
+        try {
+            if (imageBytes == null || imageBytes.length == 0) {
+                sendAsyncToWebhook(url, jsonPayload);
+                return;
+            }
+
+            String boundary = "----BaritoneBoundary" + System.currentTimeMillis();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+            // Part 1: payload_json
+            baos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            baos.write("Content-Disposition: form-data; name=\"payload_json\"\r\n".getBytes(StandardCharsets.UTF_8));
+            baos.write("Content-Type: application/json; charset=utf-8\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            baos.write(jsonPayload.getBytes(StandardCharsets.UTF_8));
+            baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+
+            // Part 2: files[0]
+            baos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            baos.write("Content-Disposition: form-data; name=\"files[0]\"; filename=\"screenshot.png\"\r\n".getBytes(StandardCharsets.UTF_8));
+            baos.write("Content-Type: image/png\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            baos.write(imageBytes);
+            baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+
+            // Closing boundary
+            baos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+
+            byte[] bodyBytes = baos.toByteArray();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .header("User-Agent", "Baritone-DiscordManager/1.21.11")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(bodyBytes))
+                    .timeout(Duration.ofSeconds(12))
+                    .build();
+
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+                    .exceptionally(ex -> {
+                        logDebug("[DiscordManager] Lỗi gửi multipart Webhook: " + ex.getMessage());
+                        return null;
+                    });
+        } catch (Exception e) {
+            logDebug("[DiscordManager] Không thể tạo multipart request: " + e.getMessage());
         }
     }
 
@@ -431,7 +706,7 @@ public final class DiscordManager implements Helper {
     // CÁC HÀM XÂY DỰNG NỘI DUNG TELEMETRY
     // ==========================================
 
-    private JsonObject buildDiscordWebhookEmbedPayload(String title, String description, int color, JsonArray fields) {
+    private JsonObject buildDiscordWebhookEmbedPayload(String title, String description, int color, JsonArray fields, boolean hasImage) {
         JsonObject root = new JsonObject();
         root.addProperty("username", "Baritone AI Pathfinder (Tr0ngX)");
         root.addProperty("avatar_url", "https://raw.githubusercontent.com/cabaletta/baritone/master/src/main/resources/assets/baritone/icon.png");
@@ -444,16 +719,26 @@ public final class DiscordManager implements Helper {
         embed.addProperty("timestamp", Instant.now().toString());
 
         JsonObject footer = new JsonObject();
-        footer.addProperty("text", "Tr0ngX Baritone Mod 1.21.11 • KingMC.vn");
+        footer.addProperty("text", "Tr0ngX Baritone Mod 1.21.11 • Báo Cáo Kết Quả Farm");
         embed.add("footer", footer);
 
         if (fields != null && !fields.isEmpty()) {
             embed.add("fields", fields);
         }
 
+        if (hasImage) {
+            JsonObject imageObj = new JsonObject();
+            imageObj.addProperty("url", "attachment://screenshot.png");
+            embed.add("image", imageObj);
+        }
+
         embeds.add(embed);
         root.add("embeds", embeds);
         return root;
+    }
+
+    private JsonObject buildDiscordWebhookEmbedPayload(String title, String description, int color, JsonArray fields) {
+        return buildDiscordWebhookEmbedPayload(title, description, color, fields, false);
     }
 
     private String buildTelemetryDescription(LocalPlayer player) {

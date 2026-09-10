@@ -23,19 +23,29 @@ import baritone.api.utils.BaritoneFileLogger;
 import baritone.api.utils.Helper;
 import baritone.utils.AutoLogoutTracker;
 import baritone.api.event.events.type.EventState;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.material.FluidState;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Hành vi Bảo hộ Khẩn cấp (Emergency Safety Behavior).
  * Tự động ngắt kết nối / Logout ngay lập tức khi:
- * 1. Bị cháy (isOnFire) liên tục trên 10 giây mà không có Kháng Lửa.
+ * 1. Ở trong hồ lava liên tục quá 5 giây (LavaGuard logic).
  * 2. Máu tụt nguy kịch (<= 6 HP) hoặc máu thấp + hết Totem.
  * 3. Phát hiện người chơi khác đến gần.
  * Nhằm bảo toàn tuyệt đối 100% trang bị và tính mạng của người chơi.
@@ -43,8 +53,9 @@ import net.minecraft.world.item.Items;
 public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
     private int tickCount = 0;
-    /** Số tick liên tục đang bị cháy (isOnFire). 200 ticks = 10 giây. */
-    private int fireTicks = 0;
+    private static final long MAX_LAVA_TIME = TimeUnit.SECONDS.toNanos(5);
+    // UUID -> thời điểm bắt đầu ngâm trong lava (logic y hệt LavaGuardMod)
+    private final Map<UUID, Long> submergedSince = new HashMap<>();
 
     public EmergencySafetyBehavior(Baritone baritone) {
         super(baritone);
@@ -66,54 +77,40 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
         // Vệ binh bảo vệ: Không bao giờ kick khi bật neverKick
         if (Baritone.settings().neverKick.value) {
-            fireTicks = 0;
+            submergedSince.clear();
             return;
         }
 
         // Vệ binh bảo vệ: Tuyệt đối không kick khi ở sảnh / khu vực an toàn
         if (AutoLogoutTracker.isInLobbyOrSafezone(ctx)) {
-            fireTicks = 0;
+            submergedSince.clear();
             return;
         }
 
         // Vệ binh bảo vệ: Chỉ tự ngắt kết nối khi đang thực sự chạy tác vụ đào quặng (#mine/#farm/pathing)
         if (Baritone.settings().autoLogoutOnlyWhileMining.value && !AutoLogoutTracker.isBaritoneBusyMining()) {
-            fireTicks = 0;
+            submergedSince.clear();
             return;
         }
 
         boolean checkDanger = Baritone.settings().autoLogoutOnDanger.value;
         boolean checkPlayer = Baritone.settings().autoLogoutOnPlayer.value;
         if (!checkDanger && !checkPlayer) {
-            fireTicks = 0;
+            submergedSince.clear();
             return;
         }
         if (ctx.player() == null || ctx.world() == null) {
-            fireTicks = 0;
+            submergedSince.clear();
             return;
         }
         // Không logout nếu đang ở chế độ Sáng tạo (Creative) hoặc Khán giả (Spectator)
         if (ctx.player().isCreative() || ctx.player().isSpectator()) {
-            fireTicks = 0;
+            submergedSince.clear();
             return;
         }
 
-        // === PHÁT HIỆN CHÁY ===
-        // Đơn giản và đáng tin cậy: chỉ cần check isOnFire()
-        // isOnFire() = true liên tục khi ở trong lava (không bị bobbing reset như isInLava())
-        // Bỏ qua nếu có thuốc Kháng Lửa (Fire Resistance)
-        boolean hasFireResistance = ctx.player().hasEffect(MobEffects.FIRE_RESISTANCE);
-        boolean onFire = ctx.player().isOnFire() && !hasFireResistance;
-
-        if (checkDanger) {
-            if (onFire) {
-                fireTicks = Math.min(400, fireTicks + 1); // cap 20 giây
-            } else {
-                fireTicks = 0; // Hết cháy = reset
-            }
-        } else {
-            fireTicks = 0;
-        }
+        long now = System.nanoTime();
+        UUID uuid = ctx.player().getUUID();
 
         String dangerReason = null;
 
@@ -125,18 +122,29 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             }
         }
 
-        // TRƯỜNG HỢP 2: CHÁY LIÊN TỤC TRÊN 10 GIÂY (200 ticks)
-        // Logic đơn giản: bị cháy (lava/lửa/magma) liên tục 10s mà không dập được = kick
-        if (dangerReason == null && checkDanger && onFire) {
-            if (fireTicks >= 200) {
-                dangerReason = "Bị CHÁY liên tục quá 10 giây mà không dập được lửa!";
-            } else if (ctx.player().getHealth() <= 6.0f) {
-                // Máu nguy kịch (<= 3 tim) + đang cháy = kick khẩn cấp ngay
-                dangerReason = "Đang CHÁY và MÁU NGUY KỊCH (còn " + String.format(java.util.Locale.ROOT, "%.1f", ctx.player().getHealth()) + " HP)!";
+        // TRƯỜNG HỢP 2: LAVA GUARD - Ở TRONG HỒ LAVA LIÊN TỤC 5 GIÂY (Logic y hệt vn.example.lavaguard)
+        if (dangerReason == null && checkDanger) {
+            if (!ctx.player().isAlive()
+                    || ctx.player().isSpectator()
+                    || !isInsideLavaPool(ctx.world(), ctx.player())) {
+                submergedSince.remove(uuid);
+            } else {
+                Long enteredAt = submergedSince.putIfAbsent(uuid, now);
+
+                if (enteredAt != null && now - enteredAt >= MAX_LAVA_TIME) {
+                    // Xóa trước khi disconnect để không giữ timer cũ.
+                    submergedSince.remove(uuid);
+                    dangerReason = "Bạn đã ở trong hồ lava liên tục quá 5 giây!";
+                } else if (ctx.player().getHealth() <= 6.0f) {
+                    submergedSince.remove(uuid);
+                    dangerReason = "Đang ở trong HỒ LAVA và MÁU NGUY KỊCH (còn " + String.format(java.util.Locale.ROOT, "%.1f", ctx.player().getHealth()) + " HP)!";
+                }
             }
+        } else if (!checkDanger) {
+            submergedSince.clear();
         }
 
-        // TRƯỜNG HỢP 3: MẤT MÁU NGUY HIỂM / QUÁI ĐÁNH / ĐÓI / TÉ NGÃ (không liên quan đến lửa)
+        // TRƯỜNG HỢP 3: MẤT MÁU NGUY HIỂM / QUÁI ĐÁNH / ĐÓI / TÉ NGÃ (không liên quan đến lava)
         if (dangerReason == null && checkDanger) {
             int totemCount = getTotemCount();
             float health = ctx.player().getHealth();
@@ -154,9 +162,43 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
         }
 
         if (dangerReason != null) {
-            fireTicks = 0;
+            submergedSince.clear();
             AutoLogoutTracker.performAutoLogout(ctx, dangerReason);
         }
+    }
+
+    public static boolean isInsideLavaPool(BlockGetter world, Player player) {
+        if (world == null || player == null) return false;
+        double x = player.getX();
+        double z = player.getZ();
+
+        double bodyY = (
+                player.getBoundingBox().minY
+                + player.getBoundingBox().maxY
+        ) * 0.5;
+
+        return isPointInsideLava(world, x, bodyY, z)
+                && isPointInsideLava(world, x, player.getEyeY(), z);
+    }
+
+    public static boolean isPointInsideLava(
+            BlockGetter world,
+            double x,
+            double y,
+            double z
+    ) {
+        BlockPos pos = BlockPos.containing(x, y, z);
+        FluidState fluid = world.getFluidState(pos);
+
+        if (!fluid.is(FluidTags.LAVA)) {
+            return false;
+        }
+
+        // Lava chảy có thể không cao hết 1 block.
+        // Phải kiểm tra mặt chất lỏng thật, không chỉ loại block.
+        double lavaSurfaceY = pos.getY() + fluid.getHeight(world, pos);
+
+        return y < lavaSurfaceY - 0.001;
     }
 
     public static String detectDamageCause(baritone.api.utils.IPlayerContext ctx) {
@@ -247,7 +289,7 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
     @Override
     public void onWorldEvent(baritone.api.event.events.WorldEvent event) {
         if (event.getWorld() == null) {
-            fireTicks = 0;
+            submergedSince.clear();
         } else {
             AutoLogoutTracker.onWorldJoined();
         }

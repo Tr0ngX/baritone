@@ -22,7 +22,9 @@ import baritone.api.BaritoneAPI;
 import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -142,6 +144,7 @@ public class AutoMineScreen extends Screen implements Helper {
 
     private String searchQuery = "";
     private boolean searchFocused = false;
+    private boolean webhookInputFocused = false;
     public static int filterMode = 0; // 0: Tất cả, 1: Đang Bật, 2: Đang Tắt
     private int scrollOffset = 0;
     private int maxScroll = 0;
@@ -371,8 +374,8 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Tự Cầm Totem", "Tự động cầm Totem bất tử ra tay phụ & tự mua /shop khi hết",
                 "Kiểm tra tay phụ liên tục: nếu mất Totem, bot sẽ tự lôi Totem dự phòng ra tay phụ trong 1 tick. Tự mở /shop mua thêm khi hết.",
                 "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Tự Thoát Khẩn Cấp", "Tự thoát game khi bị cháy quá 10s, máu thấp hoặc nguy hiểm",
-                "Hệ thống an toàn tuyệt đối: Tự thoát game khi bị cháy (Lava/Lửa) liên tục trên 10 giây, hoặc khi máu <= 6 HP. Tự ngắt tính năng sau khi kick để tránh lặp vô hạn!",
+        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Tự Thoát Khẩn Cấp", "Tự thoát game khi ở trong hồ lava quá 5s, máu thấp hoặc nguy hiểm",
+                "Hệ thống an toàn tuyệt đối (LavaGuard): Tự thoát game khi ở trong hồ lava liên tục quá 5 giây (cả thân và mắt ngập trong lava), hoặc khi máu <= 6 HP. Tự ngắt tính năng sau khi kick để tránh lặp vô hạn!",
                 "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
             optAutoLogout = !optAutoLogout;
             Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
@@ -411,6 +414,13 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.WATER_BUCKET), "Kiểm Tra Chất Lỏng", "Quét an toàn nước và dung nham chống sặc nước hoặc bỏng",
                 "Rà soát nghiêm ngặt các khối chất lỏng phía trước mặt. Chống đào thủng trần hang bị sạt lở nước hoặc dung nham đổ ụp vào đầu.",
                 "SURVIVAL", 0xFF60A5FA, () -> optWaterCheck, () -> optWaterCheck = !optWaterCheck));
+        allModules.add(new ModuleItem(new ItemStack(Items.ECHO_SHARD), "Gửi Discord Webhook", "Báo cáo quặng đào thêm, tổng quặng & ảnh màn hình lên Discord",
+                "Tự động gửi báo cáo số quặng đào thêm (+delta), tổng tích lũy và ảnh chụp màn hình lên Discord cứ mỗi 5 phút. Nhấp chuột phải hoặc chuyển sang Tab THỐNG KÊ để nhập Webhook URL và cài đặt chụp ảnh!",
+                "SURVIVAL", 0xFF5865F2, () -> Baritone.settings().discordWebhookEnabled.value, () -> {
+            boolean newVal = !Baritone.settings().discordWebhookEnabled.value;
+            Baritone.settings().discordWebhookEnabled.value = newVal;
+            AutoMineConfig.save();
+        }));
 
         // 5. TAB GIAO DIỆN
         allModules.add(new ModuleItem(new ItemStack(Items.ITEM_FRAME), "Bảng Thống Kê HUD", "Bảng thống kê số khối & quặng đào ở góc màn hình",
@@ -669,6 +679,24 @@ public class AutoMineScreen extends Screen implements Helper {
         }
 
         int keyCode = event.key();
+        if (webhookInputFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_ENTER) {
+                webhookInputFocused = false;
+                AutoMineConfig.save();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                String cur = Baritone.settings().discordWebhookUrl.value;
+                if (cur != null && !cur.isEmpty()) {
+                    Baritone.settings().discordWebhookUrl.value = cur.substring(0, cur.length() - 1);
+                }
+                return true;
+            }
+            if (isControlDown() && keyCode == GLFW.GLFW_KEY_V) {
+                pasteWebhookFromClipboard();
+                return true;
+            }
+        }
         if (searchFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 searchFocused = false;
@@ -692,6 +720,15 @@ public class AutoMineScreen extends Screen implements Helper {
 
     @Override
     public boolean charTyped(CharacterEvent event) {
+        if (webhookInputFocused) {
+            int codePoint = event.codepoint();
+            if (codePoint >= 32 && codePoint != 127) {
+                String cur = Baritone.settings().discordWebhookUrl.value;
+                if (cur == null) cur = "";
+                Baritone.settings().discordWebhookUrl.value = cur + event.codepointAsString();
+                return true;
+            }
+        }
         if (searchFocused) {
             int codePoint = event.codepoint();
             if (codePoint >= 32 && codePoint != 127) {
@@ -701,6 +738,47 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         }
         return super.charTyped(event);
+    }
+
+    private boolean isControlDown() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.getWindow() != null) {
+                return InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_LEFT_CONTROL)
+                        || InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_RIGHT_CONTROL);
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private void pasteWebhookFromClipboard() {
+        try {
+            String clip = Minecraft.getInstance().keyboardHandler.getClipboard();
+            if (clip != null && !clip.trim().isEmpty()) {
+                String clean = clip.trim();
+                Baritone.settings().discordWebhookUrl.value = clean;
+                Baritone.settings().discordWebhookEnabled.value = true;
+                AutoMineConfig.save();
+                Helper.HELPER.logDirect("§a[Discord] ✔ Đã dán Discord Webhook URL thành công: " + (clean.length() > 45 ? clean.substring(0, 42) + "..." : clean));
+            } else {
+                Helper.HELPER.logDirect("§e[Discord] Clipboard trống! Hãy copy link Webhook từ Discord trước.");
+            }
+        } catch (Throwable t) {
+            Helper.HELPER.logDirect("§c[Discord] Không thể đọc Clipboard: " + t.getMessage());
+        }
+    }
+
+    private void testDiscordWebhook() {
+        String url = Baritone.settings().discordWebhookUrl.value;
+        if (url == null || url.trim().isEmpty() || !url.startsWith("http")) {
+            Helper.HELPER.logDirect("§c[Discord] Vui lòng nhập hoặc bấm [DÁN] Webhook URL trước khi gửi thử!");
+            return;
+        }
+        Baritone.settings().discordWebhookEnabled.value = true;
+        AutoMineConfig.save();
+
+        Helper.HELPER.logDirect("§b[Discord] Đang gửi báo cáo farm thử nghiệm (kèm ảnh chụp nếu bật) lên Discord Webhook...");
+        DiscordManager.getInstance().sendFarmingReport(true);
     }
 
     @Override
@@ -772,52 +850,170 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         }
 
-        // 4. Kiểm tra Click vào Module Cards
+        // 4. Kiểm tra Click vào Module Cards hoặc Tab 5 Dashboard
         if (mouseY >= l.contentY && mouseY <= l.contentBottom) {
-            List<ModuleItem> filtered = getFilteredModules();
-            for (int i = 0; i < filtered.size(); i++) {
-                int col = i % l.cardCols;
-                int row = i / l.cardCols;
-                int cardX = l.panelX + col * (l.colW + l.cardGap);
-                int cardY = l.contentY + row * (l.cardH + 4) - scrollOffset;
+            if (activeTab == 5 && searchQuery.isEmpty()) {
+                boolean isCompact = l.panelW < 540;
+                int cardH = 96;
+                int card3Y = isCompact ? (l.contentY + cardH + 6 + cardH + 6) : (l.contentY + cardH + 6);
+                card3Y -= scrollOffset;
+                int card3W = l.panelW;
+                int card3H = 92;
 
-                if (cardY + l.cardH >= l.contentY && cardY <= l.contentBottom) {
-                    if (mouseX >= cardX && mouseX <= cardX + l.colW && mouseY >= cardY && mouseY <= cardY + l.cardH) {
-                        ModuleItem item = filtered.get(i);
-                        item.toggle.run();
+                // Kiểm tra click trong Card 3 (Discord Webhook)
+                if (mouseX >= l.panelX && mouseX <= l.panelX + card3W && mouseY >= card3Y && mouseY <= card3Y + card3H) {
+                    int toggleW = 46;
+                    int toggleH = 14;
+                    int toggleX = l.panelX + card3W - toggleW - 8;
+                    int toggleY = card3Y + 4;
+
+                    // Toggle Bật/Tắt
+                    if (mouseX >= toggleX && mouseX <= toggleX + toggleW && mouseY >= toggleY && mouseY <= toggleY + toggleH) {
+                        boolean newVal = !Baritone.settings().discordWebhookEnabled.value;
+                        Baritone.settings().discordWebhookEnabled.value = newVal;
                         AutoMineConfig.save();
+                        if (newVal) {
+                            Helper.HELPER.logDirect("§a[Discord] ✔ Đã BẬT gửi báo cáo kết quả farm lên Discord Webhook!");
+                        } else {
+                            Helper.HELPER.logDirect("§c[Discord] ✖ Đã TẮT gửi Discord Webhook!");
+                        }
+                        return true;
+                    }
+
+                    // Nút chu kỳ (Interval: 1p, 3p, 5p, 10p, 15p, 30p)
+                    int intvW = 76;
+                    int intvH = 14;
+                    int intvX = toggleX - intvW - 6;
+                    int intvY = toggleY;
+                    if (mouseX >= intvX && mouseX <= intvX + intvW && mouseY >= intvY && mouseY <= intvY + intvH) {
+                        int cur = Baritone.settings().discordWebhookInterval.value;
+                        int next;
+                        if (cur < 60) next = 60;
+                        else if (cur < 180) next = 180;
+                        else if (cur < 300) next = 300;
+                        else if (cur < 600) next = 600;
+                        else if (cur < 900) next = 900;
+                        else if (cur < 1800) next = 1800;
+                        else next = 60;
+                        Baritone.settings().discordWebhookInterval.value = next;
+                        AutoMineConfig.save();
+                        Helper.HELPER.logDirect("§b[Discord] Đã đổi chu kỳ gửi báo cáo farm thành " + (next >= 60 ? (next / 60) + " phút." : next + " giây."));
+                        return true;
+                    }
+
+                    // Nút Chụp ảnh màn hình (Capture Screen)
+                    int capW = 82;
+                    int capH = 14;
+                    int capX = intvX - capW - 6;
+                    int capY = toggleY;
+                    if (mouseX >= capX && mouseX <= capX + capW && mouseY >= capY && mouseY <= capY + capH) {
+                        boolean newVal = !Baritone.settings().discordCaptureScreen.value;
+                        Baritone.settings().discordCaptureScreen.value = newVal;
+                        AutoMineConfig.save();
+                        Helper.HELPER.logDirect("§a[Discord] " + (newVal ? "✔ Đã BẬT chụp ảnh màn hình đính kèm Discord!" : "✖ Đã TẮT chụp ảnh màn hình (chỉ gửi tin nhắn chữ)!"));
+                        return true;
+                    }
+
+                    // Row 2: Input & Buttons
+                    int row2Y = card3Y + 22;
+                    int row2H = 20;
+                    int btnPasteW = 86;
+                    int btnTestW = 68;
+                    int btnClearW = 36;
+                    int rightButtonsW = btnPasteW + btnTestW + btnClearW + 10;
+                    int inputX = l.panelX + 8;
+                    int inputW = card3W - 16 - rightButtonsW;
+
+                    // Click ô nhập URL
+                    if (mouseX >= inputX && mouseX <= inputX + inputW && mouseY >= row2Y && mouseY <= row2Y + row2H) {
+                        webhookInputFocused = true;
+                        searchFocused = false;
+                        return true;
+                    }
+
+                    // Nút Dán [📋 DÁN]
+                    int btnPasteX = inputX + inputW + 6;
+                    if (mouseX >= btnPasteX && mouseX <= btnPasteX + btnPasteW && mouseY >= row2Y && mouseY <= row2Y + row2H) {
+                        pasteWebhookFromClipboard();
+                        return true;
+                    }
+
+                    // Nút Gửi thử [🚀 GỬI THỬ]
+                    int btnTestX = btnPasteX + btnPasteW + 4;
+                    if (mouseX >= btnTestX && mouseX <= btnTestX + btnTestW && mouseY >= row2Y && mouseY <= row2Y + row2H) {
+                        testDiscordWebhook();
+                        return true;
+                    }
+
+                    // Nút Xóa [✕]
+                    int btnClearX = btnTestX + btnTestW + 4;
+                    if (mouseX >= btnClearX && mouseX <= btnClearX + btnClearW && mouseY >= row2Y && mouseY <= row2Y + row2H) {
+                        Baritone.settings().discordWebhookUrl.value = "";
+                        AutoMineConfig.save();
+                        Helper.HELPER.logDirect("§e[Discord] Đã xóa Discord Webhook URL.");
                         return true;
                     }
                 }
-            }
+                webhookInputFocused = false;
+            } else {
+                List<ModuleItem> filtered = getFilteredModules();
+                for (int i = 0; i < filtered.size(); i++) {
+                    int col = i % l.cardCols;
+                    int row = i / l.cardCols;
+                    int cardX = l.panelX + col * (l.colW + l.cardGap);
+                    int cardY = l.contentY + row * (l.cardH + 4) - scrollOffset;
 
-            // Click vào Target Y & FPS Limiter trong Tab 4 (HUD)
-            if (activeTab == 4 && searchQuery.isEmpty()) {
-                int extraRowY = l.contentY + ((filtered.size() + l.cardCols - 1) / l.cardCols) * (l.cardH + 4) - scrollOffset;
-                int halfColW = (l.panelW - 6) / 2;
-
-                int yBtnX = l.panelX;
-                if (mouseX >= yBtnX && mouseX <= yBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH) {
-                    if (optTargetY == -54) optTargetY = -58;
-                    else if (optTargetY == -58) optTargetY = 11;
-                    else if (optTargetY == 11) optTargetY = 999;
-                    else optTargetY = -54;
-                    AutoMineConfig.save();
-                    return true;
-                }
-
-                int fpsBtnX = l.panelX + halfColW + 6;
-                if (mouseX >= fpsBtnX && mouseX <= fpsBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH) {
-                    int cur = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
-                    int nextIndex = 0;
-                    for (int f = 0; f < FPS_LEVELS.length; f++) {
-                        if (FPS_LEVELS[f] == cur) {
-                            nextIndex = (f + 1) % FPS_LEVELS.length;
-                            break;
+                    if (cardY + l.cardH >= l.contentY && cardY <= l.contentBottom) {
+                        if (mouseX >= cardX && mouseX <= cardX + l.colW && mouseY >= cardY && mouseY <= cardY + l.cardH) {
+                            ModuleItem item = filtered.get(i);
+                            if (item.name.equals("Gửi Discord Webhook")) {
+                                if (button == 1 || Baritone.settings().discordWebhookUrl.value.isEmpty()) {
+                                    activeTab = 5;
+                                    webhookInputFocused = true;
+                                    searchFocused = false;
+                                    scrollOffset = 0;
+                                    if (button == 0) {
+                                        Baritone.settings().discordWebhookEnabled.value = true;
+                                        AutoMineConfig.save();
+                                    }
+                                    return true;
+                                }
+                            }
+                            item.toggle.run();
+                            AutoMineConfig.save();
+                            return true;
                         }
                     }
-                    baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
-                    return true;
+                }
+
+                // Click vào Target Y & FPS Limiter trong Tab 4 (HUD)
+                if (activeTab == 4 && searchQuery.isEmpty()) {
+                    int extraRowY = l.contentY + ((filtered.size() + l.cardCols - 1) / l.cardCols) * (l.cardH + 4) - scrollOffset;
+                    int halfColW = (l.panelW - 6) / 2;
+
+                    int yBtnX = l.panelX;
+                    if (mouseX >= yBtnX && mouseX <= yBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH) {
+                        if (optTargetY == -54) optTargetY = -58;
+                        else if (optTargetY == -58) optTargetY = 11;
+                        else if (optTargetY == 11) optTargetY = 999;
+                        else optTargetY = -54;
+                        AutoMineConfig.save();
+                        return true;
+                    }
+
+                    int fpsBtnX = l.panelX + halfColW + 6;
+                    if (mouseX >= fpsBtnX && mouseX <= fpsBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH) {
+                        int cur = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
+                        int nextIndex = 0;
+                        for (int f = 0; f < FPS_LEVELS.length; f++) {
+                            if (FPS_LEVELS[f] == cur) {
+                                nextIndex = (f + 1) % FPS_LEVELS.length;
+                                break;
+                            }
+                        }
+                        baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
+                        return true;
+                    }
                 }
             }
         }
@@ -889,6 +1085,7 @@ public class AutoMineScreen extends Screen implements Helper {
         int hoveredTabIdx = -1;
         boolean hoveredSearch = false;
         int hoveredFilterIdx = -1;
+        int hoveredDiscordBtn = -1;
 
         // 1. Header Bar với Logo Neon, Live Status Badge & Version Tag
         ClickGuiTheme.drawGlowPanel(graphics, l.panelX, 3, l.panelW, this.height - 6, ClickGuiTheme.ACCENT_CYAN);
@@ -994,7 +1191,10 @@ public class AutoMineScreen extends Screen implements Helper {
         graphics.enableScissor(l.panelX - 1, l.contentY, l.panelX + l.panelW + 1, l.contentBottom);
 
         if (activeTab == 5 && searchQuery.isEmpty()) {
-            renderTelemetryDashboard(graphics, l.panelX, l.contentY - scrollOffset, l.panelW);
+            boolean isCompact = l.panelW < 540;
+            int totalTab5H = isCompact ? (96 + 6 + 96 + 6 + 94) : (96 + 6 + 94);
+            maxScroll = Math.max(0, totalTab5H - (l.contentBottom - l.contentY));
+            hoveredDiscordBtn = renderTelemetryDashboard(graphics, l.panelX, l.contentY - scrollOffset, l.panelW, mouseX, mouseY);
         } else {
             List<ModuleItem> filtered = getFilteredModules();
             int totalRows = (filtered.size() + l.cardCols - 1) / l.cardCols;
@@ -1154,7 +1354,52 @@ public class AutoMineScreen extends Screen implements Helper {
         super.render(graphics, mouseX, mouseY, partialTicks);
 
         // 9. Lớp hiển thị Tooltip giải thích tính năng khi di chuột (Topmost)
-        if (hoveredItem != null) {
+        if (hoveredDiscordBtn > 0) {
+            switch (hoveredDiscordBtn) {
+                case 1:
+                    drawModernTooltip(graphics, "Dán Webhook URL", null, "Dán nhanh từ Clipboard",
+                            "Tự động đọc đường dẫn Webhook URL vừa copy từ Discord trong bộ nhớ tạm (Clipboard) và lưu vào cấu hình.",
+                            "§8[Chuột trái] §7Dán & Lưu ngay",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                    break;
+                case 2:
+                    drawModernTooltip(graphics, "Gửi Thử Nghiệm", null, "Kiểm tra kết nối Discord Webhook",
+                            "Gửi ngay 1 tin nhắn Embed chứa tên tài khoản, thời gian hoạt động, số quặng và máu lên kênh Discord để xác nhận webhook hoạt động.",
+                            "§8[Chuột trái] §7Gửi tin nhắn test ngay",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
+                    break;
+                case 3:
+                    drawModernTooltip(graphics, "Xóa Webhook URL", null, "Xóa đường dẫn đã lưu",
+                            "Xóa trắng địa chỉ Webhook URL hiện tại để nhập hoặc dán địa chỉ mới.",
+                            "§8[Chuột trái] §7Xóa URL",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
+                    break;
+                case 4:
+                    drawModernTooltip(graphics, "Bật/Tắt Webhook", null, "Kích hoạt gửi báo cáo Discord",
+                            "Cho phép hoặc tạm dừng việc tự động gửi báo cáo kết quả farm và cảnh báo khẩn cấp lên Discord.",
+                            "§8[Chuột trái] §7Chuyển đổi Bật / Tắt",
+                            mouseX, mouseY, 0xFF5865F2);
+                    break;
+                case 5:
+                    drawModernTooltip(graphics, "Chu Kỳ Gửi Báo Cáo", null, "Tần suất gửi kết quả farm định kỳ",
+                            "Nhấn chuột để chuyển đổi chu kỳ gửi báo cáo farm: 1p -> 3p -> 5p -> 10p -> 15p -> 30p một lần.",
+                            "§8[Chuột trái] §7Đổi chu kỳ gửi",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                    break;
+                case 6:
+                    drawModernTooltip(graphics, "Ô Nhập Webhook URL", null, "Địa chỉ Discord Webhook",
+                            "Nhấp chuột vào ô này để gõ hoặc dùng tổ hợp phím Ctrl+V để dán trực tiếp link Webhook của bạn.",
+                            "§8[Chuột trái] §7Chọn để gõ / paste",
+                            mouseX, mouseY, 0xFF5865F2);
+                    break;
+                case 7:
+                    drawModernTooltip(graphics, "Ảnh Chụp Màn Hình", Baritone.settings().discordCaptureScreen.value, "Đính kèm ảnh vào Discord",
+                            "Tự động chụp ảnh góc nhìn game hiện tại và đính kèm vào tin nhắn báo cáo kết quả farm định kỳ.",
+                            "§8[Chuột trái] §7Bật / Tắt chụp ảnh",
+                            mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+                    break;
+            }
+        } else if (hoveredItem != null) {
             drawModernTooltip(graphics,
                     hoveredItem.name,
                     hoveredItem.getter.getAsBoolean(),
@@ -1203,7 +1448,7 @@ public class AutoMineScreen extends Screen implements Helper {
         }
     }
 
-    private void renderTelemetryDashboard(GuiGraphics g, int x, int y, int w) {
+    private int renderTelemetryDashboard(GuiGraphics g, int x, int y, int w, int mouseX, int mouseY) {
         long maxMem = Runtime.getRuntime().maxMemory() / (1024 * 1024);
         long totalMem = Runtime.getRuntime().totalMemory() / (1024 * 1024);
         long freeMem = Runtime.getRuntime().freeMemory() / (1024 * 1024);
@@ -1218,7 +1463,6 @@ public class AutoMineScreen extends Screen implements Helper {
         int fpsColor = curFps >= 60 ? ClickGuiTheme.ACCENT_EMERALD : (curFps >= 30 ? ClickGuiTheme.ACCENT_AMBER : ClickGuiTheme.ACCENT_ROSE);
 
         boolean isCompact = w < 540;
-        int cardCols = isCompact ? 1 : 2;
         int colW = isCompact ? w : (w - 8) / 2;
         int cardH = 96;
 
@@ -1266,6 +1510,125 @@ public class AutoMineScreen extends Screen implements Helper {
             String diamText = "Kim cương: " + totalDiamondGems + " cục (" + totalDiamondOres + " quặng)";
             ClickGuiTheme.drawText(g, this.font, diamText, rx + 8, ry + 78, ClickGuiTheme.ACCENT_CYAN, true);
         }
+
+        // Card 3: Discord Webhook & Remote Control
+        int card3Y = isCompact ? (ry + cardH + 6) : (y + cardH + 6);
+        int card3W = w;
+        int card3H = 92;
+        int hoveredBtn = -1;
+
+        boolean hookEnabled = Baritone.settings().discordWebhookEnabled.value;
+        ClickGuiTheme.drawDoubleBezelCard(g, x, card3Y, card3W, card3H, 0xFF5865F2, hookEnabled, false);
+        g.fill(x + 1, card3Y + 2, x + 3, card3Y + card3H - 2, 0xFF5865F2);
+        ClickGuiTheme.drawText(g, this.font, "DISCORD WEBHOOK & BÁO CÁO KẾT QUẢ FARM", x + 8, card3Y + 6, 0xFF5865F2, true);
+
+        // Header controls: Pill Toggle Switch, Interval & Screen Capture
+        int toggleW = 46;
+        int toggleH = 14;
+        int toggleX = x + card3W - toggleW - 8;
+        int toggleY = card3Y + 4;
+        boolean hoverToggle = mouseX >= toggleX && mouseX <= toggleX + toggleW && mouseY >= toggleY && mouseY <= toggleY + toggleH;
+        if (hoverToggle) hoveredBtn = 4;
+
+        int toggleBg = hookEnabled ? 0x4010B981 : 0x30334155;
+        int toggleBorder = hookEnabled ? 0x9034D399 : 0x5064748B;
+        int toggleTextColor = hookEnabled ? 0xFF34D399 : 0xFF94A3B8;
+        g.fill(toggleX, toggleY, toggleX + toggleW, toggleY + toggleH, toggleBg);
+        ClickGuiTheme.drawOutline(g, toggleX, toggleY, toggleW, toggleH, toggleBorder);
+        String toggleTxt = hookEnabled ? "● BẬT" : "○ TẮT";
+        ClickGuiTheme.drawText(g, this.font, toggleTxt, toggleX + (toggleW - font.width(toggleTxt)) / 2, toggleY + 3, toggleTextColor, false);
+
+        int intvW = 76;
+        int intvH = 14;
+        int intvX = toggleX - intvW - 6;
+        int intvY = toggleY;
+        boolean hoverIntv = mouseX >= intvX && mouseX <= intvX + intvW && mouseY >= intvY && mouseY <= intvY + intvH;
+        if (hoverIntv) hoveredBtn = 5;
+
+        int curIntv = Baritone.settings().discordWebhookInterval.value;
+        String intvText = "Chu kỳ: " + (curIntv >= 60 ? (curIntv / 60) + "p" : curIntv + "s");
+        g.fill(intvX, intvY, intvX + intvW, intvY + intvH, hoverIntv ? 0x3538BDF8 : 0x2038BDF8);
+        ClickGuiTheme.drawOutline(g, intvX, intvY, intvW, intvH, hoverIntv ? 0xA038BDF8 : 0x6038BDF8);
+        ClickGuiTheme.drawText(g, this.font, intvText, intvX + (intvW - font.width(intvText)) / 2, intvY + 3, ClickGuiTheme.ACCENT_CYAN, false);
+
+        int capW = 82;
+        int capH = 14;
+        int capX = intvX - capW - 6;
+        int capY = toggleY;
+        boolean hoverCap = mouseX >= capX && mouseX <= capX + capW && mouseY >= capY && mouseY <= capY + capH;
+        if (hoverCap) hoveredBtn = 7;
+
+        boolean capEnabled = Baritone.settings().discordCaptureScreen.value;
+        int capBg = capEnabled ? 0x4010B981 : 0x30334155;
+        int capBorder = capEnabled ? 0x9034D399 : 0x5064748B;
+        int capTextColor = capEnabled ? 0xFF34D399 : 0xFF94A3B8;
+        g.fill(capX, capY, capX + capW, capY + capH, capBg);
+        ClickGuiTheme.drawOutline(g, capX, capY, capW, capH, capBorder);
+        String capTxt = capEnabled ? "📷 Ảnh: BẬT" : "📷 Ảnh: TẮT";
+        ClickGuiTheme.drawText(g, this.font, capTxt, capX + (capW - font.width(capTxt)) / 2, capY + 3, capTextColor, false);
+
+        // Row 2: Input Box & Buttons
+        int row2Y = card3Y + 22;
+        int row2H = 20;
+        int btnPasteW = 86;
+        int btnTestW = 68;
+        int btnClearW = 36;
+        int rightButtonsW = btnPasteW + btnTestW + btnClearW + 10;
+        int inputX = x + 8;
+        int inputW = card3W - 16 - rightButtonsW;
+
+        boolean hoverInput = mouseX >= inputX && mouseX <= inputX + inputW && mouseY >= row2Y && mouseY <= row2Y + row2H;
+        if (hoverInput) hoveredBtn = 6;
+
+        g.fill(inputX, row2Y, inputX + inputW, row2Y + row2H, ClickGuiTheme.BG_INPUT);
+        int inputBorder = webhookInputFocused ? 0xFF5865F2 : (hoverInput ? 0x805865F2 : 0x405865F2);
+        ClickGuiTheme.drawOutline(g, inputX, row2Y, inputW, row2H, inputBorder);
+
+        String currentUrl = Baritone.settings().discordWebhookUrl.value;
+        if (currentUrl == null || currentUrl.isEmpty()) {
+            String hint = webhookInputFocused ? "" : "⌕ Nhấp để gõ URL hoặc bấm nút [DÁN CLIPBOARD] bên cạnh...";
+            ClickGuiTheme.drawText(g, this.font, hint, inputX + 6, row2Y + 6, ClickGuiTheme.TEXT_DIM, false);
+        } else {
+            String disp = currentUrl;
+            if (this.font.width(disp) > inputW - 14) {
+                disp = this.font.plainSubstrByWidth(disp, Math.max(10, inputW - 24)) + "...";
+            }
+            ClickGuiTheme.drawText(g, this.font, disp, inputX + 6, row2Y + 6, ClickGuiTheme.TEXT_TITLE, false);
+        }
+
+        if (webhookInputFocused && (System.currentTimeMillis() / 400) % 2 == 0) {
+            String typed = (currentUrl == null) ? "" : currentUrl;
+            int curX = inputX + 6 + Math.min(inputW - 14, this.font.width(typed));
+            g.fill(curX, row2Y + 3, curX + 1, row2Y + row2H - 3, 0xFF5865F2);
+        }
+
+        // Action Buttons
+        int btnPasteX = inputX + inputW + 6;
+        boolean hoverPaste = mouseX >= btnPasteX && mouseX <= btnPasteX + btnPasteW && mouseY >= row2Y && mouseY <= row2Y + row2H;
+        if (hoverPaste) hoveredBtn = 1;
+        ClickGuiTheme.drawActionButton(g, this.font, ItemStack.EMPTY, "📋 DÁN", btnPasteX, row2Y, btnPasteW, row2H, ClickGuiTheme.ACCENT_CYAN, hoverPaste);
+
+        int btnTestX = btnPasteX + btnPasteW + 4;
+        boolean hoverTest = mouseX >= btnTestX && mouseX <= btnTestX + btnTestW && mouseY >= row2Y && mouseY <= row2Y + row2H;
+        if (hoverTest) hoveredBtn = 2;
+        ClickGuiTheme.drawActionButton(g, this.font, ItemStack.EMPTY, "🚀 GỬI THỬ", btnTestX, row2Y, btnTestW, row2H, ClickGuiTheme.ACCENT_EMERALD, hoverTest);
+
+        int btnClearX = btnTestX + btnTestW + 4;
+        boolean hoverClear = mouseX >= btnClearX && mouseX <= btnClearX + btnClearW && mouseY >= row2Y && mouseY <= row2Y + row2H;
+        if (hoverClear) hoveredBtn = 3;
+        ClickGuiTheme.drawActionButton(g, this.font, ItemStack.EMPTY, "✕", btnClearX, row2Y, btnClearW, row2H, ClickGuiTheme.ACCENT_ROSE, hoverClear);
+
+        // Guidance & Status Lines below input
+        if (currentUrl == null || currentUrl.trim().isEmpty() || !currentUrl.startsWith("http")) {
+            ClickGuiTheme.drawText(g, this.font, "⚠ Chưa cài đặt Webhook URL! Copy link webhook trong Discord rồi bấm [📋 DÁN] hoặc gõ trực tiếp.", x + 8, card3Y + 47, 0xFFFBBF24, false);
+        } else {
+            String safeUrl = currentUrl.length() > 55 ? currentUrl.substring(0, 52) + "..." : currentUrl;
+            ClickGuiTheme.drawText(g, this.font, "✔ Đã cấu hình: " + safeUrl, x + 8, card3Y + 47, 0xFF34D399, false);
+        }
+        ClickGuiTheme.drawText(g, this.font, "📊 Nội dung: Cứ mỗi " + (curIntv >= 60 ? (curIntv / 60) + " phút" : curIntv + "s") + " gửi số quặng đào thêm (+delta), tổng tích lũy và thời gian farm.", x + 8, card3Y + 61, ClickGuiTheme.TEXT_MUTED, false);
+        ClickGuiTheme.drawText(g, this.font, "📷 Ảnh chụp màn hình: " + (capEnabled ? "BẬT (đính kèm ảnh game thực tế)" : "TẮT (chỉ gửi báo cáo chữ)") + " • Port lệnh: " + Baritone.settings().discordHttpPort.value, x + 8, card3Y + 75, ClickGuiTheme.TEXT_DIM, false);
+
+        return hoveredBtn;
     }
 
     private List<String> wrapText(String text, int maxWidth) {

@@ -46,12 +46,16 @@ public class BlockPlaceHelper {
         }
         rightClickTimer = Baritone.settings().rightClickSpeed.value - BASE_PLACE_DELAY;
         for (InteractionHand hand : InteractionHand.values()) {
-            if (ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), hand, (BlockHitResult) mouseOver) == InteractionResult.SUCCESS) {
+            InteractionResult result = ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), hand, (BlockHitResult) mouseOver);
+            if (result != null && result.consumesAction()) {
                 ctx.player().swing(hand);
                 return;
             }
-            if (!ctx.player().getItemInHand(hand).isEmpty() && ctx.playerController().processRightClick(ctx.player(), ctx.world(), hand) == InteractionResult.SUCCESS) {
-                return;
+            if (!ctx.player().getItemInHand(hand).isEmpty()) {
+                InteractionResult handResult = ctx.playerController().processRightClick(ctx.player(), ctx.world(), hand);
+                if (handResult != null && handResult.consumesAction()) {
+                    return;
+                }
             }
         }
     }

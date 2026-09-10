@@ -98,6 +98,12 @@ public final class AutoMineConfig {
         public boolean optHideScoreboard = false;
         public boolean optHidePlayerName = false;
 
+        // === DISCORD WEBHOOK & TELEMETRY ===
+        public String discordWebhookUrl = "";
+        public boolean discordWebhookEnabled = true;
+        public int discordWebhookInterval = 300;
+        public boolean discordCaptureScreen = true;
+
         // === TẦNG Y MỤC TIÊU ===
         public int optTargetY = -54;
     }
@@ -203,6 +209,14 @@ public final class AutoMineConfig {
         Baritone.settings().neverKick.value = data.neverKick;
         Baritone.settings().autoLogoutOnlyWhileMining.value = data.autoLogoutOnlyWhileMining;
         Baritone.settings().autoLogoutIgnoreTeammates.value = data.autoLogoutIgnoreTeammates;
+        if (data.discordWebhookUrl != null) {
+            Baritone.settings().discordWebhookUrl.value = data.discordWebhookUrl;
+        }
+        Baritone.settings().discordWebhookEnabled.value = data.discordWebhookEnabled;
+        if (data.discordWebhookInterval > 0) {
+            Baritone.settings().discordWebhookInterval.value = data.discordWebhookInterval;
+        }
+        Baritone.settings().discordCaptureScreen.value = data.discordCaptureScreen;
         syncToBaritoneSettings(data.clientFreeLook);
     }
 
@@ -321,6 +335,12 @@ public final class AutoMineConfig {
             data.neverKick = AutoMineScreen.optNeverKick;
             data.autoLogoutOnlyWhileMining = AutoMineScreen.optAutoLogoutOnlyWhileMining;
             data.autoLogoutIgnoreTeammates = Baritone.settings().autoLogoutIgnoreTeammates.value;
+
+            // Discord Webhook
+            data.discordWebhookUrl = Baritone.settings().discordWebhookUrl.value;
+            data.discordWebhookEnabled = Baritone.settings().discordWebhookEnabled.value;
+            data.discordWebhookInterval = Baritone.settings().discordWebhookInterval.value;
+            data.discordCaptureScreen = Baritone.settings().discordCaptureScreen.value;
 
             try (BufferedWriter writer = Files.newBufferedWriter(file)) {
                 GSON.toJson(data, writer);
