@@ -43,6 +43,8 @@ public class MineCommand extends Command {
     @Override
     public void execute(String label, IArgConsumer args) throws CommandException {
         int quantity = args.getAsOrDefault(Integer.class, 0);
+        // Nhánh mặc định (không block) là nhánh duy nhất đặt tầng đào Y=-58.
+        boolean defaultTargets = !args.hasAny();
         List<BlockOptionalMeta> boms = new ArrayList<>();
         if (args.hasAny()) {
             while (args.hasAny()) {
@@ -94,7 +96,16 @@ public class MineCommand extends Command {
             Baritone.settings().mineStrictOneDirection.value = true;
         }
         BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
-        logDirect(String.format("Mining %s", boms.toString()));
+        String targets = boms.stream()
+                .map(bom -> net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(bom.getBlock()).getPath())
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+        // Không có Y hợp lệ thì bỏ phần Y.
+        String yPart = defaultTargets ? " (Y=-58)" : "";
+        logDirect(net.minecraft.network.chat.Component.literal("§b[Quặng] Đang đào: " + targets + yPart + "  "),
+                ChatButtons.openGuiButton(),
+                net.minecraft.network.chat.Component.literal(" "),
+                ChatButtons.stopButton());
         baritone.getMineProcess().mine(quantity, boms.toArray(new BlockOptionalMeta[0]));
     }
 

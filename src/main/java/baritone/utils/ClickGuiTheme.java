@@ -65,6 +65,18 @@ public final class ClickGuiTheme {
     }
 
     /**
+     * Chế độ farm nặng: tắt animation/hiệu ứng trang trí (glow, laser, bloom)
+     * để nhẹ máy khi treo farm lớn. Không thay đổi tính năng nào khác.
+     */
+    public static boolean heavyMode() {
+        try {
+            return baritone.Baritone.settings().heavyFarmMode.value;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
      * Helper vẽ text luôn đảm bảo có alpha channel (chống tàng hình trong MC 1.21).
      */
     public static void drawText(GuiGraphics g, Font font, String text, int x, int y, int color, boolean shadow) {
@@ -113,8 +125,8 @@ public final class ClickGuiTheme {
         int highlightColor = active ? 0x28FFFFFF : (hover ? 0x1EFFFFFF : 0x0EFFFFFF);
         g.fill(x + 1, y + 1, x + w - 1, y + 2, highlightColor);
 
-        // 4. Vạch Laser Glow trên đỉnh card khi Active hoặc Hover
-        if (active || hover) {
+        // 4. Vạch Laser Glow trên đỉnh card khi Active hoặc Hover (tắt ở farm nặng)
+        if ((active || hover) && !heavyMode()) {
             int laserAlpha = active ? 0xFF000000 : 0x95000000;
             int laserColor = (accentColor & 0x00FFFFFF) | laserAlpha;
             g.fill(x + 2, y, x + w - 2, y + 1, laserColor);
@@ -136,6 +148,9 @@ public final class ClickGuiTheme {
      * Vẽ ánh sáng nền Ambient Glow (Soft Shadow 3 tầng) xung quanh khung Panel chính.
      */
     public static void drawGlowPanel(GuiGraphics g, int x, int y, int w, int h, int accentColor) {
+        if (heavyMode()) {
+            return;
+        }
         int glowColor1 = (accentColor & 0x00FFFFFF) | 0x22000000;
         int glowColor2 = (accentColor & 0x00FFFFFF) | 0x0E000000;
         int glowColor3 = (accentColor & 0x00FFFFFF) | 0x05000000;
@@ -340,8 +355,8 @@ public final class ClickGuiTheme {
         // Vạch đứng trái
         g.fill(x + 1, y + 2, x + 3, y + h - 2,
                 active ? accentColor : (hover ? ((accentColor & 0x00FFFFFF) | 0x80000000) : 0x3064748B));
-        // Laser trên khi active/hover
-        if (active || hover) {
+        // Laser trên khi active/hover (tắt ở farm nặng)
+        if ((active || hover) && !heavyMode()) {
             int laserAlpha = active ? 0xFF000000 : 0x95000000;
             g.fill(x + 2, y, x + w - 2, y + 1, (accentColor & 0x00FFFFFF) | laserAlpha);
         }
@@ -369,6 +384,32 @@ public final class ClickGuiTheme {
         String arrow = expanded ? "▾" : "▸";
         int col = hover ? 0xFFFFFFFF : (expanded ? accentColor : 0xFF94A3B8);
         drawText(g, font, arrow, x, y, col, hover);
+    }
+
+    /**
+     * Nút TẮT ESP NGAY full-width, màu đỏ tiết chế, luôn đứng đầu dropdown ESP.
+     * Khi ESP đã tắt: disable nút và hiện trạng thái rõ ràng, không nhận hover.
+     */
+    public static void drawEspKillButton(GuiGraphics g, Font font, String text,
+                                         int x, int y, int w, int h,
+                                         boolean espOn, boolean hover) {
+        if (espOn) {
+            int bgTop = hover ? 0xFF7F1D2E : 0xD93A1626;
+            int bgBottom = hover ? 0xFF991B33 : 0xC01F2937;
+            g.fillGradient(x, y, x + w, y + h, bgTop, bgBottom);
+            drawOutline(g, x, y, w, h, hover ? 0xFFF43F5E : 0x90F43F5E);
+            g.fill(x + 1, y + 1, x + w - 1, y + 2, hover ? 0x80FFFFFF : 0x22FFFFFF);
+            if (hover) {
+                g.fill(x + 2, y, x + w - 2, y + 1, 0xFFF43F5E);
+            }
+            int textW = font.width(text);
+            drawText(g, font, text, x + (w - textW) / 2, y + (h - 8) / 2, 0xFFFFFFFF, hover);
+        } else {
+            g.fill(x, y, x + w, y + h, 0xE8080D18);
+            drawOutline(g, x, y, w, h, 0x4064748B);
+            int textW = font.width(text);
+            drawText(g, font, text, x + (w - textW) / 2, y + (h - 8) / 2, 0xFF64748B, false);
+        }
     }
 
     /**

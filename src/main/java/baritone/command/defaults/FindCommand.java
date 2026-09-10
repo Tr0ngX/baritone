@@ -19,6 +19,7 @@ package baritone.command.defaults;
 
 import baritone.api.IBaritone;
 import baritone.api.command.Command;
+import baritone.utils.StreamerUtil;
 import baritone.api.command.argument.IArgConsumer;
 import baritone.api.command.datatypes.BlockById;
 import baritone.api.command.exception.CommandException;
@@ -54,7 +55,7 @@ public class FindCommand extends Command {
             toFind.add(args.getDatatypeFor(BlockById.INSTANCE));
         }
         BetterBlockPos origin = ctx.playerFeet();
-        Component[] components = toFind.stream()
+        List<BetterBlockPos> positions = toFind.stream()
                 .flatMap(block ->
                         ctx.worldData().getCachedWorld().getLocationsOf(
                                 BuiltInRegistries.BLOCK.getKey(block).getPath(),
@@ -65,13 +66,31 @@ public class FindCommand extends Command {
                         ).stream()
                 )
                 .map(BetterBlockPos::new)
-                .map(this::positionToComponent)
-                .toArray(Component[]::new);
-        if (components.length > 0) {
-            Arrays.asList(components).forEach(this::logDirect);
-        } else {
-            logDirect("No positions known, are you sure the blocks are cached?");
+                .sorted((a, b) -> Long.compare(distSq(a, origin), distSq(b, origin)))
+                .collect(java.util.stream.Collectors.toList());
+        if (positions.isEmpty()) {
+            logDirect(Component.literal("§e[Quặng] Không tìm thấy quặng phù hợp trong cache. "
+                    + "Hãy di chuyển để các chunk được tải rồi thử lại.  "),
+                    ChatButtons.openGuiButton());
+            return;
         }
+        // Streamer mode: ẩn tọa độ, chỉ báo số lượng.
+        if (StreamerUtil.isStreamerModeActive()) {
+            logDirect("§b[Quặng] Tìm thấy " + positions.size()
+                    + " vị trí trong cache (streamer mode đang ẩn tọa độ).");
+            return;
+        }
+        int shown = Math.min(20, positions.size());
+        logDirect("§b[Quặng] Tìm thấy " + positions.size()
+                + " vị trí trong cache" + (positions.size() > shown ? " (hiện " + shown + " gần nhất)" : "") + ":");
+        positions.subList(0, shown).forEach(pos -> logDirect(positionToComponent(pos)));
+    }
+
+    private static long distSq(BetterBlockPos a, BetterBlockPos b) {
+        long dx = (long) a.getX() - b.getX();
+        long dy = (long) a.getY() - b.getY();
+        long dz = (long) a.getZ() - b.getZ();
+        return dx * dx + dy * dy + dz * dz;
     }
 
     private Component positionToComponent(BetterBlockPos pos) {

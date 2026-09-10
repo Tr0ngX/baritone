@@ -949,6 +949,39 @@ public final class Settings {
     public final Setting<Boolean> fadePath = new Setting<>(false);
 
     /**
+     * Ve hop highlight quang da chon trong cache (Ore ESP, client-side, chi doc cache san co).
+     * Mac dinh TAT. Day la trang thai phien: vao world moi hoac khoi dong lai khong tu bat lai
+     * (xem OreEspController).
+     */
+    public final Setting<Boolean> oreEspEnabled = new Setting<>(false);
+
+    /**
+     * Ban kinh quet ESP quanh nguoi choi, tinh bang block (slider 8-64, mac dinh 24).
+     */
+    public final Setting<Integer> oreEspRadius = new Setting<>(24);
+
+    /**
+     * So hop ESP toi da moi lan ve (hard cap 128, cau hinh nang cao).
+     */
+    public final Setting<Integer> oreEspMaxBoxes = new Setting<>(128);
+
+    /**
+     * Ve hop ESP xuyen tuong (mac dinh tat; chi dung noi may chu cho phep).
+     */
+    public final Setting<Boolean> oreEspXray = new Setting<>(false);
+
+    /**
+     * Che do farm nang: ep ESP tat (khong cho bat khi con bat) va tat animation/hieu ung trang tri.
+     * Mac dinh tat.
+     */
+    public final Setting<Boolean> heavyFarmMode = new Setting<>(false);
+
+    /**
+     * Am thanh click giao dien (vanilla UI_BUTTON_CLICK, volume 0.25). Chi phat khi thao tac doi trang thai that.
+     */
+    public final Setting<Boolean> guiClickSound = new Setting<>(true);
+
+    /**
      * Move without having to force the client-sided rotations
      */
     public final Setting<Boolean> freeLook = new Setting<>(true);

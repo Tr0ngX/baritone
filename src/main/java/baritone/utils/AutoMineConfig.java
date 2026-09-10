@@ -106,6 +106,9 @@ public final class AutoMineConfig {
 
         // === TẦNG Y MỤC TIÊU ===
         public int optTargetY = -54;
+
+        // === DROPDOWN MỞ RỘNG (không persist trạng thái bật ESP) ===
+        public java.util.List<String> expandedModules = new java.util.ArrayList<>();
     }
 
     private static Path getConfigPath() {
@@ -203,6 +206,14 @@ public final class AutoMineConfig {
 
         // Tầng Y
         AutoMineScreen.optTargetY = data.optTargetY;
+
+        // Dropdown đang mở (ESP bật không bao giờ được khôi phục từ config)
+        try {
+            AutoMineScreen.expandedModules.clear();
+            if (data.expandedModules != null) {
+                AutoMineScreen.expandedModules.addAll(data.expandedModules);
+            }
+        } catch (Throwable ignored) {}
 
         // Đồng bộ vào Baritone.settings()
         Baritone.settings().autoLogoutOnPlayer.value = data.autoLogoutOnPlayer;
@@ -329,6 +340,13 @@ public final class AutoMineConfig {
 
             // Tầng Y
             data.optTargetY = AutoMineScreen.optTargetY;
+
+            // Dropdown đang mở
+            try {
+                data.expandedModules = new java.util.ArrayList<>(AutoMineScreen.expandedModules);
+            } catch (Throwable ignored) {
+                data.expandedModules = new java.util.ArrayList<>();
+            }
 
             data.optAutoLogout = AutoMineScreen.optAutoLogout;
             data.autoLogoutOnPlayer = Baritone.settings().autoLogoutOnPlayer.value;

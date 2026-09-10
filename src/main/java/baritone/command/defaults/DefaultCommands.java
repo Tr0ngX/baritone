@@ -65,6 +65,7 @@ public final class DefaultCommands {
                 new ChopCommand(baritone),
                 new StreamerCommand(baritone),
                 new ClickCommand(baritone),
+                new GuiCommand(baritone),
                 new SurfaceCommand(baritone),
                 new ThisWayCommand(baritone),
                 new WaypointsCommand(baritone),

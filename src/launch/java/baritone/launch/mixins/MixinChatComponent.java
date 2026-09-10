@@ -28,7 +28,8 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 public class MixinChatComponent {
 
     /**
-     * Che tên người chơi trong toàn bộ tin nhắn chat hiển thị ở khung chat.
+     * Che tên người chơi trong toàn bộ tin nhắn chat hiển thị ở khung chat,
+     * đồng thời quét cập nhật số dư/tiền tệ cho Discord Webhook nếu có thông báo giao dịch/số dư.
      */
     @ModifyVariable(
             method = "addMessage(Lnet/minecraft/network/chat/Component;Lnet/minecraft/network/chat/MessageSignature;Lnet/minecraft/client/GuiMessageTag;)V",
@@ -36,6 +37,11 @@ public class MixinChatComponent {
             argsOnly = true
     )
     private Component onAddMessage(Component message) {
+        if (message != null) {
+            try {
+                baritone.utils.DiscordManager.updateBalanceIfDetected(message.getString());
+            } catch (Throwable ignored) {}
+        }
         return StreamerUtil.censorComponent(message);
     }
 }

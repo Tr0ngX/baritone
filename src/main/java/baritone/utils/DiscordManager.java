@@ -34,8 +34,14 @@ import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Util;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.scores.DisplaySlot;
+import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.PlayerScoreEntry;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -60,6 +66,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Quản lý gửi Telemetry / Alert đến Discord Webhook theo chu kỳ tùy chỉnh,
@@ -92,6 +100,171 @@ public final class DiscordManager implements Helper {
     private final Map<Item, Integer> lastReportDropCounts = new ConcurrentHashMap<>();
     private int lastReportTotalBlocks = 0;
     private long lastFarmingReportTime = 0;
+
+    // Trích xuất số dư / tiền tệ cho Webhook
+    private static final Pattern BALANCE_KEYWORD_PATTERN = Pattern.compile(
+            "(?i)(?:xu|tiền|tien|số\\s*dư|so\\s*du|ví|vi|balance|money|coins?|coin|ngân\\s*hàng|ngan\\s*hang|tài\\s*sản|tai\\s*san|tài\\s*khoản|tai\\s*khoan|bank|cash|funds?|points?|điểm|diem)\\s*[:：\\-–—=]?\\s*([$₫¥€]?\\s*[0-9]+(?:[.,][0-9]+)*(?:\\s*[kmbKMB%])?\\s*[$₫¥€]?(?:\\s*(?:xu|đ|vnđ|vnd|coins?|points?|bucks?))?)",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+    );
+
+    private static final Pattern CURRENCY_PATTERN = Pattern.compile(
+            "([$₫¥€]\\s*[0-9]+(?:[.,][0-9]+)*(?:\\s*[kmbKMB])?|[0-9]+(?:[.,][0-9]+)*(?:\\s*[kmbKMB])?\\s*[$₫¥€])"
+    );
+
+    private static volatile String lastKnownBalance = "Đang cập nhật...";
+
+    public static void updateBalanceIfDetected(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        String parsed = parseBalanceFromText(text);
+        if (parsed != null && !parsed.isEmpty()) {
+            lastKnownBalance = parsed;
+        }
+    }
+
+    public static String parseBalanceFromText(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) return null;
+        String clean = rawText.replaceAll("§[0-9a-fk-orA-FK-OR]", "")
+                .replace("\u200B", "")
+                .replace("\u200C", "")
+                .replace("\u200D", "")
+                .replace("\uFEFF", "")
+                .trim();
+        if (clean.isEmpty()) return null;
+
+        Matcher km = BALANCE_KEYWORD_PATTERN.matcher(clean);
+        if (km.find()) {
+            String val = km.group(1).trim();
+            if (!val.isEmpty() && val.matches(".*[0-9].*")) {
+                String lowerClean = clean.toLowerCase(Locale.ROOT);
+                if (!val.contains("$") && !val.contains("₫") && !val.contains("¥") && !val.contains("€")
+                        && !val.toLowerCase(Locale.ROOT).contains("xu") && !val.toLowerCase(Locale.ROOT).contains("đ")
+                        && !val.toLowerCase(Locale.ROOT).contains("coin")) {
+                    if (lowerClean.contains("xu")) {
+                        val = val + " Xu";
+                    } else if (lowerClean.contains("coin")) {
+                        val = val + " Coins";
+                    } else if (lowerClean.contains("điểm") || lowerClean.contains("point")) {
+                        val = val + " Điểm";
+                    } else if (lowerClean.contains("tiền") || lowerClean.contains("balance") || lowerClean.contains("money") || lowerClean.contains("ví")) {
+                        val = val + "$";
+                    }
+                }
+                return val;
+            }
+        }
+
+        Matcher cm = CURRENCY_PATTERN.matcher(clean);
+        if (cm.find()) {
+            String val = cm.group(1).trim();
+            if (!val.isEmpty() && val.matches(".*[0-9].*")) {
+                return val;
+            }
+        }
+        return null;
+    }
+
+    public static String getPlayerBalance() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.level != null) {
+                Scoreboard scoreboard = mc.level.getScoreboard();
+                if (scoreboard != null) {
+                    List<String> rawLines = new ArrayList<>();
+
+                    // 1. Quét Sidebar Objective
+                    Objective sidebar = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+                    if (sidebar != null) {
+                        for (PlayerScoreEntry entry : scoreboard.listPlayerScores(sidebar)) {
+                            PlayerTeam team = scoreboard.getPlayersTeam(entry.owner());
+                            Component formatted = PlayerTeam.formatNameForTeam(team, entry.ownerName());
+                            if (formatted != null) {
+                                String line = formatted.getString();
+                                if (line != null && !line.trim().isEmpty()) {
+                                    rawLines.add(line);
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Quét Player Teams (nhiều server lưu dòng Scoreboard vào Team prefix/suffix)
+                    for (PlayerTeam team : scoreboard.getPlayerTeams()) {
+                        String prefix = team.getPlayerPrefix() != null ? team.getPlayerPrefix().getString() : "";
+                        String suffix = team.getPlayerSuffix() != null ? team.getPlayerSuffix().getString() : "";
+                        String full = (prefix + " " + suffix).trim();
+                        if (!full.isEmpty()) {
+                            rawLines.add(full);
+                        }
+                    }
+
+                    // Quét từng dòng đơn
+                    for (String line : rawLines) {
+                        String bal = parseBalanceFromText(line);
+                        if (bal != null && !bal.isEmpty()) {
+                            lastKnownBalance = bal;
+                            return bal;
+                        }
+                    }
+
+                    // Quét cặp 2 dòng liền kề (trường hợp nhãn ở dòng trên, số tiền ở dòng dưới)
+                    for (int i = 0; i < rawLines.size() - 1; i++) {
+                        String combined = rawLines.get(i) + " " + rawLines.get(i + 1);
+                        String bal = parseBalanceFromText(combined);
+                        if (bal != null && !bal.isEmpty()) {
+                            lastKnownBalance = bal;
+                            return bal;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        if (lastKnownBalance != null && !lastKnownBalance.equals("Đang cập nhật...")) {
+            return lastKnownBalance;
+        }
+
+        if (getServerIp().contains("Singleplayer")) {
+            return "Chơi Đơn (N/A)";
+        }
+
+        return "Đang cập nhật...";
+    }
+
+    public static String getRawPlayerName() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null) {
+            LocalPlayer player = mc.player;
+            if (player != null && player.getGameProfile() != null) {
+                String name = player.getGameProfile().name();
+                if (name != null && !name.trim().isEmpty()) {
+                    return name.trim();
+                }
+            }
+            if (mc.getUser() != null) {
+                String name = mc.getUser().getName();
+                if (name != null && !name.trim().isEmpty()) {
+                    return name.trim();
+                }
+            }
+        }
+        String streamerName = StreamerUtil.getLocalPlayerName();
+        if (streamerName != null && !streamerName.trim().isEmpty()) {
+            return streamerName.trim();
+        }
+        return "Unknown";
+    }
+
+    public static String getServerIp() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null) return "Chơi Đơn (Singleplayer)";
+        ServerData data = mc.getCurrentServer();
+        if (data != null && data.ip != null && !data.ip.trim().isEmpty()) {
+            return data.ip.trim();
+        }
+        if (mc.hasSingleplayerServer()) {
+            return "Chơi Đơn (Singleplayer)";
+        }
+        return "Local / Unknown";
+    }
 
     private DiscordManager() {}
 
@@ -318,9 +491,14 @@ public final class DiscordManager implements Helper {
             }
 
             LocalPlayer player = Minecraft.getInstance().player;
-            String playerName = player != null ? player.getName().getString() : "Tr0ngX";
+            String rawPlayerName = getRawPlayerName();
+            String spoilerPlayerName = "||" + rawPlayerName + "||";
+            String playerBalance = getPlayerBalance();
+            String serverIp = getServerIp();
+
             int intervalSec = Baritone.settings().discordWebhookInterval.value;
             int intervalMin = Math.max(1, intervalSec / 60);
+            String intervalStr = intervalSec >= 60 ? (intervalSec / 60) + " phút" : intervalSec + "s";
 
             // 1. Tính toán Delta quặng đào thêm
             List<String> deltaList = new ArrayList<>();
@@ -408,54 +586,99 @@ public final class DiscordManager implements Helper {
             totalSb.append("⏱️ **Thời gian hoạt động:** `").append(MiningStatsTracker.getInstance().getFormattedDuration()).append("`");
 
             // 3. Thông tin trạng thái & Tọa độ
-            StringBuilder statusSb = new StringBuilder();
-            if (player != null) {
-                statusSb.append("📍 **Tọa độ:** `X: ").append(player.getBlockX()).append(", Y: ").append(player.getBlockY()).append(", Z: ").append(player.getBlockZ()).append("`\n");
-                statusSb.append("❤️ **Máu:** `").append((int) player.getHealth()).append("/").append((int) player.getMaxHealth()).append("` • ");
-                statusSb.append("🍗 **Đói:** `").append(player.getFoodData().getFoodLevel()).append("/20` • ");
+            String state = "Đang nghỉ ngơi / Chờ lệnh";
+            if (BaritoneAPI.getProvider().getPrimaryBaritone().getMineProcess().isActive()) {
+                state = "⛏️ AutoMine";
+            } else if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
+                state = "🏃 Pathing";
+            }
 
+            // 4. Tạo Embed Fields (Bố cục Dashboard 3 cột hiện đại)
+            JsonArray fields = new JsonArray();
+
+            // Hàng 1: Tài khoản, Số dư, Thể trạng (Inline 3 cột)
+            JsonObject playerField = new JsonObject();
+            playerField.addProperty("name", "👤 TÀI KHOẢN");
+            playerField.addProperty("value", spoilerPlayerName);
+            playerField.addProperty("inline", true);
+            fields.add(playerField);
+
+            JsonObject balField = new JsonObject();
+            balField.addProperty("name", "💰 SỐ DƯ / XU");
+            balField.addProperty("value", "**" + playerBalance + "**");
+            balField.addProperty("inline", true);
+            fields.add(balField);
+
+            JsonObject hpField = new JsonObject();
+            hpField.addProperty("name", "❤️ THỂ TRẠNG");
+            if (player != null) {
+                hpField.addProperty("value", ((int) player.getHealth()) + "/" + ((int) player.getMaxHealth()) + " HP • " + player.getFoodData().getFoodLevel() + "/20 Đói");
+            } else {
+                hpField.addProperty("value", "N/A");
+            }
+            hpField.addProperty("inline", true);
+            fields.add(hpField);
+
+            // Hàng 2: Tọa độ, Túi đồ trống, Trạng thái (Inline 3 cột)
+            JsonObject posField = new JsonObject();
+            posField.addProperty("name", "📍 TỌA ĐỘ");
+            if (player != null) {
+                posField.addProperty("value", "`X: " + player.getBlockX() + ", Y: " + player.getBlockY() + ", Z: " + player.getBlockZ() + "`");
+            } else {
+                posField.addProperty("value", "N/A");
+            }
+            posField.addProperty("inline", true);
+            fields.add(posField);
+
+            JsonObject invField = new JsonObject();
+            invField.addProperty("name", "🎒 TÚI TRỐNG");
+            if (player != null) {
                 Inventory inv = player.getInventory();
                 int emptySlots = 0;
                 for (int i = 0; i < 36; i++) {
                     if (inv.getItem(i).isEmpty()) emptySlots++;
                 }
-                statusSb.append("🎒 **Túi trống:** `").append(emptySlots).append("/36 ô`\n");
+                invField.addProperty("value", emptySlots + "/36 ô");
+            } else {
+                invField.addProperty("value", "N/A");
             }
+            invField.addProperty("inline", true);
+            fields.add(invField);
 
-            String state = "Đang nghỉ ngơi / Chờ lệnh";
-            if (BaritoneAPI.getProvider().getPrimaryBaritone().getMineProcess().isActive()) {
-                state = "⛏️ Đang tự động đào khoáng (MineProcess)";
-            } else if (BaritoneAPI.getProvider().getPrimaryBaritone().getPathingBehavior().isPathing()) {
-                state = "🏃 Đang di chuyển tìm đường (Pathing)";
-            }
-            statusSb.append("⚙️ **Trạng thái:** ").append(state);
+            JsonObject stateField = new JsonObject();
+            stateField.addProperty("name", "⚙️ TRẠNG THÁI");
+            stateField.addProperty("value", state);
+            stateField.addProperty("inline", true);
+            fields.add(stateField);
 
-            // 4. Tạo Embed Fields
-            JsonArray fields = new JsonArray();
-
+            // Hàng 3: Quặng đào thêm (Full width)
             JsonObject deltaField = new JsonObject();
             deltaField.addProperty("name", "✨ SỐ QUẶNG ĐÀO ĐƯỢC THÊM (" + intervalMin + " PHÚT QUA)");
             deltaField.addProperty("value", deltaSb.toString());
             deltaField.addProperty("inline", false);
             fields.add(deltaField);
 
+            // Hàng 4: Tổng kết quả tích lũy (Full width)
             JsonObject totalField = new JsonObject();
             totalField.addProperty("name", "📦 TỔNG KẾT QUẢ FARM TÍCH LŨY");
             totalField.addProperty("value", totalSb.toString());
             totalField.addProperty("inline", false);
             fields.add(totalField);
 
-            JsonObject infoField = new JsonObject();
-            infoField.addProperty("name", "📊 VỊ TRÍ & TÌNH TRẠNG BOT");
-            infoField.addProperty("value", statusSb.toString());
-            infoField.addProperty("inline", false);
-            fields.add(infoField);
+            String title = isTest ? "🧪 [GỬI THỬ] BÁO CÁO KẾT QUẢ FARM TỰ ĐỘNG" : "⛏️ [BÁO CÁO FARM] TIẾN ĐỘ ĐÀO KHOÁNG (" + intervalMin + " PHÚT)";
+            StringBuilder descSb = new StringBuilder();
+            descSb.append("> 👤 **Tài khoản:** ").append(spoilerPlayerName).append("\n");
+            descSb.append("> 💰 **Số dư ví:** **").append(playerBalance).append("**\n");
+            descSb.append("> 🌐 **Máy chủ:** `").append(serverIp).append("` • ⏱️ **Chu kỳ:** `").append(intervalStr).append("`\n");
+            if (screenshotBytes != null) {
+                descSb.append("📸 *Ảnh chụp màn hình thực tế đính kèm bên dưới.*");
+            } else {
+                descSb.append("ℹ️ *Chế độ báo cáo văn bản.*");
+            }
+            String desc = descSb.toString();
 
-            String title = isTest ? "🧪 [GỬI THỬ] BÁO CÁO KẾT QUẢ FARM TỪ BARITONE" : "⛏️ [BÁO CÁO FARM] KẾT QUẢ ĐÀO KHOÁNG (" + intervalMin + " PHÚT)";
-            String desc = "**Người chơi:** `" + playerName + "` • **Chu kỳ:** `" + (intervalSec >= 60 ? (intervalSec / 60) + " phút" : intervalSec + "s") + "`\n" +
-                          (screenshotBytes != null ? "📸 *Đã đính kèm ảnh chụp màn hình góc nhìn game thực tế.*" : "ℹ *Chế độ báo cáo văn bản.*");
-
-            JsonObject payload = buildDiscordWebhookEmbedPayload(title, desc, 0x10B981, fields, screenshotBytes != null);
+            String content = "🔔 **[BÁO CÁO FARM]** Người chơi: " + spoilerPlayerName + " • Số dư: **" + playerBalance + "**";
+            JsonObject payload = buildDiscordWebhookEmbedPayload(content, "🤖 BARITONE NEXTGEN • AI AUTOMINE", title, desc, 0x10B981, fields, screenshotBytes != null);
 
             sendMultipartAsyncToWebhook(webhookUrl, payload.toString(), screenshotBytes);
 
@@ -481,22 +704,47 @@ public final class DiscordManager implements Helper {
             }
 
             LocalPlayer player = Minecraft.getInstance().player;
+            String rawPlayerName = getRawPlayerName();
+            String spoilerPlayerName = "||" + rawPlayerName + "||";
+            String playerBalance = getPlayerBalance();
+            String serverIp = getServerIp();
+
             JsonArray fields = new JsonArray();
+
+            JsonObject playerField = new JsonObject();
+            playerField.addProperty("name", "👤 Tài khoản");
+            playerField.addProperty("value", spoilerPlayerName);
+            playerField.addProperty("inline", true);
+            fields.add(playerField);
+
+            JsonObject balField = new JsonObject();
+            balField.addProperty("name", "💰 Số dư");
+            balField.addProperty("value", "**" + playerBalance + "**");
+            balField.addProperty("inline", true);
+            fields.add(balField);
+
             if (player != null) {
+                JsonObject hpField = new JsonObject();
+                hpField.addProperty("name", "❤️ Sinh lực");
+                hpField.addProperty("value", (int) player.getHealth() + " / " + (int) player.getMaxHealth());
+                hpField.addProperty("inline", true);
+                fields.add(hpField);
+
                 JsonObject posField = new JsonObject();
                 posField.addProperty("name", "📍 Tọa độ");
                 posField.addProperty("value", "`X: " + player.getBlockX() + ", Y: " + player.getBlockY() + ", Z: " + player.getBlockZ() + "`");
                 posField.addProperty("inline", true);
                 fields.add(posField);
-
-                JsonObject hpField = new JsonObject();
-                hpField.addProperty("name", "❤️ Máu");
-                hpField.addProperty("value", (int) player.getHealth() + " / " + (int) player.getMaxHealth());
-                hpField.addProperty("inline", true);
-                fields.add(hpField);
             }
 
-            JsonObject payload = buildDiscordWebhookEmbedPayload(title, message, colorHex, fields, false);
+            JsonObject srvField = new JsonObject();
+            srvField.addProperty("name", "🌐 Máy chủ");
+            srvField.addProperty("value", "`" + serverIp + "`");
+            srvField.addProperty("inline", true);
+            fields.add(srvField);
+
+            String alertContent = "🚨 **" + title + "** • Người chơi: " + spoilerPlayerName + " • Số dư: **" + playerBalance + "**";
+            JsonObject payload = buildDiscordWebhookEmbedPayload(alertContent, "🚨 BARITONE HỆ THỐNG CẢNH BÁO", title, message, colorHex, fields, false);
             sendAsyncToWebhook(webhookUrl, payload.toString());
         } catch (Exception e) {
             logDebug("[DiscordManager] Lỗi gửi alert: " + e.getMessage());
@@ -677,20 +925,38 @@ public final class DiscordManager implements Helper {
     // CÁC HÀM XÂY DỰNG NỘI DUNG TELEMETRY
     // ==========================================
 
-    private JsonObject buildDiscordWebhookEmbedPayload(String title, String description, int color, JsonArray fields, boolean hasImage) {
+    private JsonObject buildDiscordWebhookEmbedPayload(String content, String authorName, String title, String description, int color, JsonArray fields, boolean hasImage) {
         JsonObject root = new JsonObject();
-        root.addProperty("username", "Baritone AI Pathfinder (Tr0ngX)");
+        root.addProperty("username", "Baritone AI NextGen (Tr0ngX)");
         root.addProperty("avatar_url", "https://raw.githubusercontent.com/cabaletta/baritone/master/src/main/resources/assets/baritone/icon.png");
+
+        if (content != null && !content.trim().isEmpty()) {
+            root.addProperty("content", content.trim());
+        }
 
         JsonArray embeds = new JsonArray();
         JsonObject embed = new JsonObject();
+
+        // Author
+        JsonObject author = new JsonObject();
+        author.addProperty("name", authorName != null && !authorName.isEmpty() ? authorName : "🤖 BARITONE NEXTGEN • AI AUTOMINE");
+        author.addProperty("icon_url", "https://raw.githubusercontent.com/cabaletta/baritone/master/src/main/resources/assets/baritone/icon.png");
+        embed.add("author", author);
+
         embed.addProperty("title", title);
         embed.addProperty("description", description);
         embed.addProperty("color", color);
         embed.addProperty("timestamp", Instant.now().toString());
 
+        // Thumbnail (Baritone Icon)
+        JsonObject thumb = new JsonObject();
+        thumb.addProperty("url", "https://raw.githubusercontent.com/cabaletta/baritone/master/src/main/resources/assets/baritone/icon.png");
+        embed.add("thumbnail", thumb);
+
+        // Footer with server IP
         JsonObject footer = new JsonObject();
-        footer.addProperty("text", "Tr0ngX Baritone Mod 1.21.11 • Báo Cáo Kết Quả Farm");
+        footer.addProperty("text", "Baritone NextGen 1.21.11 • Dev by Tr0ngX • Server: " + getServerIp());
+        footer.addProperty("icon_url", "https://raw.githubusercontent.com/cabaletta/baritone/master/src/main/resources/assets/baritone/icon.png");
         embed.add("footer", footer);
 
         if (fields != null && !fields.isEmpty()) {
@@ -708,17 +974,16 @@ public final class DiscordManager implements Helper {
         return root;
     }
 
+    private JsonObject buildDiscordWebhookEmbedPayload(String title, String description, int color, JsonArray fields, boolean hasImage) {
+        return buildDiscordWebhookEmbedPayload(null, null, title, description, color, fields, hasImage);
+    }
+
     private JsonObject buildDiscordWebhookEmbedPayload(String title, String description, int color, JsonArray fields) {
-        return buildDiscordWebhookEmbedPayload(title, description, color, fields, false);
+        return buildDiscordWebhookEmbedPayload(null, null, title, description, color, fields, false);
     }
 
     private String buildTelemetryDescription(LocalPlayer player) {
-        String server = "Chơi Đơn (Singleplayer)";
-        ServerData serverData = Minecraft.getInstance().getCurrentServer();
-        if (serverData != null && serverData.ip != null) {
-            server = serverData.ip;
-        }
-
+        String server = getServerIp();
         String state = "Nghỉ ngơi / Chờ lệnh";
         if (BaritoneAPI.getProvider().getPrimaryBaritone().getMineProcess().isActive()) {
             state = "⛏️ Đang đào quặng (MineProcess)";
@@ -726,13 +991,36 @@ public final class DiscordManager implements Helper {
             state = "🏃 Đang di chuyển (Pathing)";
         }
 
-        return "**Người chơi**: `" + player.getName().getString() + "`\n" +
-               "**Máy chủ**: `" + server + "`\n" +
-               "**Hoạt động**: " + state;
+        String rawName = getRawPlayerName();
+        String spoilerName = "||" + rawName + "||";
+        String balance = getPlayerBalance();
+
+        return "> 👤 **Tài khoản**: " + spoilerName + "\n" +
+               "> 💰 **Số dư ví**: **" + balance + "**\n" +
+               "> 🌐 **Máy chủ**: `" + server + "`\n" +
+               "> ⚙️ **Hoạt động**: " + state;
     }
 
     private JsonArray buildTelemetryFields(LocalPlayer player) {
         JsonArray fields = new JsonArray();
+
+        String rawName = getRawPlayerName();
+        String spoilerName = "||" + rawName + "||";
+        String balance = getPlayerBalance();
+
+        // Tài khoản
+        JsonObject playerField = new JsonObject();
+        playerField.addProperty("name", "👤 Tài khoản");
+        playerField.addProperty("value", spoilerName);
+        playerField.addProperty("inline", true);
+        fields.add(playerField);
+
+        // Số dư
+        JsonObject balField = new JsonObject();
+        balField.addProperty("name", "💰 Số dư");
+        balField.addProperty("value", "**" + balance + "**");
+        balField.addProperty("inline", true);
+        fields.add(balField);
 
         // Tọa độ
         JsonObject posField = new JsonObject();

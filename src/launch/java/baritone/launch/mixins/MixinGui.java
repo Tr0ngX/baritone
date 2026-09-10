@@ -53,10 +53,16 @@ public class MixinGui {
     }
 
     /**
-     * Che tên người chơi nếu xuất hiện trên Actionbar / Overlay Message.
+     * Che tên người chơi nếu xuất hiện trên Actionbar / Overlay Message,
+     * đồng thời quét cập nhật số dư/tiền tệ cho Discord Webhook.
      */
     @ModifyVariable(method = "setOverlayMessage", at = @At("HEAD"), argsOnly = true)
     private Component onSetOverlayMessage(Component message) {
+        if (message != null) {
+            try {
+                baritone.utils.DiscordManager.updateBalanceIfDetected(message.getString());
+            } catch (Throwable ignored) {}
+        }
         return StreamerUtil.censorComponent(message);
     }
 

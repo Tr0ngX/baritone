@@ -131,16 +131,10 @@ public class AutoMineCommand extends Command {
         }
 
         BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
-        logDirect("§a================================================================");
-        logDirect("§a[AutoMine] Đã kích hoạt chế độ Tự Động Đào Quặng & Hầm Thông Minh!");
-        logDirect("§a  ✔ Tầng mục tiêu: §eY = -58 §a(Tự động đi xuống an toàn, né Lava 100%)");
-        logDirect("§a  ✔ Mục tiêu quặng: §bKim Cương§a, §9Lapis§a, §cĐá Đỏ§a, §2Ngọc Lục Bảo");
-        logDirect("§a  ✔ Tự động TRÁNH ZOMBIE & QUÁI VẬT (Bán kính 10 block)");
-        logDirect("§a  ✔ Tự động LẮP TOTEM BẤT TỬ vào tay phụ (Auto-Totem)");
-        logDirect("§a  ✔ Tự động ĂN KHI ĐÓI (<5 cục thịt) & HỒI MÁU khi bị thương");
-        logDirect("§a  ✔ Tự đào hầm ngang ➔ Gặp quặng tự rẽ đào sạch ➔ Tiếp tục đào hầm!");
-        logDirect("§a  ✔ Chạy liên tục không bao giờ dừng/hủy lệnh!");
-        logDirect("§a================================================================");
+        logDirect(net.minecraft.network.chat.Component.literal("§b[Quặng] Đang đào: Kim Cương, Lưu Ly, Đá Đỏ, Lục Bảo (Y=-58)  "),
+                ChatButtons.openGuiButton(),
+                net.minecraft.network.chat.Component.literal(" "),
+                ChatButtons.stopButton());
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }
 

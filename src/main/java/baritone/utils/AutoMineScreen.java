@@ -22,6 +22,12 @@ import baritone.api.BaritoneAPI;
 import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
+import baritone.command.defaults.ChatButtons;
+import baritone.utils.esp.OreEspController;
+import baritone.utils.gui.ModuleRowList;
+import baritone.utils.hud.OreHudOverlay;
+import baritone.utils.gui.SidebarLayout;
+import baritone.utils.hud.HudEditScreen;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -31,7 +37,9 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -40,7 +48,12 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL11;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * NextGen Tr0ngX ClickGUI (Inspired by LiquidBounce Nextgen & Meteor Client).
@@ -148,6 +161,65 @@ public class AutoMineScreen extends Screen implements Helper {
     public static int filterMode = 0; // 0: Tất cả, 1: Đang Bật, 2: Đang Tắt
     private int scrollOffset = 0;
     private int maxScroll = 0;
+
+    // === DROPDOWN LB: row nào đang mở, persist vào automine.json ===
+    public static final Set<String> expandedModules = new HashSet<>();
+
+    // === Key hàng đặc biệt (không nằm trong registry module) ===
+    private static final String KEY_ESP = "__esp__";
+    private static final String KEY_TARGET_Y = "__targety__";
+    private static final String KEY_FPS = "__fps__";
+    private static final String KEY_HUD_EDIT = "__hudedit__";
+    private static final String KEY_HUD_RESET = "__hudreset__";
+
+    // === Gợi ý tầng đào cho từng quặng trong dropdown ===
+    private static final Map<String, String> ORE_Y_HINT = new HashMap<>();
+    static {
+        ORE_Y_HINT.put("Kim Cương", "Tầng gợi ý: Y=-58 (nhiều nhất) hoặc Y=-54 (an toàn)");
+        ORE_Y_HINT.put("Lục Bảo", "Tầng gợi ý: núi cao Y>100, hiếm ở tầng sâu");
+        ORE_Y_HINT.put("Mảnh Vỡ Cổ Đại", "Tầng gợi ý: Nether Y=15, chống dung nham");
+        ORE_Y_HINT.put("Quặng Vàng", "Tầng gợi ý: Nether hoặc Overworld Y=-32..32");
+        ORE_Y_HINT.put("Quặng Sắt", "Tầng gợi ý: Y=16 hoặc Y=-24");
+        ORE_Y_HINT.put("Đá Đỏ (Redstone)", "Tầng gợi ý: Y=-64..-32");
+        ORE_Y_HINT.put("Ngọc Lưu Ly (Lapis)", "Tầng gợi ý: Y=0");
+        ORE_Y_HINT.put("Quặng Đồng", "Tầng gợi ý: Y=48 hoặc dripstone");
+        ORE_Y_HINT.put("Than Đá", "Tầng gợi ý: mọi tầng núi cao");
+        ORE_Y_HINT.put("Thạch Anh Nether", "Tầng gợi ý: Nether mọi độ cao, nhiều XP");
+    }
+
+    /**
+     * Âm thanh click vanilla nhẹ (volume 0.25). Chỉ phát khi thao tác thực sự
+     * đổi trạng thái và công tắc âm thanh đang bật.
+     */
+    private void playClickSound() {
+        try {
+            if (!Baritone.settings().guiClickSound.value) {
+                return;
+            }
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.getSoundManager() != null) {
+                mc.getSoundManager().play(SimpleSoundInstance.forUI(
+                        SoundEvents.UI_BUTTON_CLICK.value(), 1.0F, 0.25F));
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private OreEspController espController() {
+        try {
+            return baritone.getOreEspController();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void openHudEditor() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null) {
+                mc.setScreen(new HudEditScreen(this));
+            }
+        } catch (Throwable ignored) {}
+    }
 
     // === ENGINE BỐ CỤC ĐÁP ỨNG THÔNG MINH (RESPONSIVE ENGINE) ===
     private static class ResponsiveLayout {
@@ -432,6 +504,34 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.AMETHYST_SHARD), "Đặt Khối Nhanh", "Đặt khối tức thì 1-tick (0.05s) mượt mà chuẩn anti-cheat",
                 "Giảm độ trễ đặt khối từ 4 tick xuống còn 1 tick (0.05 giây), giúp việc kê chân, bắc cầu và lấp hầm diễn ra tức thì và mượt mà.",
                 "HUD", 0xFF34D399, () -> optFastPlace, () -> optFastPlace = !optFastPlace));
+        allModules.add(new ModuleItem(new ItemStack(Items.ENDER_EYE), "ESP Quặng (chỉ cache)", "Highlight quặng đã chọn trong cache, mặc định TẮT",
+                "Vẽ hộp màu quanh quặng đã chọn, CHỈ đọc cache client sẵn có, không live-scan. Mặc định TẮT, tự tắt khi farm lớn. Chỉnh bán kính trong dropdown ESP ở tab Quặng.",
+                "HUD", 0xFF38BDF8, () -> Baritone.settings().oreEspEnabled.value, () -> {
+            try {
+                baritone.getOreEspController().setEnabled(!Baritone.settings().oreEspEnabled.value);
+            } catch (Throwable ignored) {
+                Baritone.settings().oreEspEnabled.value = !Baritone.settings().oreEspEnabled.value;
+            }
+            AutoMineConfig.save();
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.SPYGLASS), "ESP xuyên tường", "Vẽ hộp ESP xuyên địa hình (mặc định tắt)",
+                "Chỉ bật nơi máy chủ cho phép. Mặc định tắt để ESP trông như highlight quặng lộ thiên.",
+                "HUD", 0xFF60A5FA, () -> Baritone.settings().oreEspXray.value, () -> {
+            Baritone.settings().oreEspXray.value = !Baritone.settings().oreEspXray.value;
+            AutoMineConfig.save();
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.NETHERITE_CHESTPLATE), "Chế độ farm nặng", "Ép ESP tắt, tắt animation trang trí khi treo farm lớn",
+                "Khi bật: ESP bị ép tắt và không cho bật lại, animation goal/path chuyển tĩnh, tooltip gọn. Dùng khi treo máy farm hàng nghìn block.",
+                "HUD", 0xFFF59E0B, () -> Baritone.settings().heavyFarmMode.value, () -> {
+            Baritone.settings().heavyFarmMode.value = !Baritone.settings().heavyFarmMode.value;
+            AutoMineConfig.save();
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.NOTE_BLOCK), "Âm thanh giao diện", "Tiếng click vanilla nhẹ khi đổi trạng thái",
+                "Phát âm thanh UI_BUTTON_CLICK volume 0.25, chỉ khi thao tác thực sự đổi trạng thái.",
+                "HUD", 0xFFA855F7, () -> Baritone.settings().guiClickSound.value, () -> {
+            Baritone.settings().guiClickSound.value = !Baritone.settings().guiClickSound.value;
+            AutoMineConfig.save();
+        }));
         allModules.add(new ModuleItem(new ItemStack(Items.ENDER_EYE), "Chế Độ Phát Sóng", "Chế độ Livestream ẩn toàn bộ thông tin nhạy cảm",
                 "Chế độ chuyên dụng cho quay phim/livestream: Ẩn toàn bộ tọa độ, bảng điểm (Scoreboard) và tên người chơi để bảo mật vị trí căn cứ.",
                 "HUD", 0xFFC084FC, () -> optStreamerMode, () -> {
@@ -796,39 +896,68 @@ public class AutoMineScreen extends Screen implements Helper {
         double mouseY = event.y();
         int button = event.button();
         ResponsiveLayout l = new ResponsiveLayout(this.width, this.height, activeTab, !searchQuery.isEmpty());
+        SidebarLayout clickSb = new SidebarLayout(l.panelX, l.panelW, this.width);
+        int contentX = clickSb.contentX;
+        int contentW = clickSb.contentW;
+        int clickFilterW = contentW >= 480 ? 156 : 0;
+        int clickSearchBoxW = clickFilterW > 0 ? contentW - clickFilterW - 6 : contentW;
 
-        // 1. Kiểm tra Click vào Tab Bar (6 tabs)
-        for (int i = 0; i < 6; i++) {
-            int tx = l.panelX + i * l.tabW;
-            if (mouseX >= tx && mouseX <= tx + l.tabW && mouseY >= l.tabY && mouseY <= l.tabY + l.tabH) {
-                activeTab = i;
-                searchQuery = "";
-                searchFocused = false;
-                scrollOffset = 0;
-                return true;
+        // 1. Click sidebar dọc (hoặc tab ngang khi GUI hẹp)
+        if (clickSb.useSidebar) {
+            for (int i = 0; i < 6; i++) {
+                int ty = clickSb.sidebarButtonY(l.tabY, i);
+                if (mouseX >= l.panelX && mouseX <= l.panelX + SidebarLayout.SIDEBAR_W
+                        && mouseY >= ty && mouseY <= ty + SidebarLayout.SIDEBAR_BUTTON_H) {
+                    if (activeTab != i) {
+                        activeTab = i;
+                        searchQuery = "";
+                        searchFocused = false;
+                        scrollOffset = 0;
+                        playClickSound();
+                    }
+                    return true;
+                }
             }
-        }
-
-        // 2. Kiểm tra Click vào Filter Chips (Tất Cả / Đang Bật / Đang Tắt)
-        if (l.filterW > 0 && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH) {
-            int chipStart = l.panelX + l.searchBoxW + 6;
-            int chipW = (l.filterW - 4) / 3;
-            for (int c = 0; c < 3; c++) {
-                int cx = chipStart + c * (chipW + 2);
-                if (mouseX >= cx && mouseX <= cx + chipW) {
-                    filterMode = c;
-                    scrollOffset = 0;
+        } else {
+            for (int i = 0; i < 6; i++) {
+                int tx = l.panelX + i * l.tabW;
+                if (mouseX >= tx && mouseX <= tx + l.tabW && mouseY >= l.tabY && mouseY <= l.tabY + l.tabH) {
+                    if (activeTab != i) {
+                        activeTab = i;
+                        searchQuery = "";
+                        searchFocused = false;
+                        scrollOffset = 0;
+                        playClickSound();
+                    }
                     return true;
                 }
             }
         }
 
-        // 3. Kiểm tra Click vào Search Bar & Nút [×] xóa nhanh
-        if (mouseX >= l.panelX && mouseX <= l.panelX + l.searchBoxW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH) {
-            if (!searchQuery.isEmpty() && mouseX >= l.panelX + l.searchBoxW - 18) {
+        // 2. Click Filter Chips (Tất Cả / Đang Bật / Đang Tắt), đổi filter thì reset scroll
+        if (clickFilterW > 0 && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH) {
+            int chipStart = contentX + clickSearchBoxW + 6;
+            int chipW = (clickFilterW - 4) / 3;
+            for (int c = 0; c < 3; c++) {
+                int cx = chipStart + c * (chipW + 2);
+                if (mouseX >= cx && mouseX <= cx + chipW) {
+                    if (filterMode != c) {
+                        filterMode = c;
+                        scrollOffset = 0;
+                        playClickSound();
+                    }
+                    return true;
+                }
+            }
+        }
+
+        // 3. Click Search Bar & Nút [×] xóa nhanh
+        if (mouseX >= contentX && mouseX <= contentX + clickSearchBoxW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH) {
+            if (!searchQuery.isEmpty() && mouseX >= contentX + clickSearchBoxW - 18) {
                 searchQuery = "";
                 searchFocused = false;
                 scrollOffset = 0;
+                playClickSound();
                 return true;
             }
             searchFocused = true;
@@ -837,14 +966,15 @@ public class AutoMineScreen extends Screen implements Helper {
             searchFocused = false;
         }
 
-        // 4. Kiểm tra Click vào Quick Select Presets (Tab 0, 1, 2, 3)
+        // 4. Click Quick Select Presets (áp dụng toàn bộ danh sách quặng)
         if ((activeTab >= 0 && activeTab <= 3) && searchQuery.isEmpty()) {
-            int btnW = (l.panelW - 3 * 4) / 4;
+            int btnW = (contentW - 3 * 4) / 4;
             for (int q = 0; q < 4; q++) {
-                int qx = l.panelX + q * (btnW + 4);
+                int qx = contentX + q * (btnW + 4);
                 if (mouseX >= qx && mouseX <= qx + btnW && mouseY >= l.quickY && mouseY <= l.quickY + l.quickH) {
                     applyQuickPreset(activeTab, q);
                     AutoMineConfig.save();
+                    playClickSound();
                     return true;
                 }
             }
@@ -853,18 +983,18 @@ public class AutoMineScreen extends Screen implements Helper {
         // 4. Kiểm tra Click vào Module Cards hoặc Tab 5 Dashboard
         if (mouseY >= l.contentY && mouseY <= l.contentBottom) {
             if (activeTab == 5 && searchQuery.isEmpty()) {
-                boolean isCompact = l.panelW < 540;
+                boolean isCompact = contentW < 540;
                 int cardH = 96;
                 int card3Y = isCompact ? (l.contentY + cardH + 6 + cardH + 6) : (l.contentY + cardH + 6);
                 card3Y -= scrollOffset;
-                int card3W = l.panelW;
+                int card3W = contentW;
                 int card3H = 92;
 
                 // Kiểm tra click trong Card 3 (Discord Webhook)
-                if (mouseX >= l.panelX && mouseX <= l.panelX + card3W && mouseY >= card3Y && mouseY <= card3Y + card3H) {
+                if (mouseX >= contentX && mouseX <= contentX + card3W && mouseY >= card3Y && mouseY <= card3Y + card3H) {
                     int toggleW = 46;
                     int toggleH = 14;
-                    int toggleX = l.panelX + card3W - toggleW - 8;
+                    int toggleX = contentX + card3W - toggleW - 8;
                     int toggleY = card3Y + 4;
 
                     // Toggle Bật/Tắt
@@ -921,7 +1051,7 @@ public class AutoMineScreen extends Screen implements Helper {
                     int btnTestW = 68;
                     int btnClearW = 36;
                     int rightButtonsW = btnPasteW + btnTestW + btnClearW + 10;
-                    int inputX = l.panelX + 8;
+                    int inputX = contentX + 8;
                     int inputW = card3W - 16 - rightButtonsW;
 
                     // Click ô nhập URL
@@ -956,64 +1086,8 @@ public class AutoMineScreen extends Screen implements Helper {
                 }
                 webhookInputFocused = false;
             } else {
-                List<ModuleItem> filtered = getFilteredModules();
-                for (int i = 0; i < filtered.size(); i++) {
-                    int col = i % l.cardCols;
-                    int row = i / l.cardCols;
-                    int cardX = l.panelX + col * (l.colW + l.cardGap);
-                    int cardY = l.contentY + row * (l.cardH + 4) - scrollOffset;
-
-                    if (cardY + l.cardH >= l.contentY && cardY <= l.contentBottom) {
-                        if (mouseX >= cardX && mouseX <= cardX + l.colW && mouseY >= cardY && mouseY <= cardY + l.cardH) {
-                            ModuleItem item = filtered.get(i);
-                            if (item.name.equals("Gửi Discord Webhook")) {
-                                if (button == 1 || Baritone.settings().discordWebhookUrl.value.isEmpty()) {
-                                    activeTab = 5;
-                                    webhookInputFocused = true;
-                                    searchFocused = false;
-                                    scrollOffset = 0;
-                                    if (button == 0) {
-                                        Baritone.settings().discordWebhookEnabled.value = true;
-                                        AutoMineConfig.save();
-                                    }
-                                    return true;
-                                }
-                            }
-                            item.toggle.run();
-                            AutoMineConfig.save();
-                            return true;
-                        }
-                    }
-                }
-
-                // Click vào Target Y & FPS Limiter trong Tab 4 (HUD)
-                if (activeTab == 4 && searchQuery.isEmpty()) {
-                    int extraRowY = l.contentY + ((filtered.size() + l.cardCols - 1) / l.cardCols) * (l.cardH + 4) - scrollOffset;
-                    int halfColW = (l.panelW - 6) / 2;
-
-                    int yBtnX = l.panelX;
-                    if (mouseX >= yBtnX && mouseX <= yBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH) {
-                        if (optTargetY == -54) optTargetY = -58;
-                        else if (optTargetY == -58) optTargetY = 11;
-                        else if (optTargetY == 11) optTargetY = 999;
-                        else optTargetY = -54;
-                        AutoMineConfig.save();
-                        return true;
-                    }
-
-                    int fpsBtnX = l.panelX + halfColW + 6;
-                    if (mouseX >= fpsBtnX && mouseX <= fpsBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH) {
-                        int cur = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
-                        int nextIndex = 0;
-                        for (int f = 0; f < FPS_LEVELS.length; f++) {
-                            if (FPS_LEVELS[f] == cur) {
-                                nextIndex = (f + 1) % FPS_LEVELS.length;
-                                break;
-                            }
-                        }
-                        baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
-                        return true;
-                    }
+                if (handleModuleListClick(mouseX, mouseY, button, contentX, l.contentY, contentW, l.contentBottom)) {
+                    return true;
                 }
             }
         }
@@ -1023,17 +1097,21 @@ public class AutoMineScreen extends Screen implements Helper {
             int ax = l.panelX + a * (l.actionW + l.actionGap);
             if (mouseX >= ax && mouseX <= ax + l.actionW && mouseY >= l.actionBottomY && mouseY <= l.actionBottomY + l.actionH) {
                 if (a == 0) {
+                    playClickSound();
                     startAutoMine();
                     this.onClose();
                 } else if (a == 1) {
+                    playClickSound();
                     startAutoChop();
                     this.onClose();
                 } else if (a == 2) {
+                    playClickSound();
                     stopAutoMine();
                     this.onClose();
                 } else if (a == 3) {
                     MiningStatsTracker.getInstance().reset();
                     Helper.HELPER.logDirect("§a[Tr0ngX] Đã reset toàn bộ thống kê đào khoáng!");
+                    playClickSound();
                 } else {
                     this.onClose();
                 }
@@ -1042,6 +1120,193 @@ public class AutoMineScreen extends Screen implements Helper {
         }
 
         return super.mouseClicked(event, doubleClick);
+    }
+
+    /**
+     * Click danh sách dropdown. Thân row và mũi tên chỉ expand/collapse,
+     * pill switch mới toggle — một click không bao giờ làm cả hai.
+     * Chuột phải lên row cũng chỉ expand. Phần ngoài scissor không nhận click.
+     */
+    private boolean handleModuleListClick(double mouseX, double mouseY, int button,
+                                          int contentX, int contentY, int contentW, int contentBottom) {
+        if (mouseY < contentY || mouseY > contentBottom) {
+            return false;
+        }
+        List<ModuleItem> filtered = getFilteredModules();
+        Map<String, ModuleItem> map = buildKeyMap(filtered);
+        List<ModuleRowList.Entry> entries = layoutModuleEntries(filtered, contentX, contentY, contentW);
+
+        // Nút trong body dropdown (kill ESP, stepper, xray, webhook) kiểm tra trước.
+        for (ModuleRowList.Entry entry : entries) {
+            if (entry.isHeader || !entry.expanded) {
+                continue;
+            }
+            if (mouseY < entry.y + ModuleRowList.ROW_H || mouseY > entry.y + entry.totalH()) {
+                continue;
+            }
+            if (mouseX < entry.x || mouseX > entry.x + entry.w) {
+                continue;
+            }
+            if (entry.key.equals(KEY_ESP)) {
+                int[] kill = espKillRect(entry);
+                if (inside(mouseX, mouseY, kill) && espEnabled()) {
+                    OreEspController controller = espController();
+                    if (controller != null) {
+                        controller.setEnabled(false);
+                    } else {
+                        Baritone.settings().oreEspEnabled.value = false;
+                    }
+                    AutoMineConfig.save();
+                    playClickSound();
+                    return true;
+                }
+                int[] minus = espMinusRect(entry);
+                int[] plus = espPlusRect(entry);
+                if (inside(mouseX, mouseY, minus) || inside(mouseX, mouseY, plus)) {
+                    int radius = OreEspController.clampRadius(Baritone.settings().oreEspRadius.value);
+                    if (inside(mouseX, mouseY, minus)) {
+                        radius -= 8;
+                    } else {
+                        radius += 8;
+                    }
+                    Baritone.settings().oreEspRadius.value = OreEspController.clampRadius(radius);
+                    AutoMineConfig.save();
+                    playClickSound();
+                    return true;
+                }
+                int[] xray = espXraySwitchRect(entry);
+                if (inside(mouseX, mouseY, xray)) {
+                    Baritone.settings().oreEspXray.value = !Baritone.settings().oreEspXray.value;
+                    AutoMineConfig.save();
+                    playClickSound();
+                    return true;
+                }
+                return true; // Click trong body ESP nhưng không trúng nút: nuốt sự kiện.
+            }
+            if (!entry.key.equals(KEY_ESP) && !entry.key.equals(KEY_TARGET_Y)
+                    && !entry.key.equals(KEY_FPS) && !entry.key.equals(KEY_HUD_EDIT)
+                    && !entry.key.equals(KEY_HUD_RESET)) {
+                ModuleItem item = map.get(entry.key);
+                if (item != null && isWebhookModule(item)) {
+                    int textW = Math.max(40, contentW - 16);
+                    int[] btn = webhookConfigButtonRect(entry, item, textW);
+                    if (inside(mouseX, mouseY, btn)) {
+                        activeTab = 5;
+                        webhookInputFocused = true;
+                        searchFocused = false;
+                        scrollOffset = 0;
+                        playClickSound();
+                        return true;
+                    }
+                    return true;
+                }
+            }
+        }
+
+        ModuleRowList.Hit hit = ModuleRowList.hitTest(entries, mouseX, mouseY);
+        if (hit == null) {
+            return false;
+        }
+        ModuleRowList.Entry entry = hit.entry;
+        if (entry.key.equals(KEY_ESP)) {
+            if (hit.zone == ModuleRowList.Zone.SWITCH) {
+                OreEspController controller = espController();
+                boolean target = !espEnabled();
+                boolean applied;
+                if (controller != null) {
+                    applied = controller.setEnabled(target);
+                } else {
+                    Baritone.settings().oreEspEnabled.value = target;
+                    applied = target;
+                }
+                AutoMineConfig.save();
+                if (applied == target) {
+                    playClickSound();
+                    if (target && Baritone.settings().heavyFarmMode.value) {
+                        Helper.HELPER.logDirect("§e[ESP] Chế độ farm nặng đang bật, không thể bật ESP.");
+                    }
+                }
+                return true;
+            }
+            toggleExpanded(entry.key);
+            return true;
+        }
+        if (entry.key.equals(KEY_TARGET_Y)) {
+            cycleTargetY();
+            return true;
+        }
+        if (entry.key.equals(KEY_FPS)) {
+            cycleFps();
+            return true;
+        }
+        if (entry.key.equals(KEY_HUD_EDIT)) {
+            playClickSound();
+            openHudEditor();
+            return true;
+        }
+        if (entry.key.equals(KEY_HUD_RESET)) {
+            OreHudOverlay.getInstance().getConfig().resetPosition();
+            playClickSound();
+            return true;
+        }
+        ModuleItem item = map.get(entry.key);
+        if (item == null) {
+            return false;
+        }
+        if (hit.zone == ModuleRowList.Zone.SWITCH) {
+            try {
+                item.toggle.run();
+            } catch (Throwable ignored) {}
+            AutoMineConfig.save();
+            playClickSound();
+            return true;
+        }
+        // ARROW và BODY (trái hay phải chuột) đều chỉ expand/collapse.
+        toggleExpanded(entry.key);
+        return true;
+    }
+
+    private static boolean inside(double mouseX, double mouseY, int[] rect) {
+        return mouseX >= rect[0] && mouseX <= rect[0] + rect[2] && mouseY >= rect[1] && mouseY <= rect[1] + rect[3];
+    }
+
+    private void toggleExpanded(String key) {
+        if (expandedModules.contains(key)) {
+            expandedModules.remove(key);
+        } else {
+            expandedModules.add(key);
+        }
+        AutoMineConfig.save();
+        playClickSound();
+    }
+
+    private void cycleTargetY() {
+        if (optTargetY == -54) {
+            optTargetY = -58;
+        } else if (optTargetY == -58) {
+            optTargetY = 11;
+        } else if (optTargetY == 11) {
+            optTargetY = 999;
+        } else {
+            optTargetY = -54;
+        }
+        AutoMineConfig.save();
+        playClickSound();
+    }
+
+    private void cycleFps() {
+        try {
+            int cur = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
+            int nextIndex = 0;
+            for (int f = 0; f < FPS_LEVELS.length; f++) {
+                if (FPS_LEVELS[f] == cur) {
+                    nextIndex = (f + 1) % FPS_LEVELS.length;
+                    break;
+                }
+            }
+            baritone.getPlayerContext().minecraft().options.framerateLimit().set(FPS_LEVELS[nextIndex]);
+            playClickSound();
+        } catch (Throwable ignored) {}
     }
 
     private List<ModuleItem> getFilteredModules() {
@@ -1070,6 +1335,482 @@ public class AutoMineScreen extends Screen implements Helper {
         return result;
     }
 
+    // === DROPDOWN LB: key, sections, layout dùng chung cho render + click ===
+
+    private static String moduleKey(ModuleItem item) {
+        return item.category + " " + item.name;
+    }
+
+    private Map<String, ModuleItem> buildKeyMap(List<ModuleItem> filtered) {
+        Map<String, ModuleItem> map = new LinkedHashMap<>();
+        for (ModuleItem item : filtered) {
+            map.put(moduleKey(item), item);
+        }
+        return map;
+    }
+
+    private boolean isPreciousOre(ModuleItem item) {
+        return item.category.equals("ORES")
+                && (item.name.equals("Kim Cương") || item.name.equals("Lục Bảo") || item.name.equals("Mảnh Vỡ Cổ Đại"));
+    }
+
+    private boolean isWebhookModule(ModuleItem item) {
+        return item.name.equals("Gửi Discord Webhook");
+    }
+
+    /**
+     * Dựng sections hiển thị. Tab Quặng có thêm hàng ESP + 2 nhóm quặng.
+     * Tab Giao Diện có thêm hàng Tầng Y / FPS / Chỉnh HUD ở cuối.
+     */
+    private List<ModuleRowList.Section> buildSections(List<ModuleItem> filtered) {
+        List<ModuleRowList.Section> sections = new ArrayList<>();
+        String query = searchQuery.trim().toLowerCase();
+        if (!query.isEmpty()) {
+            List<String> keys = new ArrayList<>();
+            if ("esp quặng (chỉ cache)".contains(query) || "esp".contains(query)) {
+                keys.add(KEY_ESP);
+            }
+            if ("chỉnh hud kéo thả".contains(query) || "hud".contains(query)) {
+                keys.add(KEY_HUD_EDIT);
+            }
+            if ("reset vị trí hud".contains(query)) {
+                keys.add(KEY_HUD_RESET);
+            }
+            for (ModuleItem item : filtered) {
+                keys.add(moduleKey(item));
+            }
+            sections.add(new ModuleRowList.Section(null, keys));
+            return sections;
+        }
+        if (activeTab == 0) {
+            List<String> esp = new ArrayList<>();
+            esp.add(KEY_ESP);
+            sections.add(new ModuleRowList.Section(null, esp));
+            List<String> precious = new ArrayList<>();
+            List<String> normal = new ArrayList<>();
+            for (ModuleItem item : filtered) {
+                if (isPreciousOre(item)) {
+                    precious.add(moduleKey(item));
+                } else {
+                    normal.add(moduleKey(item));
+                }
+            }
+            if (!precious.isEmpty()) {
+                sections.add(new ModuleRowList.Section("QUẶNG QUÝ HIẾM", precious));
+            }
+            if (!normal.isEmpty()) {
+                sections.add(new ModuleRowList.Section("QUẶNG THƯỜNG", normal));
+            }
+        } else if (activeTab == 4) {
+            List<String> keys = new ArrayList<>();
+            for (ModuleItem item : filtered) {
+                keys.add(moduleKey(item));
+            }
+            sections.add(new ModuleRowList.Section(null, keys));
+            List<String> extra = new ArrayList<>();
+            extra.add(KEY_TARGET_Y);
+            extra.add(KEY_FPS);
+            extra.add(KEY_HUD_EDIT);
+            extra.add(KEY_HUD_RESET);
+            sections.add(new ModuleRowList.Section("HIỂN THỊ & HIỆU NĂNG", extra));
+        } else {
+            List<String> keys = new ArrayList<>();
+            for (ModuleItem item : filtered) {
+                keys.add(moduleKey(item));
+            }
+            sections.add(new ModuleRowList.Section(null, keys));
+        }
+        return sections;
+    }
+
+    private static final int ESP_BODY_H = 90;
+
+    /**
+     * Chiều cao dropdown body, phải khớp tuyệt đối với nội dung render.
+     */
+    private int bodyHeightFor(String key, ModuleItem item, int textW) {
+        if (key.equals(KEY_ESP)) {
+            return ESP_BODY_H;
+        }
+        if (key.equals(KEY_TARGET_Y) || key.equals(KEY_FPS) || key.equals(KEY_HUD_EDIT)
+                || key.equals(KEY_HUD_RESET)) {
+            return 0;
+        }
+        if (item == null) {
+            return 0;
+        }
+        int lines = wrapText(item.details, Math.max(40, textW)).size();
+        int height = 6 + lines * 12 + 8 + 12 + 6;
+        if (isWebhookModule(item)) {
+            height += 24;
+        }
+        return height;
+    }
+
+    private List<ModuleRowList.Entry> layoutModuleEntries(List<ModuleItem> filtered, int contentX, int contentY, int contentW) {
+        List<ModuleRowList.Section> sections = buildSections(filtered);
+        int textW = Math.max(40, contentW - 16);
+        Map<String, ModuleItem> map = buildKeyMap(filtered);
+        return ModuleRowList.layout(sections, expandedModules,
+                key -> bodyHeightFor(key, map.get(key), textW), contentX, contentY - scrollOffset, contentW);
+    }
+
+    // === Rect nút trong body ESP, dùng chung cho render (hover) và click ===
+    private int[] espKillRect(ModuleRowList.Entry entry) {
+        return new int[]{entry.x + 8, entry.y + ModuleRowList.ROW_H + 6, entry.w - 16, 18};
+    }
+
+    private int[] espMinusRect(ModuleRowList.Entry entry) {
+        int rowY = entry.y + ModuleRowList.ROW_H + 30;
+        int plusX = entry.x + entry.w - 8 - 22;
+        int valX = plusX - 34;
+        return new int[]{valX - 26, rowY, 22, 16};
+    }
+
+    private int[] espValueRect(ModuleRowList.Entry entry) {
+        int rowY = entry.y + ModuleRowList.ROW_H + 30;
+        int plusX = entry.x + entry.w - 8 - 22;
+        return new int[]{plusX - 34, rowY, 30, 16};
+    }
+
+    private int[] espPlusRect(ModuleRowList.Entry entry) {
+        int rowY = entry.y + ModuleRowList.ROW_H + 30;
+        int plusX = entry.x + entry.w - 8 - 22;
+        return new int[]{plusX, rowY, 22, 16};
+    }
+
+    private int[] espXraySwitchRect(ModuleRowList.Entry entry) {
+        int rowY = entry.y + ModuleRowList.ROW_H + 52;
+        return new int[]{entry.x + entry.w - 8 - 32, rowY, 32, 16};
+    }
+
+    private int[] webhookConfigButtonRect(ModuleRowList.Entry entry, ModuleItem item, int textW) {
+        int lines = wrapText(item.details, Math.max(40, textW)).size();
+        int btnY = entry.y + ModuleRowList.ROW_H + 6 + lines * 12 + 8 + 12 + 6;
+        return new int[]{entry.x + 8, btnY, entry.w - 16, 18};
+    }
+
+    private boolean hoveredEspRow = false;
+    private int hoveredEspButton = 0; // 0: không, 1: kill, 2: minus, 3: plus, 4: xray
+    private String hoveredSpecialKey = null;
+    private boolean hoveredWebhookButton = false;
+    private boolean hoveredYSetting = false;
+    private boolean hoveredFpsSetting = false;
+
+    /**
+     * Vẽ danh sách dropdown. Trả về module đang hover để hiện tooltip.
+     */
+    private ModuleItem renderModuleList(GuiGraphics graphics, int contentX, int contentY, int contentW, int contentBottom, int mouseX, int mouseY) {
+        hoveredEspRow = false;
+        hoveredEspButton = 0;
+        hoveredSpecialKey = null;
+        hoveredWebhookButton = false;
+
+        List<ModuleItem> filtered = getFilteredModules();
+        Map<String, ModuleItem> map = buildKeyMap(filtered);
+        List<ModuleRowList.Entry> entries = layoutModuleEntries(filtered, contentX, contentY, contentW);
+        maxScroll = Math.max(0, ModuleRowList.totalHeight(entries) - (contentBottom - contentY));
+        int clamped = Math.max(0, Math.min(scrollOffset, maxScroll));
+        if (clamped != scrollOffset) {
+            scrollOffset = clamped;
+            entries = layoutModuleEntries(filtered, contentX, contentY, contentW);
+        }
+
+        ModuleItem hovered = null;
+        int textW = Math.max(40, contentW - 16);
+        for (ModuleRowList.Entry entry : entries) {
+            if (entry.y + entry.totalH() < contentY || entry.y > contentBottom) {
+                continue;
+            }
+            if (entry.isHeader) {
+                ClickGuiTheme.drawGroupHeader(graphics, this.font, entry.groupTitle, entry.x, entry.y, entry.w, ClickGuiTheme.ACCENT_CYAN);
+                continue;
+            }
+            boolean inBounds = mouseY >= contentY && mouseY <= contentBottom;
+            boolean rowHover = inBounds && mouseX >= entry.x && mouseX <= entry.x + entry.w
+                    && mouseY >= entry.y && mouseY <= entry.y + ModuleRowList.ROW_H;
+            if (entry.key.equals(KEY_ESP)) {
+                renderEspRow(graphics, entry, rowHover, mouseX, mouseY, inBounds);
+                if (rowHover) {
+                    hoveredEspRow = true;
+                }
+            } else if (entry.key.equals(KEY_TARGET_Y) || entry.key.equals(KEY_FPS)
+                    || entry.key.equals(KEY_HUD_EDIT) || entry.key.equals(KEY_HUD_RESET)) {
+                renderSpecialRow(graphics, entry, rowHover);
+                if (rowHover) {
+                    hoveredSpecialKey = entry.key;
+                }
+            } else {
+                ModuleItem item = map.get(entry.key);
+                if (item == null) {
+                    continue;
+                }
+                renderModuleRow(graphics, entry, item, rowHover, mouseX, mouseY, inBounds, textW);
+                if (rowHover) {
+                    hovered = item;
+                }
+            }
+        }
+        hoveredYSetting = KEY_TARGET_Y.equals(hoveredSpecialKey);
+        hoveredFpsSetting = KEY_FPS.equals(hoveredSpecialKey);
+        return hovered;
+    }
+
+    private void renderModuleRow(GuiGraphics graphics, ModuleRowList.Entry entry, ModuleItem item,
+                                 boolean rowHover, int mouseX, int mouseY, boolean inBounds, int textW) {
+        boolean active;
+        try {
+            active = item.getter.getAsBoolean();
+        } catch (Throwable ignored) {
+            active = false;
+        }
+        ClickGuiTheme.drawModuleRow(graphics, entry.x, entry.y, entry.w, ModuleRowList.ROW_H,
+                item.color, active, rowHover, entry.expanded);
+
+        boolean arrowHover = inBounds && rowHover
+                && mouseX >= entry.arrowX && mouseX <= entry.arrowX + ModuleRowList.ARROW_W;
+        ClickGuiTheme.drawExpandArrow(graphics, this.font, entry.arrowX + 5,
+                entry.y + (ModuleRowList.ROW_H - 8) / 2, entry.expanded, arrowHover, item.color);
+
+        // Icon item thật sau mũi tên.
+        boolean hasIcon = item.iconItem != null && !item.iconItem.isEmpty();
+        int iconX = entry.x + ModuleRowList.ARROW_W + 4;
+        if (hasIcon) {
+            int iconY = entry.y + (ModuleRowList.ROW_H - 16) / 2;
+            int iconBg = active ? ((item.color & 0x00FFFFFF) | 0x2A000000) : 0x14FFFFFF;
+            int iconBorder = active ? ((item.color & 0x00FFFFFF) | 0x60000000) : 0x20FFFFFF;
+            graphics.fill(iconX, iconY - 2, iconX + 18, iconY + 18, iconBg);
+            ClickGuiTheme.drawOutline(graphics, iconX, iconY - 2, 18, 20, iconBorder);
+            graphics.renderFakeItem(item.iconItem, iconX + 1, iconY);
+        }
+
+        ClickGuiTheme.drawPillSwitch(graphics, this.font, entry.switchX, entry.switchY,
+                ModuleRowList.SWITCH_W, ModuleRowList.SWITCH_H, active, rowHover);
+
+        int textStartX = hasIcon ? iconX + 22 : entry.x + ModuleRowList.ARROW_W + 6;
+        int textMaxW = Math.max(20, entry.switchX - textStartX - 4);
+        String name = item.name;
+        if (this.font.width(name) > textMaxW) {
+            name = this.font.plainSubstrByWidth(name, Math.max(10, textMaxW - 6)) + "..";
+        }
+        int titleColor = active ? ClickGuiTheme.TEXT_TITLE : (rowHover ? ClickGuiTheme.TEXT_BODY : ClickGuiTheme.TEXT_MUTED);
+        ClickGuiTheme.drawText(graphics, this.font, name, textStartX, entry.y + 4, titleColor, active);
+
+        String desc = item.desc;
+        if (this.font.width(desc) > textMaxW) {
+            desc = this.font.plainSubstrByWidth(desc, Math.max(10, textMaxW - 6)) + "..";
+        }
+        ClickGuiTheme.drawText(graphics, this.font, desc, textStartX, entry.y + 15,
+                rowHover ? ClickGuiTheme.TEXT_MUTED : ClickGuiTheme.TEXT_DIM, false);
+
+        if (entry.expanded) {
+            renderModuleBody(graphics, entry, item, textW, mouseX, mouseY, inBounds);
+        }
+    }
+
+    private void renderModuleBody(GuiGraphics graphics, ModuleRowList.Entry entry, ModuleItem item,
+                                  int textW, int mouseX, int mouseY, boolean inBounds) {
+        int bodyY = entry.y + ModuleRowList.ROW_H;
+        ClickGuiTheme.drawDropdownBody(graphics, entry.x, bodyY, entry.w, entry.bodyH, item.color);
+        int tx = entry.x + 8;
+        int lineW = Math.max(40, textW);
+        List<String> lines = wrapText(item.details, lineW);
+        int curY = bodyY + 6;
+        for (String line : lines) {
+            ClickGuiTheme.drawText(graphics, this.font, line, tx, curY, 0xFFCBD5E1, false);
+            curY += 12;
+        }
+        curY += 8;
+        String hint = ORE_Y_HINT.get(item.name);
+        if (hint == null) {
+            hint = "Thân row: đóng/mở • Pill switch: BẬT/TẮT";
+        }
+        if (this.font.width(hint) > lineW) {
+            hint = this.font.plainSubstrByWidth(hint, Math.max(10, lineW - 6)) + "..";
+        }
+        ClickGuiTheme.drawText(graphics, this.font, hint, tx, curY, (item.color & 0x00FFFFFF) | 0xE0000000, false);
+        curY += 12 + 6;
+
+        if (isWebhookModule(item)) {
+            int[] btn = webhookConfigButtonRect(entry, item, textW);
+            boolean btnHover = inBounds && mouseX >= btn[0] && mouseX <= btn[0] + btn[2]
+                    && mouseY >= btn[1] && mouseY <= btn[1] + btn[3];
+            if (btnHover) {
+                hoveredWebhookButton = true;
+            }
+            ClickGuiTheme.drawActionButton(graphics, this.font, ItemStack.EMPTY, "Mở cài đặt webhook",
+                    btn[0], btn[1], btn[2], btn[3], 0xFF5865F2, btnHover);
+        }
+    }
+
+    private void renderEspRow(GuiGraphics graphics, ModuleRowList.Entry entry, boolean rowHover,
+                              int mouseX, int mouseY, boolean inBounds) {
+        boolean on = espEnabled();
+        int accent = ClickGuiTheme.ACCENT_CYAN;
+        ClickGuiTheme.drawModuleRow(graphics, entry.x, entry.y, entry.w, ModuleRowList.ROW_H,
+                accent, on, rowHover, entry.expanded);
+
+        boolean arrowHover = inBounds && rowHover
+                && mouseX >= entry.arrowX && mouseX <= entry.arrowX + ModuleRowList.ARROW_W;
+        ClickGuiTheme.drawExpandArrow(graphics, this.font, entry.arrowX + 5,
+                entry.y + (ModuleRowList.ROW_H - 8) / 2, entry.expanded, arrowHover, accent);
+
+        int iconX = entry.x + ModuleRowList.ARROW_W + 4;
+        int iconY = entry.y + (ModuleRowList.ROW_H - 16) / 2;
+        graphics.fill(iconX, iconY - 2, iconX + 18, iconY + 18, on ? 0x2A38BDF8 : 0x14FFFFFF);
+        ClickGuiTheme.drawOutline(graphics, iconX, iconY - 2, 18, 20, on ? 0x6038BDF8 : 0x20FFFFFF);
+        graphics.renderFakeItem(new ItemStack(Items.ENDER_EYE), iconX + 1, iconY);
+
+        ClickGuiTheme.drawPillSwitch(graphics, this.font, entry.switchX, entry.switchY,
+                ModuleRowList.SWITCH_W, ModuleRowList.SWITCH_H, on, rowHover);
+
+        int textStartX = iconX + 22;
+        int textMaxW = Math.max(20, entry.switchX - textStartX - 4);
+        String name = "ESP Quặng (chỉ cache)";
+        if (this.font.width(name) > textMaxW) {
+            name = this.font.plainSubstrByWidth(name, Math.max(10, textMaxW - 6)) + "..";
+        }
+        int titleColor = on ? ClickGuiTheme.TEXT_TITLE : (rowHover ? ClickGuiTheme.TEXT_BODY : ClickGuiTheme.TEXT_MUTED);
+        ClickGuiTheme.drawText(graphics, this.font, name, textStartX, entry.y + 4, titleColor, on);
+
+        int radius = OreEspController.clampRadius(Baritone.settings().oreEspRadius.value);
+        String desc = on ? ("Đang bật • bán kính " + radius + " • tối đa 128 box") : "Đang tắt (mặc định)";
+        if (this.font.width(desc) > textMaxW) {
+            desc = this.font.plainSubstrByWidth(desc, Math.max(10, textMaxW - 6)) + "..";
+        }
+        ClickGuiTheme.drawText(graphics, this.font, desc, textStartX, entry.y + 15,
+                rowHover ? ClickGuiTheme.TEXT_MUTED : ClickGuiTheme.TEXT_DIM, false);
+
+        if (entry.expanded) {
+            renderEspBody(graphics, entry, on, mouseX, mouseY, inBounds);
+        }
+    }
+
+    private void renderEspBody(GuiGraphics graphics, ModuleRowList.Entry entry, boolean on,
+                               int mouseX, int mouseY, boolean inBounds) {
+        int bodyY = entry.y + ModuleRowList.ROW_H;
+        ClickGuiTheme.drawDropdownBody(graphics, entry.x, bodyY, entry.w, entry.bodyH, ClickGuiTheme.ACCENT_CYAN);
+
+        int[] kill = espKillRect(entry);
+        boolean killHover = inBounds && mouseX >= kill[0] && mouseX <= kill[0] + kill[2]
+                && mouseY >= kill[1] && mouseY <= kill[1] + kill[3];
+        if (killHover) {
+            hoveredEspButton = 1;
+        }
+        ClickGuiTheme.drawEspKillButton(graphics, this.font,
+                on ? "TẮT ESP NGAY" : "ESP ĐANG TẮT",
+                kill[0], kill[1], kill[2], kill[3], on, killHover);
+
+        int rowY = bodyY + 30;
+        int radius = OreEspController.clampRadius(Baritone.settings().oreEspRadius.value);
+        ClickGuiTheme.drawText(graphics, this.font, "Bán kính quét", entry.x + 8, rowY + 4, 0xFFE2E8F0, false);
+        int[] minus = espMinusRect(entry);
+        int[] value = espValueRect(entry);
+        int[] plus = espPlusRect(entry);
+        boolean minusHover = inBounds && mouseX >= minus[0] && mouseX <= minus[0] + minus[2]
+                && mouseY >= minus[1] && mouseY <= minus[1] + minus[3];
+        boolean plusHover = inBounds && mouseX >= plus[0] && mouseX <= plus[0] + plus[2]
+                && mouseY >= plus[1] && mouseY <= plus[1] + plus[3];
+        if (minusHover) {
+            hoveredEspButton = 2;
+        } else if (plusHover) {
+            hoveredEspButton = 3;
+        }
+        drawStepperBox(graphics, minus[0], minus[1], minus[2], minus[3], "−", minusHover);
+        String radiusText = radius + "";
+        ClickGuiTheme.drawText(graphics, this.font, radiusText,
+                value[0] + (value[2] - this.font.width(radiusText)) / 2, value[1] + 4, 0xFFFFFFFF, false);
+        drawStepperBox(graphics, plus[0], plus[1], plus[2], plus[3], "+", plusHover);
+
+        int xrayY = bodyY + 52;
+        ClickGuiTheme.drawText(graphics, this.font, "Xuyên tường (chỉ nơi cho phép)",
+                entry.x + 8, xrayY + 4, 0xFFE2E8F0, false);
+        int[] xray = espXraySwitchRect(entry);
+        boolean xrayOn = Baritone.settings().oreEspXray.value;
+        boolean xrayHover = inBounds && mouseX >= xray[0] && mouseX <= xray[0] + xray[2]
+                && mouseY >= xray[1] && mouseY <= xray[1] + xray[3];
+        if (xrayHover) {
+            hoveredEspButton = 4;
+        }
+        ClickGuiTheme.drawPillSwitch(graphics, this.font, xray[0], xray[1], xray[2], xray[3], xrayOn, xrayHover);
+
+        String info = "Tối đa 128 box • chỉ cache • tự tắt khi farm lớn";
+        int infoW = entry.w - 16;
+        if (this.font.width(info) > infoW) {
+            info = this.font.plainSubstrByWidth(info, Math.max(10, infoW - 6)) + "..";
+        }
+        ClickGuiTheme.drawText(graphics, this.font, info, entry.x + 8, bodyY + 72, ClickGuiTheme.TEXT_DIM, false);
+    }
+
+    private void drawStepperBox(GuiGraphics graphics, int x, int y, int w, int h, String text, boolean hover) {
+        graphics.fill(x, y, x + w, y + h, hover ? 0x3538BDF8 : 0x2038BDF8);
+        ClickGuiTheme.drawOutline(graphics, x, y, w, h, hover ? 0xA038BDF8 : 0x6038BDF8);
+        ClickGuiTheme.drawText(graphics, this.font, text,
+                x + (w - this.font.width(text)) / 2, y + (h - 8) / 2, 0xFFFFFFFF, hover);
+    }
+
+    private void renderSpecialRow(GuiGraphics graphics, ModuleRowList.Entry entry, boolean rowHover) {
+        int accent = ClickGuiTheme.ACCENT_CYAN;
+        ItemStack icon = ItemStack.EMPTY;
+        String title = "";
+        String sub = "";
+        String right = null;
+        if (entry.key.equals(KEY_TARGET_Y)) {
+            accent = ClickGuiTheme.ACCENT_CYAN;
+            icon = new ItemStack(Items.COMPASS);
+            title = "Tầng Y: " + (optTargetY == 999 ? "Hiện tại" : "Y=" + optTargetY);
+            sub = "(-58, -54, 11, Hiện tại)";
+        } else if (entry.key.equals(KEY_FPS)) {
+            accent = ClickGuiTheme.ACCENT_EMERALD;
+            icon = new ItemStack(Items.CLOCK);
+            int curFpsLimit = 60;
+            try {
+                curFpsLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
+            } catch (Throwable ignored) {}
+            title = "FPS Limit: " + (curFpsLimit >= 260 ? "Max" : curFpsLimit + " FPS");
+            sub = "Click để đổi mức FPS";
+        } else if (entry.key.equals(KEY_HUD_EDIT)) {
+            accent = ClickGuiTheme.ACCENT_PURPLE;
+            icon = new ItemStack(Items.ITEM_FRAME);
+            title = "Chỉnh HUD (kéo-thả)";
+            sub = "Mở trình chỉnh vị trí và tỉ lệ";
+            right = "MỞ →";
+        } else if (entry.key.equals(KEY_HUD_RESET)) {
+            accent = ClickGuiTheme.ACCENT_AMBER;
+            icon = new ItemStack(Items.RECOVERY_COMPASS);
+            title = "Reset vị trí HUD";
+            sub = "Chỉ reset vị trí, không xóa thống kê";
+            right = "RESET";
+        }
+        ClickGuiTheme.drawDoubleBezelCard(graphics, entry.x, entry.y, entry.w, ModuleRowList.ROW_H, accent, false, rowHover);
+        graphics.fill(entry.x + 1, entry.y + 2, entry.x + 3, entry.y + ModuleRowList.ROW_H - 2, accent);
+        if (!icon.isEmpty()) {
+            int iconY = entry.y + (ModuleRowList.ROW_H - 16) / 2;
+            graphics.fill(entry.x + 6, iconY - 2, entry.x + 24, iconY + 18, rowHover ? 0x22FFFFFF : 0x14FFFFFF);
+            ClickGuiTheme.drawOutline(graphics, entry.x + 6, iconY - 2, 18, 20, rowHover ? 0x40FFFFFF : 0x20FFFFFF);
+            graphics.renderFakeItem(icon, entry.x + 7, iconY);
+        }
+        int textX = entry.x + 30;
+        int textMaxW = entry.w - 60 - (right != null ? 40 : 0);
+        if (this.font.width(title) > textMaxW) {
+            title = this.font.plainSubstrByWidth(title, Math.max(10, textMaxW - 6)) + "..";
+        }
+        ClickGuiTheme.drawText(graphics, this.font, title, textX, entry.y + 3, ClickGuiTheme.TEXT_TITLE, true);
+        ClickGuiTheme.drawText(graphics, this.font, sub, textX, entry.y + 14, ClickGuiTheme.TEXT_DIM, false);
+        if (right != null) {
+            ClickGuiTheme.drawText(graphics, this.font, right, entry.x + entry.w - 8 - this.font.width(right),
+                    entry.y + 9, rowHover ? 0xFFFFFFFF : ClickGuiTheme.TEXT_MUTED, rowHover);
+        }
+    }
+
+    private boolean espEnabled() {
+        try {
+            return Baritone.settings().oreEspEnabled.value;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         // Nền tối mờ chuẩn LiquidBounce Nextgen Dark Glass
@@ -1078,8 +1819,8 @@ public class AutoMineScreen extends Screen implements Helper {
         ResponsiveLayout l = new ResponsiveLayout(this.width, this.height, activeTab, !searchQuery.isEmpty());
 
         ModuleItem hoveredItem = null;
-        boolean hoveredYSetting = false;
-        boolean hoveredFpsSetting = false;
+        hoveredYSetting = false;
+        hoveredFpsSetting = false;
         int hoveredActionIdx = -1;
         int hoveredQuickIdx = -1;
         int hoveredTabIdx = -1;
@@ -1113,28 +1854,48 @@ public class AutoMineScreen extends Screen implements Helper {
             ClickGuiTheme.drawText(graphics, this.font, versionTag, l.panelX + l.panelW - vW - 6, 7, ClickGuiTheme.TEXT_DIM, false);
         }
 
-        // 2. LiquidBounce Nextgen Tab Bar (100% Responsive Tab Titles)
-        graphics.fill(l.panelX, l.tabY, l.panelX + l.panelW, l.tabY + l.tabH, ClickGuiTheme.BG_CARD);
-        ClickGuiTheme.drawOutline(graphics, l.panelX, l.tabY, l.panelW, l.tabH, ClickGuiTheme.BORDER_CARD);
-
-        for (int i = 0; i < 6; i++) {
-            int tx = l.panelX + i * l.tabW;
-            boolean isTabActive = (activeTab == i && searchQuery.isEmpty());
-            boolean isTabHover = mouseX >= tx && mouseX <= tx + l.tabW && mouseY >= l.tabY && mouseY <= l.tabY + l.tabH;
-            if (isTabHover) {
-                hoveredTabIdx = i;
+        // 2. Sidebar dọc kiểu LiquidBounce (fallback tab ngang khi GUI hẹp)
+        SidebarLayout sb = new SidebarLayout(l.panelX, l.panelW, this.width);
+        int contentX = sb.contentX;
+        int contentW = sb.contentW;
+        if (sb.useSidebar) {
+            graphics.fill(l.panelX, l.tabY, l.panelX + SidebarLayout.SIDEBAR_W, l.tabY + sb.sidebarHeight(6), ClickGuiTheme.BG_SIDEBAR);
+            ClickGuiTheme.drawOutline(graphics, l.panelX, l.tabY, SidebarLayout.SIDEBAR_W, sb.sidebarHeight(6), ClickGuiTheme.BORDER_CARD);
+            for (int i = 0; i < 6; i++) {
+                int ty = sb.sidebarButtonY(l.tabY, i);
+                boolean isTabActive = (activeTab == i && searchQuery.isEmpty());
+                boolean isTabHover = mouseX >= l.panelX && mouseX <= l.panelX + SidebarLayout.SIDEBAR_W
+                        && mouseY >= ty && mouseY <= ty + SidebarLayout.SIDEBAR_BUTTON_H;
+                if (isTabHover) {
+                    hoveredTabIdx = i;
+                }
+                ClickGuiTheme.drawSidebarButton(graphics, this.font, TAB_ITEM_ICONS[i], TAB_FULL_NAMES[i],
+                        l.panelX, ty, SidebarLayout.SIDEBAR_W, SidebarLayout.SIDEBAR_BUTTON_H,
+                        isTabActive, isTabHover, ClickGuiTheme.ACCENT_CYAN);
             }
-            String tabTitle = getResponsiveTabTitle(i, l.tabW);
-            ClickGuiTheme.drawTab(graphics, this.font, TAB_ITEM_ICONS[i], tabTitle, tx, l.tabY, l.tabW, l.tabH, isTabActive, isTabHover, ClickGuiTheme.ACCENT_CYAN);
+        } else {
+            graphics.fill(l.panelX, l.tabY, l.panelX + l.panelW, l.tabY + l.tabH, ClickGuiTheme.BG_CARD);
+            ClickGuiTheme.drawOutline(graphics, l.panelX, l.tabY, l.panelW, l.tabH, ClickGuiTheme.BORDER_CARD);
+            for (int i = 0; i < 6; i++) {
+                int tx = l.panelX + i * l.tabW;
+                boolean isTabActive = (activeTab == i && searchQuery.isEmpty());
+                boolean isTabHover = mouseX >= tx && mouseX <= tx + l.tabW && mouseY >= l.tabY && mouseY <= l.tabY + l.tabH;
+                if (isTabHover) {
+                    hoveredTabIdx = i;
+                }
+                String tabTitle = getResponsiveTabTitle(i, l.tabW);
+                ClickGuiTheme.drawTab(graphics, this.font, TAB_ITEM_ICONS[i], tabTitle, tx, l.tabY, l.tabW, l.tabH, isTabActive, isTabHover, ClickGuiTheme.ACCENT_CYAN);
+            }
         }
 
-        // 3. Search Bar + 3 Filter Chips (Tất Cả / Đang Bật / Đang Tắt)
-        int searchBoxW = l.searchBoxW;
-        graphics.fill(l.panelX, l.searchY, l.panelX + searchBoxW, l.searchY + l.searchH, ClickGuiTheme.BG_INPUT);
+        // 3. Search Bar + 3 Filter Chips (nằm trong content phải của sidebar)
+        int filterW = contentW >= 480 ? 156 : 0;
+        int searchBoxW = filterW > 0 ? contentW - filterW - 6 : contentW;
+        graphics.fill(contentX, l.searchY, contentX + searchBoxW, l.searchY + l.searchH, ClickGuiTheme.BG_INPUT);
         int searchBorder = searchFocused ? ClickGuiTheme.ACCENT_CYAN : ClickGuiTheme.BORDER_CARD;
-        ClickGuiTheme.drawOutline(graphics, l.panelX, l.searchY, searchBoxW, l.searchH, searchBorder);
+        ClickGuiTheme.drawOutline(graphics, contentX, l.searchY, searchBoxW, l.searchH, searchBorder);
 
-        boolean searchHover = mouseX >= l.panelX && mouseX <= l.panelX + searchBoxW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH;
+        boolean searchHover = mouseX >= contentX && mouseX <= contentX + searchBoxW && mouseY >= l.searchY && mouseY <= l.searchY + l.searchH;
         if (searchHover) {
             hoveredSearch = true;
         }
@@ -1142,22 +1903,22 @@ public class AutoMineScreen extends Screen implements Helper {
         String searchPrompt = searchQuery.isEmpty() ? (searchFocused ? "" : "⌕  Tìm kiếm tính năng, quặng...") : searchQuery;
         int searchColor = searchQuery.isEmpty() ? ClickGuiTheme.TEXT_DIM : ClickGuiTheme.TEXT_TITLE;
         int searchPromptY = l.searchY + (l.searchH - 8) / 2;
-        ClickGuiTheme.drawText(graphics, this.font, searchPrompt, l.panelX + 6, searchPromptY, searchColor, false);
+        ClickGuiTheme.drawText(graphics, this.font, searchPrompt, contentX + 6, searchPromptY, searchColor, false);
         if (searchFocused && (System.currentTimeMillis() / 400) % 2 == 0) {
-            int cursorX = l.panelX + 6 + this.font.width(searchQuery);
+            int cursorX = contentX + 6 + this.font.width(searchQuery);
             graphics.fill(cursorX, l.searchY + 3, cursorX + 1, l.searchY + l.searchH - 3, ClickGuiTheme.ACCENT_CYAN);
         }
 
         if (!searchQuery.isEmpty()) {
-            int clearX = l.panelX + searchBoxW - 14;
+            int clearX = contentX + searchBoxW - 14;
             int clearY = l.searchY + (l.searchH - 10) / 2;
             boolean clearHover = mouseX >= clearX - 2 && mouseX <= clearX + 10 && mouseY >= clearY && mouseY <= clearY + 10;
             ClickGuiTheme.drawText(graphics, this.font, "×", clearX, clearY, clearHover ? 0xFFFFFFFF : ClickGuiTheme.TEXT_MUTED, clearHover);
         }
 
-        if (l.filterW > 0) {
-            int chipStart = l.panelX + searchBoxW + 6;
-            int chipW = (l.filterW - 4) / 3;
+        if (filterW > 0) {
+            int chipStart = contentX + searchBoxW + 6;
+            int chipW = (filterW - 4) / 3;
             String[] filterLabels = new String[]{"Tất Cả", "Đang Bật", "Đang Tắt"};
             int[] filterAccents = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_EMERALD, ClickGuiTheme.ACCENT_ROSE};
             for (int c = 0; c < 3; c++) {
@@ -1171,13 +1932,13 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         }
 
-        // 4. Quick Action Presets (Tab 0, 1, 2, 3)
+        // 4. Quick Action Presets (Tab 0, 1, 2, 3) — áp dụng toàn bộ danh sách, không chỉ kết quả lọc
         if ((activeTab >= 0 && activeTab <= 3) && searchQuery.isEmpty()) {
-            int btnW = (l.panelW - 3 * 4) / 4;
+            int btnW = (contentW - 3 * 4) / 4;
             int[] qColors = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_EMERALD, ClickGuiTheme.ACCENT_PURPLE, ClickGuiTheme.ACCENT_AMBER};
 
             for (int q = 0; q < 4; q++) {
-                int qx = l.panelX + q * (btnW + 4);
+                int qx = contentX + q * (btnW + 4);
                 boolean qHover = mouseX >= qx && mouseX <= qx + btnW && mouseY >= l.quickY && mouseY <= l.quickY + l.quickH;
                 if (qHover) {
                     hoveredQuickIdx = q;
@@ -1187,126 +1948,19 @@ public class AutoMineScreen extends Screen implements Helper {
             }
         }
 
-        // 5. Danh sách Card Modules (Scissor Box an toàn)
-        graphics.enableScissor(l.panelX - 1, l.contentY, l.panelX + l.panelW + 1, l.contentBottom);
+        // 5. Danh sách module dropdown LB (Scissor Box an toàn)
+        graphics.enableScissor(contentX - 1, l.contentY, contentX + contentW + 1, l.contentBottom);
 
         if (activeTab == 5 && searchQuery.isEmpty()) {
-            boolean isCompact = l.panelW < 540;
+            boolean isCompact = contentW < 540;
             int totalTab5H = isCompact ? (96 + 6 + 96 + 6 + 94) : (96 + 6 + 94);
             maxScroll = Math.max(0, totalTab5H - (l.contentBottom - l.contentY));
-            hoveredDiscordBtn = renderTelemetryDashboard(graphics, l.panelX, l.contentY - scrollOffset, l.panelW, mouseX, mouseY);
+            scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+            hoveredDiscordBtn = renderTelemetryDashboard(graphics, contentX, l.contentY - scrollOffset, contentW, mouseX, mouseY);
         } else {
-            List<ModuleItem> filtered = getFilteredModules();
-            int totalRows = (filtered.size() + l.cardCols - 1) / l.cardCols;
-            if (activeTab == 4 && searchQuery.isEmpty()) {
-                totalRows++;
-            }
-            maxScroll = Math.max(0, totalRows * (l.cardH + 4) - (l.contentBottom - l.contentY));
-
-            int switchW = l.isCompact ? 28 : 32;
-            int switchH = l.isCompact ? 14 : 16;
-
-            for (int i = 0; i < filtered.size(); i++) {
-                int col = i % l.cardCols;
-                int row = i / l.cardCols;
-                int cardX = l.panelX + col * (l.colW + l.cardGap);
-                int cardY = l.contentY + row * (l.cardH + 4) - scrollOffset;
-
-                ModuleItem item = filtered.get(i);
-                boolean active = item.getter.getAsBoolean();
-                boolean hover = mouseX >= cardX && mouseX <= cardX + l.colW && mouseY >= cardY && mouseY <= cardY + l.cardH;
-                if (hover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
-                    hoveredItem = item;
-                }
-
-                // Double-Bezel Card chuẩn Taste Skill
-                ClickGuiTheme.drawDoubleBezelCard(graphics, cardX, cardY, l.colW, l.cardH, item.color, active, hover);
-
-                // Đường vạch đứng hiển thị trạng thái bên trái
-                int leftBarColor = active ? item.color : (hover ? 0x8038BDF8 : 0x3064748B);
-                graphics.fill(cardX + 1, cardY + 2, cardX + 3, cardY + l.cardH - 2, leftBarColor);
-
-                // Khung lồng chứa Item Icon thật với nền kính mờ bảo vệ
-                boolean hasItemIcon = (item.iconItem != null && !item.iconItem.isEmpty());
-                if (hasItemIcon) {
-                    int iconY = cardY + (l.cardH - 16) / 2;
-                    int iconBg = active ? ((item.color & 0x00FFFFFF) | 0x2A000000) : 0x14FFFFFF;
-                    int iconBorder = active ? ((item.color & 0x00FFFFFF) | 0x60000000) : 0x20FFFFFF;
-                    graphics.fill(cardX + 5, iconY - 2, cardX + 23, iconY + 18, iconBg);
-                    ClickGuiTheme.drawOutline(graphics, cardX + 5, iconY - 2, 18, 20, iconBorder);
-                    graphics.renderFakeItem(item.iconItem, cardX + 6, iconY);
-                }
-
-                // Switch viên thuốc xúc giác 3D
-                int switchX = cardX + l.colW - switchW - 6;
-                int switchY = cardY + (l.cardH - switchH) / 2;
-                ClickGuiTheme.drawPillSwitch(graphics, this.font, switchX, switchY, switchW, switchH, active, hover);
-
-                // Text Module bắt đầu sau Icon, có cắt ngắn an toàn không bao giờ đè switch
-                int textStartX = hasItemIcon ? (cardX + 27) : (cardX + 8);
-                int textMaxW = switchX - textStartX - 4;
-                String name = item.name;
-                if (this.font.width(name) > textMaxW) {
-                    name = this.font.plainSubstrByWidth(name, Math.max(10, textMaxW - 6)) + "..";
-                }
-                int titleY = cardY + (l.isCompact ? 3 : 5);
-                int titleColor = active ? ClickGuiTheme.TEXT_TITLE : (hover ? ClickGuiTheme.TEXT_BODY : ClickGuiTheme.TEXT_MUTED);
-                ClickGuiTheme.drawText(graphics, this.font, name, textStartX, titleY, titleColor, active);
-
-                if (!l.isCompact || l.cardH >= 28) {
-                    String desc = item.desc;
-                    if (item.name.equals("Auto-Logout") && AutoLogoutTracker.hasLoggedOut()) {
-                        desc = String.format(java.util.Locale.ROOT, "Toạ độ: X:%.1f Y:%.1f Z:%.1f",
-                                AutoLogoutTracker.getLastX(),
-                                AutoLogoutTracker.getLastY(),
-                                AutoLogoutTracker.getLastZ());
-                    }
-                    if (this.font.width(desc) > textMaxW) {
-                        desc = this.font.plainSubstrByWidth(desc, Math.max(10, textMaxW - 6)) + "..";
-                    }
-                    int descY = cardY + (l.isCompact ? 14 : 17);
-                    int descColor = hover ? ClickGuiTheme.TEXT_MUTED : ClickGuiTheme.TEXT_DIM;
-                    ClickGuiTheme.drawText(graphics, this.font, desc, textStartX, descY, descColor, false);
-                }
-            }
-
-            // Target Y & FPS Limiter trong Tab 4 (HUD)
-            if (activeTab == 4 && searchQuery.isEmpty()) {
-                int extraRowY = l.contentY + ((filtered.size() + l.cardCols - 1) / l.cardCols) * (l.cardH + 4) - scrollOffset;
-                int halfColW = (l.panelW - 6) / 2;
-
-                int yBtnX = l.panelX;
-                boolean yHover = mouseX >= yBtnX && mouseX <= yBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH;
-                if (yHover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
-                    hoveredYSetting = true;
-                }
-                ClickGuiTheme.drawDoubleBezelCard(graphics, yBtnX, extraRowY, halfColW, l.cardH, ClickGuiTheme.ACCENT_CYAN, false, yHover);
-                graphics.fill(yBtnX + 1, extraRowY + 2, yBtnX + 3, extraRowY + l.cardH - 2, ClickGuiTheme.ACCENT_CYAN);
-                int yIconBg = yHover ? 0x22FFFFFF : 0x14FFFFFF;
-                int yIconBorder = yHover ? 0x40FFFFFF : 0x20FFFFFF;
-                graphics.fill(yBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, yBtnX + 23, extraRowY + (l.cardH - 16) / 2 + 18, yIconBg);
-                ClickGuiTheme.drawOutline(graphics, yBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, 18, 20, yIconBorder);
-                graphics.renderFakeItem(new ItemStack(Items.COMPASS), yBtnX + 6, extraRowY + (l.cardH - 16) / 2);
-                String yLabel = optTargetY == 999 ? "Hiện tại" : "Y=" + optTargetY;
-                ClickGuiTheme.drawText(graphics, this.font, "Tầng Y: " + yLabel, yBtnX + 26, extraRowY + 5, ClickGuiTheme.TEXT_TITLE, true);
-                ClickGuiTheme.drawText(graphics, this.font, "(-58, -54, 11, Hiện tại)", yBtnX + 26, extraRowY + 16, ClickGuiTheme.TEXT_DIM, false);
-
-                int fpsBtnX = l.panelX + halfColW + 6;
-                boolean fpsHover = mouseX >= fpsBtnX && mouseX <= fpsBtnX + halfColW && mouseY >= extraRowY && mouseY <= extraRowY + l.cardH;
-                if (fpsHover && mouseY >= l.contentY && mouseY <= l.contentBottom) {
-                    hoveredFpsSetting = true;
-                }
-                ClickGuiTheme.drawDoubleBezelCard(graphics, fpsBtnX, extraRowY, halfColW, l.cardH, ClickGuiTheme.ACCENT_EMERALD, false, fpsHover);
-                graphics.fill(fpsBtnX + 1, extraRowY + 2, fpsBtnX + 3, extraRowY + l.cardH - 2, ClickGuiTheme.ACCENT_EMERALD);
-                int fpsIconBg = fpsHover ? 0x22FFFFFF : 0x14FFFFFF;
-                int fpsIconBorder = fpsHover ? 0x40FFFFFF : 0x20FFFFFF;
-                graphics.fill(fpsBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, fpsBtnX + 23, extraRowY + (l.cardH - 16) / 2 + 18, fpsIconBg);
-                ClickGuiTheme.drawOutline(graphics, fpsBtnX + 5, extraRowY + (l.cardH - 16) / 2 - 2, 18, 20, fpsIconBorder);
-                graphics.renderFakeItem(new ItemStack(Items.CLOCK), fpsBtnX + 6, extraRowY + (l.cardH - 16) / 2);
-                int curFpsLimit = baritone.getPlayerContext().minecraft().options.framerateLimit().get();
-                String fpsStr = curFpsLimit >= 260 ? "Max" : curFpsLimit + " FPS";
-                ClickGuiTheme.drawText(graphics, this.font, "FPS Limit: " + fpsStr, fpsBtnX + 26, extraRowY + 5, ClickGuiTheme.TEXT_TITLE, true);
-                ClickGuiTheme.drawText(graphics, this.font, "Click để đổi mức FPS", fpsBtnX + 26, extraRowY + 16, ClickGuiTheme.TEXT_DIM, false);
+            ModuleItem hovered = renderModuleList(graphics, contentX, l.contentY, contentW, l.contentBottom, mouseX, mouseY);
+            if (hovered != null) {
+                hoveredItem = hovered;
             }
         }
 
@@ -1399,13 +2053,38 @@ public class AutoMineScreen extends Screen implements Helper {
                             mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
                     break;
             }
+        } else if (hoveredEspRow) {
+            String espDesc = espEnabled() ? "Highlight quặng đang bật" : "Highlight quặng đang tắt (mặc định)";
+            String espDetail = "Chỉ đọc cache client sẵn có, không live-scan. Nút TẮT ESP NGAY luôn đứng đầu dropdown. "
+                    + "Bán kính 8–64 block, tối đa 128 box, tự tắt khi farm lớn.";
+            String espFooter = hoveredEspButton == 1 ? "§8[Chuột trái] §7Tắt ESP ngay"
+                    : (hoveredEspButton == 2 || hoveredEspButton == 3 ? "§8[Chuột trái] §7Đổi bán kính (bước 8)"
+                    : (hoveredEspButton == 4 ? "§8[Chuột trái] §7Bật/tắt xuyên tường"
+                    : "§8[Switch] §7Bật/tắt • §8[Thân row] §7Đóng/mở"));
+            drawModernTooltip(graphics, "ESP Quặng (chỉ cache)", espEnabled(), espDesc, espDetail,
+                    espFooter, mouseX, mouseY, ClickGuiTheme.ACCENT_CYAN);
+        } else if (hoveredWebhookButton) {
+            drawModernTooltip(graphics, "Mở cài đặt webhook", null, "Sang tab Chỉ Số nhập URL",
+                    "Mở tab Chỉ Số để dán Discord Webhook URL, gửi thử và đổi chu kỳ báo cáo.",
+                    "§8[Chuột trái] §7Mở tab Chỉ Số",
+                    mouseX, mouseY, 0xFF5865F2);
+        } else if (KEY_HUD_RESET.equals(hoveredSpecialKey)) {
+            drawModernTooltip(graphics, "Reset vị trí HUD", null, "Đưa HUD về góc mặc định",
+                    "Chỉ reset vị trí về (8,8), không xóa số liệu thống kê. Tỉ lệ và trạng thái thu gọn được giữ nguyên.",
+                    "§8[Chuột trái] §7Reset vị trí",
+                    mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
+        } else if (KEY_HUD_EDIT.equals(hoveredSpecialKey)) {
+            drawModernTooltip(graphics, "Chỉnh HUD (kéo-thả)", null, "Mở trình chỉnh vị trí và tỉ lệ",
+                    "Kéo thanh tiêu đề HUD để di chuyển, đổi Nhỏ 0.8x / Vừa 1.0x / Lớn 1.25x, thu gọn hoặc reset vị trí. Chỉ lưu khi thả chuột hoặc đổi setting.",
+                    "§8[Chuột trái] §7Mở trình chỉnh HUD",
+                    mouseX, mouseY, ClickGuiTheme.ACCENT_PURPLE);
         } else if (hoveredItem != null) {
             drawModernTooltip(graphics,
                     hoveredItem.name,
                     hoveredItem.getter.getAsBoolean(),
                     hoveredItem.desc,
                     hoveredItem.details,
-                    "§8[Chuột trái] §7Chuyển đổi Bật / Tắt",
+                    "§8[Switch] §7Bật/tắt • §8[Thân row] §7Đóng/mở chi tiết",
                     mouseX, mouseY, hoveredItem.color);
         } else if (hoveredYSetting) {
             drawModernTooltip(graphics,
@@ -1726,9 +2405,11 @@ public class AutoMineScreen extends Screen implements Helper {
         int borderColor = (accentColor & 0x00FFFFFF) | 0x75000000;
         ClickGuiTheme.drawOutline(graphics, tooltipX, tooltipY, boxW, totalH, borderColor);
 
-        // 4. Thanh phát sáng trên cùng (Top Neon Highlight Bar) kèm ánh sáng loang nhẹ
+        // 4. Thanh phát sáng trên cùng (Top Neon Highlight Bar) kèm ánh sáng loang nhẹ (gọn ở farm nặng)
         graphics.fill(tooltipX + 1, tooltipY + 1, tooltipX + boxW - 1, tooltipY + 3, accentColor);
-        graphics.fillGradient(tooltipX + 1, tooltipY + 3, tooltipX + boxW - 1, tooltipY + 8, (accentColor & 0x00FFFFFF) | 0x25000000, 0x00000000);
+        if (!ClickGuiTheme.heavyMode()) {
+            graphics.fillGradient(tooltipX + 1, tooltipY + 3, tooltipX + boxW - 1, tooltipY + 8, (accentColor & 0x00FFFFFF) | 0x25000000, 0x00000000);
+        }
 
         int curY = tooltipY + padY + 1;
         int textX = tooltipX + padX;
@@ -1972,7 +2653,8 @@ public class AutoMineScreen extends Screen implements Helper {
         if (baritone.getPlayerContext().player() != null && baritone.getPlayerContext().player().containerMenu != baritone.getPlayerContext().player().inventoryMenu) {
             baritone.getPlayerContext().player().closeContainer();
         }
-        Helper.HELPER.logDirect("§c[Tr0ngX] Đã dừng toàn bộ quá trình đào!");
+        Helper.HELPER.logDirect(Component.literal("§e[Quặng] Đã dừng  "),
+                ChatButtons.openGuiButton());
     }
 
     private void startAutoChop() {
@@ -2094,7 +2776,10 @@ public class AutoMineScreen extends Screen implements Helper {
         }
 
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
-        Helper.HELPER.logDirect("§a[AutoChop] Đã bắt đầu TỰ ĐỘNG CHẶT CÂY!");
+        Helper.HELPER.logDirect(Component.literal("§b[Cây] Đang chặt cây đã chọn  "),
+                ChatButtons.openGuiButton(),
+                Component.literal(" "),
+                ChatButtons.stopButton());
 
         MiningStatsTracker.getInstance().reset();
         baritone.getMineProcess().setChopMode(true);
@@ -2104,6 +2789,10 @@ public class AutoMineScreen extends Screen implements Helper {
     private void startAutoMine() {
         AutoMineConfig.save();
         IPlayerContext playerCtx = baritone.getPlayerContext();
+        if (playerCtx.player() == null || playerCtx.world() == null) {
+            Helper.HELPER.logDirect("§e[Tr0ngX] Hãy vào world rồi mới bắt đầu đào!");
+            return;
+        }
 
         Baritone.settings().autoTool.value = optAutoTool;
         Baritone.settings().assumeExternalAutoTool.value = false;
@@ -2248,7 +2937,10 @@ public class AutoMineScreen extends Screen implements Helper {
 
         baritone.getPathingBehavior().cancelSegmentIfSafe();
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
-        Helper.HELPER.logDirect("§a[Tr0ngX] Bắt đầu đào: " + String.join(", ", oreNames) + " (Tầng Y: " + targetY + ")");
+        Helper.HELPER.logDirect(Component.literal("§b[Quặng] Đang đào: " + String.join(", ", oreNames) + " (Y=" + targetY + ")  "),
+                ChatButtons.openGuiButton(),
+                Component.literal(" "),
+                ChatButtons.stopButton());
 
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }

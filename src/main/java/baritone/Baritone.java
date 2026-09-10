@@ -97,6 +97,7 @@ public class Baritone implements IBaritone {
     private final PathingControlManager pathingControlManager;
     private final SelectionManager selectionManager;
     private final CommandManager commandManager;
+    private final baritone.utils.esp.OreEspController oreEspController;
 
     private final IPlayerContext playerContext;
     private final WorldProvider worldProvider;
@@ -143,6 +144,7 @@ public class Baritone implements IBaritone {
         this.worldProvider = new WorldProvider(this);
         this.selectionManager = new SelectionManager(this);
         this.commandManager = new CommandManager(this);
+        this.oreEspController = new baritone.utils.esp.OreEspController(this);
 
         DiscordManager.getInstance().start();
     }
@@ -234,6 +236,10 @@ public class Baritone implements IBaritone {
     @Override
     public SelectionManager getSelectionManager() {
         return selectionManager;
+    }
+
+    public baritone.utils.esp.OreEspController getOreEspController() {
+        return oreEspController;
     }
 
     @Override
