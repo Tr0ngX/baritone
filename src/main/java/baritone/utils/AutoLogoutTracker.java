@@ -31,6 +31,11 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.GameType;
+import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.Team;
 
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.renderer.texture.DynamicTexture;
@@ -180,6 +185,18 @@ public final class AutoLogoutTracker {
         if (!Baritone.settings().autoLogoutOnPlayer.value) {
             return null;
         }
+        if (Baritone.settings().neverKick.value) {
+            return null;
+        }
+        if (joinGraceTicks > 0) {
+            return null;
+        }
+        if (isInLobbyOrSafezone(ctx)) {
+            return null;
+        }
+        if (Baritone.settings().autoLogoutOnlyWhileMining.value && !isBaritoneBusyMining()) {
+            return null;
+        }
 
         LocalPlayer self = ctx.player();
         UUID selfUUID = self.getUUID();
@@ -231,45 +248,27 @@ public final class AutoLogoutTracker {
         } catch (Throwable ignored) {}
 
         for (Player p : candidates) {
-            if (p == null || p == self) {
+            if (p == null || !p.isAlive() || p.isRemoved()) {
                 continue;
             }
+
+            // Tuyệt đối không bao giờ kick khi gặp lại chính bản thân hoặc người trong team/clan
+            if (isSelfOrTeammate(self, p, whitelist)) {
+                continue;
+            }
+
             UUID uuid = p.getUUID();
             if (uuid != null) {
-                if (uuid.equals(selfUUID)) {
-                    continue;
-                }
                 if (checkedUUIDs.contains(uuid)) {
                     continue;
                 }
                 checkedUUIDs.add(uuid);
-            }
-            if (!p.isAlive() || p.isRemoved()) {
-                continue;
             }
 
             String name = p.getScoreboardName();
             if (name == null || name.isEmpty()) {
                 name = p.getName().getString();
             }
-
-            // Bỏ qua thực thể clone / bot nhái tên của chính mình do plugin server / anti-cheat tạo ra
-            String selfScoreboardName = self.getScoreboardName();
-            String selfProfileName = self.getGameProfile() != null ? self.getGameProfile().name() : "";
-            if (name.equalsIgnoreCase(selfScoreboardName) || name.equalsIgnoreCase(selfProfileName)) {
-                continue;
-            }
-
-            if (whitelist.contains(name.toLowerCase(Locale.ROOT))) {
-                continue;
-            }
-            try {
-                if (p.getGameProfile() != null && p.getGameProfile().name() != null) {
-                    if (whitelist.contains(p.getGameProfile().name().toLowerCase(Locale.ROOT))) {
-                        continue;
-                    }
-                }
-            } catch (Throwable ignored) {}
 
             double dist = self.distanceTo(p);
             // Nếu maxRange <= 0: Quét vô cực (mọi player đều kích hoạt)!
@@ -309,6 +308,10 @@ public final class AutoLogoutTracker {
      */
     public static void performAutoLogout(IPlayerContext ctx, String reason) {
         if (ctx == null || ctx.player() == null) return;
+        if (Baritone.settings().neverKick.value) return;
+        if (joinGraceTicks > 0) return;
+        if (isInLobbyOrSafezone(ctx)) return;
+        if (Baritone.settings().autoLogoutOnlyWhileMining.value && !isBaritoneBusyMining()) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (!mc.isSameThread()) {
@@ -692,7 +695,7 @@ public final class AutoLogoutTracker {
      * Nhắc lại toạ độ khi người chơi đăng nhập lại vào thế giới, đồng thời giải phóng GPU texture.
      */
     public static void onWorldJoined() {
-        joinGraceTicks = 100; // 5 giây chờ an toàn (grace period) để di chuyển / gõ lệnh
+        joinGraceTicks = 200; // 10 giây chờ an toàn (grace period) để di chuyển / gõ lệnh
         if (pendingWorldJoinAlert && hasLoggedOut) {
             pendingWorldJoinAlert = false;
             hasLoggedOut = false;
@@ -713,5 +716,233 @@ public final class AutoLogoutTracker {
         }
         hasScreenshot = false;
         isZoomed = false;
+    }
+
+    /**
+     * Kiểm tra xem người chơi có đang ở Sảnh chờ (Lobby / Hub / Spawn / Safezone) hay không.
+     * Phát hiện dựa trên:
+     * 1. Chế độ chơi: ADVENTURE, CREATIVE, SPECTATOR (Hầu hết các server đều set Adventure ở sảnh để chống phá block).
+     * 2. Tiêu đề / Nội dung Scoreboard Sidebar chứa các từ khóa đặc trưng: "sảnh", "lobby", "hub", "chờ", "chọn cụm", "khu chờ", "waiting".
+     */
+    public static boolean isInLobbyOrSafezone(IPlayerContext ctx) {
+        if (ctx == null || ctx.player() == null) {
+            return true;
+        }
+
+        // 1. Chế độ chơi: ADVENTURE, CREATIVE, SPECTATOR
+        try {
+            if (ctx.playerController() != null) {
+                GameType gt = ctx.playerController().getGameType();
+                if (gt == GameType.ADVENTURE || gt == GameType.CREATIVE || gt == GameType.SPECTATOR) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // 2. Scoreboard (Bảng điểm bên phải)
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.level != null) {
+                Scoreboard scoreboard = mc.level.getScoreboard();
+                if (scoreboard != null) {
+                    for (Objective obj : scoreboard.getObjectives()) {
+                        if (obj != null && containsLobbyKeywords(obj.getDisplayName().getString())) {
+                            return true;
+                        }
+                    }
+                    for (PlayerTeam team : scoreboard.getPlayerTeams()) {
+                        if (team != null) {
+                            String prefix = team.getPlayerPrefix() != null ? team.getPlayerPrefix().getString() : "";
+                            String suffix = team.getPlayerSuffix() != null ? team.getPlayerSuffix().getString() : "";
+                            String display = team.getDisplayName() != null ? team.getDisplayName().getString() : "";
+                            if (containsLobbyKeywords(prefix) || containsLobbyKeywords(suffix) || containsLobbyKeywords(display)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        return false;
+    }
+
+    private static boolean containsLobbyKeywords(String text) {
+        if (text == null || text.isEmpty()) return false;
+        String t = text.toLowerCase(Locale.ROOT);
+        return t.contains("sảnh") || t.contains("sanh") ||
+               t.contains("lobby") || t.contains("hub") ||
+               t.contains("chờ") || t.contains("cho ") ||
+               t.contains("chọn cụm") || t.contains("chon cum") ||
+               t.contains("chuyển cụm") || t.contains("waiting") ||
+               t.contains("limbo") || t.contains("spawn");
+    }
+
+    /**
+     * Kiểm tra xem Baritone có đang thực sự bận rộn thực hiện các tác vụ đào/farm/di chuyển hay không.
+     * Nếu bot đang đứng yên rảnh rỗi hoặc ở sảnh, hàm sẽ trả về false.
+     */
+    public static boolean isBaritoneBusyMining() {
+        try {
+            baritone.api.IBaritone primary = baritone.api.BaritoneAPI.getProvider() != null ? baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone() : null;
+            if (primary != null) {
+                return (primary.getMineProcess() != null && primary.getMineProcess().isActive())
+                        || (primary.getPathingBehavior() != null && primary.getPathingBehavior().isPathing())
+                        || (primary.getCustomGoalProcess() != null && primary.getCustomGoalProcess().isActive())
+                        || (primary.getFarmProcess() != null && primary.getFarmProcess().isActive())
+                        || (primary.getBuilderProcess() != null && primary.getBuilderProcess().isActive())
+                        || (primary.getExploreProcess() != null && primary.getExploreProcess().isActive())
+                        || (primary.getFollowProcess() != null && primary.getFollowProcess().isActive())
+                        || (primary.getGetToBlockProcess() != null && primary.getGetToBlockProcess().isActive());
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private static final Set<String> cachedAutoWhitelist = new HashSet<>();
+    private static volatile long lastWhitelistCheck = 0;
+
+    private static Set<String> getExtraWhitelistedNames() {
+        long now = System.currentTimeMillis();
+        if (now - lastWhitelistCheck < 5000) {
+            return cachedAutoWhitelist;
+        }
+        lastWhitelistCheck = now;
+        cachedAutoWhitelist.clear();
+
+        // 1. Thêm các tài khoản mặc định của người dùng
+        cachedAutoWhitelist.add("tr0ngxxx");
+        cachedAutoWhitelist.add("tr0ngxbot");
+        cachedAutoWhitelist.add("lamdepzaik13");
+
+        // 2. Đọc file ProxyAllocations.json nếu có
+        try {
+            List<File> filesToCheck = List.of(
+                    new File("H:\\PCL\\Release\\PCL\\ProxyAllocations.json"),
+                    new File("H:\\PCL\\Plain Craft Launcher 2\\ProxyAllocations.json")
+            );
+            for (File f : filesToCheck) {
+                if (f.exists()) {
+                    String content = java.nio.file.Files.readString(f.toPath());
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([a-zA-Z0-9_]{3,16})\"\\s*:").matcher(content);
+                    while (m.find()) {
+                        cachedAutoWhitelist.add(m.group(1).toLowerCase(Locale.ROOT));
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        return cachedAutoWhitelist;
+    }
+
+    /**
+     * Kiểm tra xem thực thể Player có phải là chính bản thân người chơi (self/clone/anti-cheat NPC)
+     * hoặc đồng đội (người trong cùng Team / Clan / Party / Whitelist / Multi-account) hay không.
+     */
+    public static boolean isSelfOrTeammate(Player self, Player p, Set<String> whitelist) {
+        if (self == null || p == null) {
+            return true;
+        }
+
+        // ==========================================
+        // 1. KIỂM TRA CHÍNH BẢN THÂN (SELF / CLONE / NPC)
+        // ==========================================
+        if (p == self || p.getId() == self.getId()) {
+            return true;
+        }
+
+        UUID selfUUID = self.getUUID();
+        UUID pUUID = p.getUUID();
+        if (selfUUID != null && selfUUID.equals(pUUID)) {
+            return true;
+        }
+
+        String selfScoreboardName = self.getScoreboardName() != null ? self.getScoreboardName() : "";
+        String pScoreboardName = p.getScoreboardName() != null ? p.getScoreboardName() : "";
+        if (!selfScoreboardName.isEmpty() && selfScoreboardName.equalsIgnoreCase(pScoreboardName)) {
+            return true;
+        }
+
+        String selfProfileName = self.getGameProfile() != null && self.getGameProfile().name() != null ? self.getGameProfile().name() : "";
+        String pProfileName = p.getGameProfile() != null && p.getGameProfile().name() != null ? p.getGameProfile().name() : "";
+        if (!selfProfileName.isEmpty() && selfProfileName.equalsIgnoreCase(pProfileName)) {
+            return true;
+        }
+
+        if (self.getGameProfile() != null && p.getGameProfile() != null && self.getGameProfile().id() != null) {
+            if (self.getGameProfile().id().equals(p.getGameProfile().id())) {
+                return true;
+            }
+        }
+
+        // Kiểm tra tên hiển thị bỏ qua ký tự đặc biệt / màu mè / prefix anti-cheat
+        String cleanSelf = selfProfileName.replaceAll("[^a-zA-Z0-9_]", "");
+        String cleanP = pProfileName.replaceAll("[^a-zA-Z0-9_]", "");
+        if (!cleanSelf.isEmpty() && cleanP.equalsIgnoreCase(cleanSelf)) {
+            return true;
+        }
+
+        String pPlainName = p.getName() != null ? p.getName().getString().replaceAll("[^a-zA-Z0-9_]", "") : "";
+        if (!cleanSelf.isEmpty() && pPlainName.equalsIgnoreCase(cleanSelf)) {
+            return true;
+        }
+
+        // Nếu tên clone bắt đầu hoặc chứa tên của chính mình do plugin replay / anti-cheat tạo ra
+        if (!cleanSelf.isEmpty() && (cleanP.startsWith(cleanSelf) || cleanSelf.startsWith(cleanP))) {
+            return true;
+        }
+
+        // ==========================================
+        // 2. KIỂM TRA WHITELIST (BẠN BÈ / FARM ACCOUNTS / MULTI-ACCOUNT)
+        // ==========================================
+        if (whitelist != null && !whitelist.isEmpty()) {
+            if (whitelist.contains(pScoreboardName.toLowerCase(Locale.ROOT)) ||
+                whitelist.contains(pProfileName.toLowerCase(Locale.ROOT)) ||
+                whitelist.contains(cleanP.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+
+        Set<String> extraWhitelist = getExtraWhitelistedNames();
+        if (extraWhitelist.contains(pScoreboardName.toLowerCase(Locale.ROOT)) ||
+            extraWhitelist.contains(pProfileName.toLowerCase(Locale.ROOT)) ||
+            extraWhitelist.contains(cleanP.toLowerCase(Locale.ROOT))) {
+            return true;
+        }
+
+        // ==========================================
+        // 3. KIỂM TRA ĐỒNG ĐỘI / NGƯỜI TRONG TEAM
+        // ==========================================
+        if (Baritone.settings().autoLogoutIgnoreTeammates.value) {
+            try {
+                // A. Vanilla Minecraft Allied check (isAlliedTo)
+                if (self.isAlliedTo(p)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+
+            try {
+                // B. Kiểm tra Scoreboard Team (net.minecraft.world.scores.Team)
+                Team selfTeam = self.getTeam();
+                Team pTeam = p.getTeam();
+                if (selfTeam != null && pTeam != null) {
+                    if (selfTeam == pTeam || selfTeam.getName().equalsIgnoreCase(pTeam.getName())) {
+                        return true;
+                    }
+                    if (selfTeam.isAlliedTo(pTeam)) {
+                        return true;
+                    }
+                    if (selfTeam instanceof PlayerTeam selfPt && pTeam instanceof PlayerTeam pPt) {
+                        String selfPrefix = selfPt.getPlayerPrefix() != null ? selfPt.getPlayerPrefix().getString().trim() : "";
+                        String pPrefix = pPt.getPlayerPrefix() != null ? pPt.getPlayerPrefix().getString().trim() : "";
+                        if (!selfPrefix.isEmpty() && selfPrefix.length() >= 2 && selfPrefix.equalsIgnoreCase(pPrefix)) {
+                            return true;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        return false;
     }
 }

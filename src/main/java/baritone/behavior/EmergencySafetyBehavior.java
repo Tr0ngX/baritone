@@ -64,6 +64,24 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             AutoLogoutTracker.decrementJoinGraceTicks();
         }
 
+        // Vệ binh bảo vệ: Không bao giờ kick khi bật neverKick
+        if (Baritone.settings().neverKick.value) {
+            fireTicks = 0;
+            return;
+        }
+
+        // Vệ binh bảo vệ: Tuyệt đối không kick khi ở sảnh / khu vực an toàn
+        if (AutoLogoutTracker.isInLobbyOrSafezone(ctx)) {
+            fireTicks = 0;
+            return;
+        }
+
+        // Vệ binh bảo vệ: Chỉ tự ngắt kết nối khi đang thực sự chạy tác vụ đào quặng (#mine/#farm/pathing)
+        if (Baritone.settings().autoLogoutOnlyWhileMining.value && !AutoLogoutTracker.isBaritoneBusyMining()) {
+            fireTicks = 0;
+            return;
+        }
+
         boolean checkDanger = Baritone.settings().autoLogoutOnDanger.value;
         boolean checkPlayer = Baritone.settings().autoLogoutOnPlayer.value;
         if (!checkDanger && !checkPlayer) {

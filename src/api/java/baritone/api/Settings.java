@@ -859,6 +859,23 @@ public final class Settings {
     public final Setting<String> autoLogoutPlayerWhitelist = new Setting<>("");
 
     /**
+     * Chế độ Không Bao Giờ Kick: Ngăn chặn 100% mọi hành vi tự động ngắt kết nối (kick/disconnect) khỏi server khi gặp nguy hiểm, cháy, máu thấp hoặc phát hiện người chơi.
+     * Khi bật, bot sẽ không bao giờ tự thoát game, cho phép bạn thoải mái đứng ở sảnh hoặc treo máy mà không bị văng.
+     */
+    public final Setting<Boolean> neverKick = new Setting<>(false);
+
+    /**
+     * Tự động bảo vệ thông minh: Chỉ cho phép tự động ngắt kết nối khi đang thực sự chạy tác vụ đào quặng (#mine/#farm).
+     * Khi đang ở Sảnh chờ (Lobby / Spawn) hoặc khi đứng yên rảnh rỗi, tuyệt đối KHÔNG BAO GIỜ kick. Mặc định là true.
+     */
+    public final Setting<Boolean> autoLogoutOnlyWhileMining = new Setting<>(true);
+
+    /**
+     * Tự động bỏ qua chính bản thân và đồng đội: Tuyệt đối không bao giờ ngắt kết nối khi gặp lại chính bản thân (clone/replay/anti-cheat bot) hoặc người chơi cùng Team / Clan / Whitelist. Mặc định là true.
+     */
+    public final Setting<Boolean> autoLogoutIgnoreTeammates = new Setting<>(true);
+
+    /**
      * Allow chat based control of Baritone. Most likely should be disabled when Baritone is imported for use in
      * something else
      */

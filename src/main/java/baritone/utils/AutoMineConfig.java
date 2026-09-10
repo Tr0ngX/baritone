@@ -82,6 +82,9 @@ public final class AutoMineConfig {
         public boolean optAutoTotem = true;
         public boolean optAutoLogout = false; // Anti-Death
         public boolean autoLogoutOnPlayer = false; // Anti-Player
+        public boolean neverKick = false;
+        public boolean autoLogoutOnlyWhileMining = true;
+        public boolean autoLogoutIgnoreTeammates = true;
         public boolean optShulkerStorage = true;
         public boolean optAutoDrop = true;
         public boolean optMobAvoid = true;
@@ -177,6 +180,8 @@ public final class AutoMineConfig {
         AutoMineScreen.optAutoEat = data.optAutoEat;
         AutoMineScreen.optAutoTotem = data.optAutoTotem;
         AutoMineScreen.optAutoLogout = data.optAutoLogout;
+        AutoMineScreen.optNeverKick = data.neverKick;
+        AutoMineScreen.optAutoLogoutOnlyWhileMining = data.autoLogoutOnlyWhileMining;
         AutoMineScreen.optShulkerStorage = data.optShulkerStorage;
         AutoMineScreen.optAutoDrop = data.optAutoDrop;
         AutoMineScreen.optMobAvoid = data.optMobAvoid;
@@ -195,6 +200,9 @@ public final class AutoMineConfig {
 
         // Đồng bộ vào Baritone.settings()
         Baritone.settings().autoLogoutOnPlayer.value = data.autoLogoutOnPlayer;
+        Baritone.settings().neverKick.value = data.neverKick;
+        Baritone.settings().autoLogoutOnlyWhileMining.value = data.autoLogoutOnlyWhileMining;
+        Baritone.settings().autoLogoutIgnoreTeammates.value = data.autoLogoutIgnoreTeammates;
         syncToBaritoneSettings(data.clientFreeLook);
     }
 
@@ -203,6 +211,8 @@ public final class AutoMineConfig {
             Baritone.settings().clientFreeLook.value = clientFreeLook;
             Baritone.settings().mineStrictOneDirection.value = AutoMineScreen.optStrictOneDirection;
             Baritone.settings().autoLogoutOnDanger.value = AutoMineScreen.optAutoLogout;
+            Baritone.settings().neverKick.value = AutoMineScreen.optNeverKick;
+            Baritone.settings().autoLogoutOnlyWhileMining.value = AutoMineScreen.optAutoLogoutOnlyWhileMining;
             Baritone.settings().autoTool.value = AutoMineScreen.optAutoTool;
             Baritone.settings().autoEat.value = AutoMineScreen.optAutoEat;
             Baritone.settings().autoBuyFood.value = AutoMineScreen.optAutoEat;
@@ -308,6 +318,9 @@ public final class AutoMineConfig {
 
             data.optAutoLogout = AutoMineScreen.optAutoLogout;
             data.autoLogoutOnPlayer = Baritone.settings().autoLogoutOnPlayer.value;
+            data.neverKick = AutoMineScreen.optNeverKick;
+            data.autoLogoutOnlyWhileMining = AutoMineScreen.optAutoLogoutOnlyWhileMining;
+            data.autoLogoutIgnoreTeammates = Baritone.settings().autoLogoutIgnoreTeammates.value;
 
             try (BufferedWriter writer = Files.newBufferedWriter(file)) {
                 GSON.toJson(data, writer);

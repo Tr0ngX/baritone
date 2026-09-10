@@ -80,6 +80,8 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optAutoEat = true;
     public static boolean optAutoTotem = true;
     public static boolean optAutoLogout = false;
+    public static boolean optNeverKick = false;
+    public static boolean optAutoLogoutOnlyWhileMining = true;
     public static boolean optAutoDrop = true;
     public static boolean optShulkerStorage = true;
     public static boolean optMobAvoid = true;
@@ -379,6 +381,23 @@ public class AutoMineScreen extends Screen implements Helper {
                 "Quét radar người chơi trong phạm vi 32 ô (bao gồm cả người chơi tàng hình). Tự động ngắt kết nối tức thì để chống bị phục kích PvP.",
                 "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
             Baritone.settings().autoLogoutOnPlayer.value = !Baritone.settings().autoLogoutOnPlayer.value;
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.SHIELD), "Không Bao Giờ Kick", "Tuyệt đối không bao giờ ngắt kết nối (kể cả nguy hiểm hay gặp player)",
+                "Chế độ Không Bao Giờ Kick: Vô hiệu hóa 100% mọi hành vi tự động thoát game/ngắt kết nối. Cho phép bạn thoải mái treo máy, đứng ở sảnh hoặc PvP mà không lo bị văng bot.",
+                "SURVIVAL", 0xFF10B981, () -> optNeverKick, () -> {
+            optNeverKick = !optNeverKick;
+            Baritone.settings().neverKick.value = optNeverKick;
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.IRON_DOOR), "Bảo Vệ Chỉ Khi Đào", "Chỉ tự ngắt kết nối khi đang đào (#mine). Ở sảnh/đứng yên sẽ KHÔNG kick",
+                "Chống kick oan ở Sảnh (Lobby / Hub / Spawn): Khi đang ở khu vực an toàn, sảnh chờ hoặc khi không chạy lệnh đào quặng, bot sẽ KHÔNG BAO GIỜ tự ngắt kết nối dù có người chơi đứng quanh.",
+                "SURVIVAL", 0xFF38BDF8, () -> optAutoLogoutOnlyWhileMining, () -> {
+            optAutoLogoutOnlyWhileMining = !optAutoLogoutOnlyWhileMining;
+            Baritone.settings().autoLogoutOnlyWhileMining.value = optAutoLogoutOnlyWhileMining;
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.CHAINMAIL_HELMET), "Bỏ Qua Đồng Đội & Team", "Không kick khi gặp đồng đội cùng Team/Clan hoặc clone chính mình",
+                "Tự động nhận diện và bỏ qua người chơi cùng Team, Party, Bang hội (Clan), danh sách Whitelist và các thực thể clone nhái tên chính mình do anti-cheat tạo ra.",
+                "SURVIVAL", 0xFF60A5FA, () -> Baritone.settings().autoLogoutIgnoreTeammates.value, () -> {
+            Baritone.settings().autoLogoutIgnoreTeammates.value = !Baritone.settings().autoLogoutIgnoreTeammates.value;
         }));
         allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Lưu Trữ Shulker Box", "Tự mua /shop, cất đồ vào Shulker và cất vào Rương Ender",
                 "Khi túi đồ đầy khoáng sản: Tự đặt Hộp Shulker cất đồ. Khi đầy 3 Shulker, tự đặt Rương Ender cất Shulker vào trong và đập lại bằng Silk Touch.",
@@ -1774,6 +1793,8 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().autoTotem.value = optAutoTotem;
         Baritone.settings().autoBuyTotem.value = optAutoTotem;
         Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
+        Baritone.settings().neverKick.value = optNeverKick;
+        Baritone.settings().autoLogoutOnlyWhileMining.value = optAutoLogoutOnlyWhileMining;
         Baritone.settings().autoShulkerStorage.value = optShulkerStorage;
         Baritone.settings().autoBuyShulker.value = optShulkerStorage;
         Baritone.settings().autoDrop.value = optAutoDrop;

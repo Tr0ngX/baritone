@@ -212,15 +212,40 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
     }
 
     @Inject(
+            method = "handleLogin",
+            at = @At("RETURN")
+    )
+    private void onHandleLogin(ClientboundLoginPacket packetIn, CallbackInfo ci) {
+        baritone.utils.AutoLogoutTracker.setJoinGraceTicks(200);
+    }
+
+    @Inject(
+            method = "handleRespawn",
+            at = @At("RETURN")
+    )
+    private void onHandleRespawn(ClientboundRespawnPacket packetIn, CallbackInfo ci) {
+        baritone.utils.AutoLogoutTracker.setJoinGraceTicks(200);
+    }
+
+    @Inject(
             method = "handleAddEntity",
             at = @At("RETURN")
     )
     private void onAddEntity(ClientboundAddEntityPacket packetIn, CallbackInfo ci) {
-        if (!Baritone.settings().autoLogoutOnPlayer.value) {
+        if (!Baritone.settings().autoLogoutOnPlayer.value || Baritone.settings().neverKick.value) {
+            return;
+        }
+        if (baritone.utils.AutoLogoutTracker.getJoinGraceTicks() > 0) {
+            return;
+        }
+        if (Baritone.settings().autoLogoutOnlyWhileMining.value && !baritone.utils.AutoLogoutTracker.isBaritoneBusyMining()) {
             return;
         }
         for (IBaritone ibaritone : BaritoneAPI.getProvider().getAllBaritones()) {
             if (ibaritone.getPlayerContext() != null && ibaritone.getPlayerContext().player() != null && ibaritone.getPlayerContext().world() != null) {
+                if (baritone.utils.AutoLogoutTracker.isInLobbyOrSafezone(ibaritone.getPlayerContext())) {
+                    continue;
+                }
                 baritone.utils.AutoLogoutTracker.DetectedPlayerInfo threat = baritone.utils.AutoLogoutTracker.scanForNearbyPlayer(ibaritone.getPlayerContext());
                 if (threat != null) {
                     baritone.utils.AutoLogoutTracker.performAutoLogout(ibaritone.getPlayerContext(), "Phát hiện người chơi: " + threat.getFormattedDescription());
@@ -235,11 +260,20 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
             at = @At("RETURN")
     )
     private void onTeleportEntity(ClientboundTeleportEntityPacket packetIn, CallbackInfo ci) {
-        if (!Baritone.settings().autoLogoutOnPlayer.value) {
+        if (!Baritone.settings().autoLogoutOnPlayer.value || Baritone.settings().neverKick.value) {
+            return;
+        }
+        if (baritone.utils.AutoLogoutTracker.getJoinGraceTicks() > 0) {
+            return;
+        }
+        if (Baritone.settings().autoLogoutOnlyWhileMining.value && !baritone.utils.AutoLogoutTracker.isBaritoneBusyMining()) {
             return;
         }
         for (IBaritone ibaritone : BaritoneAPI.getProvider().getAllBaritones()) {
             if (ibaritone.getPlayerContext() != null && ibaritone.getPlayerContext().player() != null && ibaritone.getPlayerContext().world() != null) {
+                if (baritone.utils.AutoLogoutTracker.isInLobbyOrSafezone(ibaritone.getPlayerContext())) {
+                    continue;
+                }
                 baritone.utils.AutoLogoutTracker.DetectedPlayerInfo threat = baritone.utils.AutoLogoutTracker.scanForNearbyPlayer(ibaritone.getPlayerContext());
                 if (threat != null) {
                     baritone.utils.AutoLogoutTracker.performAutoLogout(ibaritone.getPlayerContext(), "Phát hiện người chơi: " + threat.getFormattedDescription());
