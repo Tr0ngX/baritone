@@ -32,6 +32,7 @@ import baritone.event.GameEventHandler;
 import baritone.process.*;
 import baritone.selection.SelectionManager;
 import baritone.utils.BlockStateInterface;
+import baritone.utils.DiscordManager;
 import baritone.utils.GuiClick;
 import baritone.utils.InputOverrideHandler;
 import baritone.utils.PathingControlManager;
@@ -142,6 +143,8 @@ public class Baritone implements IBaritone {
         this.worldProvider = new WorldProvider(this);
         this.selectionManager = new SelectionManager(this);
         this.commandManager = new CommandManager(this);
+
+        DiscordManager.getInstance().start();
     }
 
     public void registerBehavior(IBehavior behavior) {

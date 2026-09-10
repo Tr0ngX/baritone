@@ -366,6 +366,16 @@ public final class AutoLogoutTracker {
         Helper.HELPER.logDirect("§c" + alertLog);
         BaritoneFileLogger.warn(alertLog);
 
+        // Gui alert khan cap len Discord Webhook
+        try {
+            DiscordManager.getInstance().sendAlert(
+                    "🚨 [CẢNH BÁO BẢO VỆ – AUTO LOGOUT]",
+                    "**Nguyên nhân:** `" + reason + "`\n" +
+                    "**Toạ độ:** `X: " + String.format(Locale.ROOT, "%.2f", lastX) + ", Y: " + String.format(Locale.ROOT, "%.2f", lastY) + ", Z: " + String.format(Locale.ROOT, "%.2f", lastZ) + "` (" + lastDimension + ")",
+                    0xFF0000
+            );
+        } catch (Throwable ignored) {}
+
         // Tạo giao diện thông báo ngắt kết nối hiển thị toạ độ cực kỳ rõ nét lên màn hình (bố cục gọn gàng, không tràn/đè)
         Component kickReason = Component.literal(
                 "§c§l[ BẢO VỆ SINH TỒN – AUTO LOGOUT ]\n\n" +

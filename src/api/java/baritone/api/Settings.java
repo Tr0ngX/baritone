@@ -1805,6 +1805,46 @@ public final class Settings {
     public final Setting<Boolean> allowWalkOnMagmaBlocks = new Setting<>(false);
 
     /**
+     * URL Webhook cua Discord de gui Telemetry va canh bao
+     */
+    public final Setting<String> discordWebhookUrl = new Setting<>("");
+
+    /**
+     * Thoi gian dinh ky (giay) gui Telemetry len Discord Webhook
+     */
+    public final Setting<Integer> discordWebhookInterval = new Setting<>(15);
+
+    /**
+     * Bat/tat gui thong tin len Discord Webhook
+     */
+    public final Setting<Boolean> discordWebhookEnabled = new Setting<>(true);
+
+    /**
+     * Bot Token cua Discord bot de lang nghe lenh dieu khien tu xa
+     */
+    public final Setting<String> discordBotToken = new Setting<>("");
+
+    /**
+     * Channel ID cua Discord de nhan lenh (!doihuong, !stop)
+     */
+    public final Setting<String> discordChannelId = new Setting<>("");
+
+    /**
+     * Cong HTTP REST Server local de nhan lenh dieu khien (mac dinh 25590)
+     */
+    public final Setting<Integer> discordHttpPort = new Setting<>(25590);
+
+    /**
+     * Gui alert len Discord khi AntiStuck kich hoat doi huong
+     */
+    public final Setting<Boolean> discordAlertOnAntiStuck = new Setting<>(true);
+
+    /**
+     * Gui alert len Discord khi phat hien nguy hiem / thap mau
+     */
+    public final Setting<Boolean> discordAlertOnDeath = new Setting<>(true);
+
+    /**
      * A map of lowercase setting field names to their respective setting
      */
     public final Map<String, Setting<?>> byLowerName;

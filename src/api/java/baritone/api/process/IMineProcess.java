@@ -132,4 +132,13 @@ public interface IMineProcess extends IBaritoneProcess {
     default boolean isTargetBlock(net.minecraft.world.level.block.state.BlockState state) {
         return false;
     }
+
+    /**
+     * Cưỡng bức đổi hướng đào hầm (xoay 90 độ), giải phóng mục tiêu kẹt và ép tính toán lại đường đi (Anti-Loop 100%).
+     *
+     * @return Tên hướng mới (NORTH, SOUTH, EAST, WEST)
+     */
+    default String forceDoiHuong() {
+        return "UNKNOWN";
+    }
 }

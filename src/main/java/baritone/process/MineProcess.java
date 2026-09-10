@@ -34,6 +34,7 @@ import baritone.utils.AutoLogoutTracker;
 import baritone.utils.AutoMineScreen;
 import baritone.utils.BaritoneProcessHelper;
 import baritone.utils.BlockStateInterface;
+import baritone.utils.DiscordManager;
 import baritone.utils.MiningStatsTracker.WoodType;
 import baritone.utils.ToolSet;
 import net.minecraft.client.Minecraft;
@@ -316,6 +317,64 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             }
         }
         return filter != null && filter.has(state);
+    }
+
+    @Override
+    public String forceDoiHuong() {
+        if (tunnelDirection == null || !tunnelDirection.getAxis().isHorizontal()) {
+            net.minecraft.core.Direction dir = (ctx.player() != null) ? ctx.player().getDirection() : net.minecraft.core.Direction.NORTH;
+            tunnelDirection = dir.getAxis().isHorizontal() ? dir : net.minecraft.core.Direction.NORTH;
+        }
+        net.minecraft.core.Direction newDir = tunnelDirection.getClockWise();
+        tunnelDirection = newDir;
+
+        // Xóa sạch trạng thái kẹt và các bộ đếm vòng lặp
+        stuckTicks = 0;
+        stuckRetries = 0;
+        recentPosCount = 0;
+        placeBreakOscillationCount = 0;
+        placedThisCycle = false;
+        lastPlacedBlockPos = null;
+        lastBrokenBlockPos = null;
+        lastPillarFailPos = null;
+        pillarFailCount = 0;
+        Baritone.settings().noPillar.value = false;
+
+        // Giải phóng chuột và mục tiêu đào kẹt
+        activeMiningBlock = null;
+        activeMiningTicks = 0;
+        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
+
+        lockedTargetOre = null;
+        currentTunnelTarget = null;
+        stairOriginPos = null;
+        shaftOriginPos = null;
+        tunnelOriginPos = null;
+        if (ctx.player() != null) {
+            branchPoint = ctx.playerFeet().relative(newDir.getOpposite(), 16);
+        } else {
+            branchPoint = null;
+        }
+        branchPointRunaway = null;
+        bedrockEscapeActive = false;
+        forceReroute = true;
+
+        // Huỷ segment đang đi nếu an toàn để A* tính lại ngay sang hướng mới
+        baritone.getPathingBehavior().cancelSegmentIfSafe();
+
+        String dirName = newDir.getName().toUpperCase();
+        logDirect("§a[AntiLoop 100%] Lệnh ĐỔI HƯỚNG thành công! Đã xoay 90° sang " + dirName + ", xóa sạch kẹt & tính toán lại lộ trình.");
+
+        try {
+            DiscordManager.getInstance().sendAlert(
+                    "🔄 [AntiLoop 100% Đổi Hướng]",
+                    "Đã thực thi lệnh đổi hướng! Hướng đào mới: **" + dirName + "**.\nXóa sạch kẹt và ép tính toán lại đường đi.",
+                    0x00FF88
+            );
+        } catch (Throwable ignored) {}
+
+        return dirName;
     }
 
     @Override
