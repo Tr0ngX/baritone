@@ -299,37 +299,8 @@ public final class DiscordManager implements Helper {
             boolean captureScreen = Baritone.settings().discordCaptureScreen.value;
 
             if (captureScreen && mc.getMainRenderTarget() != null) {
-                mc.execute(() -> {
-                    try {
-                        Screenshot.takeScreenshot(mc.getMainRenderTarget(), 1, nativeImage -> {
-                            if (nativeImage == null) {
-                                dispatchFarmingReport(isTest, null);
-                                return;
-                            }
-                            Util.ioPool().execute(() -> {
-                                byte[] imageBytes = null;
-                                try {
-                                    File screenshotsDir = new File(mc.gameDirectory, "screenshots");
-                                    if (!screenshotsDir.exists()) {
-                                        screenshotsDir.mkdirs();
-                                    }
-                                    File targetFile = new File(screenshotsDir, "discord_farm_report.png");
-                                    nativeImage.writeToFile(targetFile);
-                                    imageBytes = Files.readAllBytes(targetFile.toPath());
-                                } catch (Throwable t) {
-                                    logDebug("[DiscordManager] Lỗi xử lý ảnh chụp: " + t.getMessage());
-                                } finally {
-                                    try {
-                                        nativeImage.close();
-                                    } catch (Throwable ignored) {}
-                                }
-                                dispatchFarmingReport(isTest, imageBytes);
-                            });
-                        });
-                    } catch (Throwable t) {
-                        logDebug("[DiscordManager] Không thể gọi Screenshot.takeScreenshot: " + t.getMessage());
-                        dispatchFarmingReport(isTest, null);
-                    }
+                CleanScreenshotHelper.requestCleanScreenshot(imageBytes -> {
+                    dispatchFarmingReport(isTest, imageBytes);
                 });
             } else {
                 dispatchFarmingReport(isTest, null);

@@ -310,8 +310,10 @@ public final class AutoLogoutTracker {
         if (ctx == null || ctx.player() == null) return;
         if (Baritone.settings().neverKick.value) return;
         if (joinGraceTicks > 0) return;
-        if (isInLobbyOrSafezone(ctx)) return;
-        if (Baritone.settings().autoLogoutOnlyWhileMining.value && !isBaritoneBusyMining()) return;
+        // Guard autoLogoutOnlyWhileMining chỉ áp dụng cho radar người chơi (tránh kick khi AFK/chat)
+        // Tuyệt đối KHÔNG chặn các mối nguy hiểm sinh tử (Lava, Máu nguy kịch, Hết Totem)
+        boolean isPlayerThreat = reason != null && reason.toLowerCase(Locale.ROOT).contains("người chơi");
+        if (isPlayerThreat && Baritone.settings().autoLogoutOnlyWhileMining.value && !isBaritoneBusyMining()) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (!mc.isSameThread()) {

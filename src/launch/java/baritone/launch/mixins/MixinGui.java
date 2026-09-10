@@ -61,13 +61,21 @@ public class MixinGui {
     }
 
     /**
-     * Vẽ bảng thống kê đào quặng (Mining Statistics HUD) lên màn hình.
+     * Vẽ HUD đào quặng độc lập (OreHudOverlay) lên màn hình.
+     * Overlay tự ẩn khi tắt GUI (F1), mở debug (F3), tắt thống kê hoặc không mining.
      */
     @Inject(method = "render", at = @At("RETURN"))
     private void onRender(GuiGraphics guiGraphics, DeltaTracker deltaTracker, CallbackInfo ci) {
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc.font != null) {
-            baritone.utils.MiningStatsTracker.getInstance().renderHud(guiGraphics, mc.font);
+            try {
+                baritone.utils.hud.OreHudOverlay.getInstance().render(guiGraphics, mc.font);
+            } catch (Throwable ignored) {}
+        }
+        if (baritone.utils.CleanScreenshotHelper.isCaptureRequested()) {
+            try {
+                baritone.utils.CleanScreenshotHelper.captureOnRenderThread(mc.getMainRenderTarget());
+            } catch (Throwable ignored) {}
         }
     }
 }
