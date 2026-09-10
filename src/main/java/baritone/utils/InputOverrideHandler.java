@@ -123,23 +123,56 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
             com.mojang.blaze3d.platform.Window window = ctx.minecraft().getWindow();
             boolean altDown = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT);
             
-            // 1. Kiểm tra phím mở AutoMine Menu (qua KeyMapping tùy chỉnh trong Controls -> Key Binds)
+            // 1. Kiểm tra phím mở AutoMine Menu (qua KeyMapping tùy chỉnh hoặc phím M / F4)
             boolean keyTriggered = BaritoneKeyBindings.KEY_AUTOMINE_GUI.consumeClick();
             if (!keyTriggered && BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDefault()) {
+                boolean mDown = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_M);
                 boolean f4Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F4);
-                if (f4Down && !f4WasDown) {
+                if ((mDown || f4Down) && !f4WasDown) {
                     keyTriggered = true;
                 }
-                f4WasDown = f4Down;
+                f4WasDown = mDown || f4Down;
             } else {
                 f4WasDown = BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDown();
             }
 
-            if (!altDown && keyTriggered) {
+            if (!altDown && keyTriggered && ctx.minecraft().screen == null) {
                 ctx.minecraft().setScreen(new AutoMineScreen(baritone));
             }
 
-            // 2. Phím Hủy / Dừng Baritone (nếu người chơi có gán phím)
+            // 2. Phím Bật/Tắt Chế độ Không Bao Giờ Kick (Never Kick)
+            if (BaritoneKeyBindings.KEY_NEVER_KICK.consumeClick()) {
+                boolean newVal = !Baritone.settings().neverKick.value;
+                Baritone.settings().neverKick.value = newVal;
+                AutoMineScreen.optNeverKick = newVal;
+                AutoMineConfig.save();
+                if (newVal) {
+                    Helper.HELPER.logDirect("§a[Baritone] ✔ Đã BẬT Chế độ Không Bao Giờ Kick (Never Kick)!");
+                } else {
+                    Helper.HELPER.logDirect("§c[Baritone] ✖ Đã TẮT Chế độ Không Bao Giờ Kick (Never Kick)!");
+                }
+            }
+
+            // 3. Phím Bật/Tắt Tự Thoát Khẩn Cấp (Auto Logout)
+            if (BaritoneKeyBindings.KEY_AUTO_LOGOUT.consumeClick()) {
+                boolean newVal = !Baritone.settings().autoLogoutOnDanger.value;
+                Baritone.settings().autoLogoutOnDanger.value = newVal;
+                AutoMineScreen.optAutoLogout = newVal;
+                AutoMineConfig.save();
+                if (newVal) {
+                    Helper.HELPER.logDirect("§a[Baritone] ✔ Đã BẬT Tự Thoát Khẩn Cấp Khi Nguy Hiểm (Auto-Logout)!");
+                } else {
+                    Helper.HELPER.logDirect("§c[Baritone] ✖ Đã TẮT Tự Thoát Khẩn Cấp Khi Nguy Hiểm!");
+                }
+            }
+
+            // 4. Phím Thoát Khẩn Cấp Ngay Lập Tức (Panic Logout)
+            if (BaritoneKeyBindings.KEY_PANIC_LOGOUT.consumeClick()) {
+                Helper.HELPER.logDirect("§c[Baritone] 🚨 ĐÃ KÍCH HOẠT THOÁT KHẨN CẤP TỨC THÌ (PANIC LOGOUT)!");
+                AutoLogoutTracker.performAutoLogout(ctx, "Thoát khẩn cấp tức thì bằng phím tắt (Panic Logout)");
+            }
+
+            // 5. Phím Hủy / Dừng Baritone (nếu người chơi có gán phím)
             if (BaritoneKeyBindings.KEY_CANCEL.consumeClick()) {
                 baritone.getPathingBehavior().cancelEverything();
                 baritone.getPathingBehavior().forceCancel();
@@ -152,7 +185,7 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
                 Helper.HELPER.logDirect("§c[Baritone] Đã hủy / dừng toàn bộ tiến trình!");
             }
 
-            // 3. Phím Tạm dừng Baritone (nếu người chơi có gán phím)
+            // 6. Phím Tạm dừng Baritone (nếu người chơi có gán phím)
             if (BaritoneKeyBindings.KEY_PAUSE.consumeClick()) {
                 baritone.getPathingBehavior().requestPause();
                 Helper.HELPER.logDirect("§e[Baritone] Đã yêu cầu tạm dừng tiến trình!");

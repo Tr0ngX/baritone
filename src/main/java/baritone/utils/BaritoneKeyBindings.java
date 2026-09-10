@@ -33,7 +33,28 @@ public final class BaritoneKeyBindings {
     public static final KeyMapping KEY_AUTOMINE_GUI = new KeyMapping(
             "key.baritone.automine_gui",
             InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_F4,
+            GLFW.GLFW_KEY_M,
+            CATEGORY
+    );
+
+    public static final KeyMapping KEY_NEVER_KICK = new KeyMapping(
+            "key.baritone.never_kick",
+            InputConstants.Type.KEYSYM,
+            InputConstants.UNKNOWN.getValue(),
+            CATEGORY
+    );
+
+    public static final KeyMapping KEY_AUTO_LOGOUT = new KeyMapping(
+            "key.baritone.auto_logout",
+            InputConstants.Type.KEYSYM,
+            InputConstants.UNKNOWN.getValue(),
+            CATEGORY
+    );
+
+    public static final KeyMapping KEY_PANIC_LOGOUT = new KeyMapping(
+            "key.baritone.panic_logout",
+            InputConstants.Type.KEYSYM,
+            InputConstants.UNKNOWN.getValue(),
             CATEGORY
     );
 
@@ -53,6 +74,9 @@ public final class BaritoneKeyBindings {
 
     public static final KeyMapping[] ALL_KEYS = new KeyMapping[]{
             KEY_AUTOMINE_GUI,
+            KEY_NEVER_KICK,
+            KEY_AUTO_LOGOUT,
+            KEY_PANIC_LOGOUT,
             KEY_CANCEL,
             KEY_PAUSE
     };
