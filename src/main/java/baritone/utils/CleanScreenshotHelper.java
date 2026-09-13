@@ -96,7 +96,7 @@ public final class CleanScreenshotHelper implements Helper {
      * Kiểm tra xem framebuffer đã sẵn sàng chụp ảnh hay chưa.
      */
     public static boolean isReadyForCapture() {
-        if (!BaritoneAPI.getSettings().bottingMode.value) {
+        if (!BaritoneAPI.getSettings().bottingMode.value && !BaritoneAPI.getSettings().heavyFarmMode.value) {
             return isCaptureRequested();
         }
         return STATE.get() == CaptureState.LEVEL_RENDERED;

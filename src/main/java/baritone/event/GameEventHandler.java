@@ -22,6 +22,7 @@ import baritone.api.event.events.*;
 import baritone.api.event.events.type.EventState;
 import baritone.api.event.listener.IEventBus;
 import baritone.api.event.listener.IGameEventListener;
+import baritone.command.defaults.BottingCommand;
 import baritone.api.utils.Helper;
 import baritone.api.utils.Pair;
 import baritone.cache.CachedChunk;
@@ -141,6 +142,8 @@ public final class GameEventHandler implements IEventBus, Helper {
             cache.closeWorld();
             if (event.getWorld() != null) {
                 cache.initWorld(event.getWorld());
+            } else {
+                BottingCommand.autoDisableOnLeave();
             }
         }
 

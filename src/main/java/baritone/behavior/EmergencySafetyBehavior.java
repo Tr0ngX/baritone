@@ -33,6 +33,7 @@ import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Monster;
@@ -58,11 +59,14 @@ import java.util.concurrent.TimeUnit;
 public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
     private int tickCount = 0;
-    private static final long MAX_LAVA_TIME_MS = 5000L;
-    // Thời điểm bắt đầu dính hồ lava hoặc nhận sát thương lava (Debounce Timer 5s)
+    private static final long MAX_LAVA_TIME_MS = 5000L; // Đúng 5 giây ngâm mình trong dung nham theo yêu cầu người dùng
+    // Thời điểm bắt đầu dính hồ lava hoặc nhận sát thương lava
     private static volatile long lavaStartTime = 0L;
     // Thời điểm gần nhất nhận sát thương dung nham từ server
     private static volatile long lastLavaDamageTime = 0L;
+    // Thông tin chi tiết quái vật tấn công gần nhất
+    private static volatile String lastMobThreatInfo = null;
+    private static volatile long lastMobThreatTime = 0L;
 
     public EmergencySafetyBehavior(Baritone baritone) {
         super(baritone);
@@ -105,25 +109,54 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             if (lavaStartTime == 0L) {
                 lavaStartTime = now;
             }
+
+            // Nếu đang bật AutoLogoutOnDanger, đang trong hồ dung nham và máu <= 6 HP: kick ngay!
+            if (!Baritone.settings().neverKick.value && Baritone.settings().autoLogoutOnDanger.value) {
+                if (ctx.player().getHealth() <= 6.0f && (ctx.player().isInLava() || (ctx.world() != null && isInsideLavaPool(ctx.world(), ctx.player())))) {
+                    lavaStartTime = 0L;
+                    AutoLogoutTracker.performAutoLogout(ctx, "Rơi vào HỒ DUNG NHAM và MÁU NGUY KỊCH (Server Damage: Fire/Lava)!");
+                }
+            }
         }
+
+        // Nhận diện chi tiết quái vật gây sát thương từ gói tin packet
+        try {
+            int causeId = packet.sourceCauseId();
+            int directId = packet.sourceDirectId();
+            Entity attacker = null;
+            if (ctx.world() != null) {
+                if (causeId > 0) attacker = ctx.world().getEntity(causeId);
+                if (attacker == null && directId > 0) attacker = ctx.world().getEntity(directId);
+            }
+            if (attacker instanceof LivingEntity mob && !(attacker instanceof Player)) {
+                lastMobThreatInfo = formatMobInfo(ctx, mob);
+                lastMobThreatTime = System.currentTimeMillis();
+            }
+        } catch (Throwable ignored) {}
     }
 
     private void handleHealthPacket(ClientboundSetHealthPacket packet) {
         if (ctx.player() == null) return;
         if (Baritone.settings().neverKick.value) return;
         if (!Baritone.settings().autoLogoutOnDanger.value) return;
-        if (AutoLogoutTracker.isInLobbyOrSafezone(ctx)) return;
 
         float serverHealth = packet.getHealth();
         long now = System.currentTimeMillis();
         boolean inLava = (ctx.world() != null && isInsideLavaPool(ctx.world(), ctx.player()))
+                || (ctx.player() != null && ctx.player().isInLava())
                 || (now - lastLavaDamageTime < 1500L);
 
         if (inLava && serverHealth <= 6.0f) {
             AutoLogoutTracker.performAutoLogout(ctx, "Đang ở trong HỒ LAVA và MÁU NGUY KỊCH (Server Health: " + String.format(java.util.Locale.ROOT, "%.1f", serverHealth) + " HP)!");
             lavaStartTime = 0L;
         } else if (serverHealth <= 6.0f) {
-            AutoLogoutTracker.performAutoLogout(ctx, "Máu nguy kịch tức thời từ Server (còn " + String.format(java.util.Locale.ROOT, "%.1f", serverHealth) + " HP)!");
+            String mobDetail = getDetailedMobThreatInfo(ctx);
+            if (mobDetail != null) {
+                AutoLogoutTracker.performAutoLogout(ctx, "Bị quái vật [" + mobDetail + "] tấn công NGUY KỊCH (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", serverHealth) + " HP)!");
+            } else {
+                String cause = detectDamageCause(ctx);
+                AutoLogoutTracker.performAutoLogout(ctx, cause + " (Máu nguy kịch: " + String.format(java.util.Locale.ROOT, "%.1f", serverHealth) + " HP)!");
+            }
         }
     }
 
@@ -135,7 +168,7 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
         tickCount++;
 
-        // Thời gian chờ an toàn (Grace Period) sau khi vừa vào lại thế giới (chỉ bảo vệ chống quét Player ở spawn)
+        // Thời gian chờ an toàn (Grace Period) sau khi vừa vào lại thế giới (chỉ áp dụng chống quét Player ở spawn)
         boolean inGracePeriod = AutoLogoutTracker.getJoinGraceTicks() > 0;
         if (inGracePeriod) {
             AutoLogoutTracker.decrementJoinGraceTicks();
@@ -143,12 +176,6 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
         // Vệ binh bảo vệ: Không bao giờ kick khi bật neverKick
         if (Baritone.settings().neverKick.value) {
-            lavaStartTime = 0L;
-            return;
-        }
-
-        // Vệ binh bảo vệ: Tuyệt đối không kick khi ở sảnh / khu vực an toàn
-        if (AutoLogoutTracker.isInLobbyOrSafezone(ctx)) {
             lavaStartTime = 0L;
             return;
         }
@@ -171,44 +198,40 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
 
         String dangerReason = null;
 
-        // TRƯỜNG HỢP 1: PHÁT HIỆN NGƯỜI CHƠI ĐẾN GẦN (KỂ CẢ DÙNG THUỐC TÀNG HÌNH / INVIS)
-        boolean canScanPlayer = checkPlayer && !inGracePeriod;
-        if (canScanPlayer && Baritone.settings().autoLogoutOnlyWhileMining.value && !AutoLogoutTracker.isBaritoneBusyMining()) {
-            canScanPlayer = false;
-        }
-        if (canScanPlayer) {
-            AutoLogoutTracker.DetectedPlayerInfo playerThreat = AutoLogoutTracker.scanForNearbyPlayer(ctx);
-            if (playerThreat != null) {
-                dangerReason = "Phát hiện người chơi: " + playerThreat.getFormattedDescription();
-            }
-        }
-
-        // TRƯỜNG HỢP 2: LAVA GUARD - Ở TRONG HỒ LAVA LIÊN TỤC 5 GIÂY (Debounce Timer 5s chống nhấp nhô)
-        if (dangerReason == null && checkDanger) {
+        // =========================================================================
+        // TRƯỜNG HỢP 1: LAVA GUARD - Ở TRONG HỒ LAVA (5 GIÂY HOẶC MÁU NGUY KỊCH)
+        // TUYỆT ĐỐI KHÔNG BỊ CHẶN BỞI SAFE-ZONE / LOBBY
+        // =========================================================================
+        if (checkDanger) {
             long nowMs = System.currentTimeMillis();
-            boolean currentlyInLava = isInsideLavaPool(ctx.world(), ctx.player());
+            boolean currentlyInLava = ctx.player().isInLava() || isInsideLavaPool(ctx.world(), ctx.player());
             boolean recentLavaDamage = (nowMs - lastLavaDamageTime < 1500L);
 
             if (currentlyInLava || recentLavaDamage) {
                 if (lavaStartTime == 0L) {
                     lavaStartTime = nowMs;
                 }
+                float curHealth = ctx.player().getHealth();
+
                 if (nowMs - lavaStartTime >= MAX_LAVA_TIME_MS) {
                     lavaStartTime = 0L;
-                    dangerReason = "Bạn đã ở trong hồ lava liên tục quá 5 giây!";
-                } else if (ctx.player().getHealth() <= 6.0f) {
+                    dangerReason = "Bạn đã ở trong hồ dung nham liên tục 5 giây!";
+                } else if (curHealth <= 6.0f) {
                     lavaStartTime = 0L;
-                    dangerReason = "Đang ở trong HỒ LAVA và MÁU NGUY KỊCH (còn " + String.format(java.util.Locale.ROOT, "%.1f", ctx.player().getHealth()) + " HP)!";
+                    dangerReason = "Đang ở trong HỒ LAVA và MÁU NGUY KỊCH (còn " + String.format(java.util.Locale.ROOT, "%.1f", curHealth) + " HP)!";
                 }
             } else {
                 // Thoát hoàn toàn khỏi lava và không còn dính sát thương lửa quá 1.5s mới reset timer
                 lavaStartTime = 0L;
             }
-        } else if (!checkDanger) {
+        } else {
             lavaStartTime = 0L;
         }
 
-        // TRƯỜNG HỢP 3: MẤT MÁU NGUY HIỂM / QUÁI ĐÁNH / ĐÓI / TÉ NGÃ (không liên quan đến lava)
+        // =========================================================================
+        // TRƯỜNG HỢP 2: MẤT MÁU NGUY HIỂM / QUÁI ĐÁNH / ĐÓI / TÉ NGÃ / HẾT TOTEM
+        // TUYỆT ĐỐI KHÔNG BỊ CHẶN BỞI SAFE-ZONE / LOBBY (LOG RÕ CON QUÁI VẬT)
+        // =========================================================================
         if (dangerReason == null && checkDanger) {
             int totemCount = getTotemCount();
             float health = ctx.player().getHealth();
@@ -216,12 +239,38 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
             float threshold = Baritone.settings().autoLogoutHealthThreshold.value;
             boolean lowHealth = (health <= maxHealth * threshold) || (health <= 10.0f);
 
+            String mobDetail = getDetailedMobThreatInfo(ctx);
+
             if (totemCount == 0 && lowHealth) {
-                String cause = detectDamageCause(ctx);
-                dangerReason = cause + " (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+                if (mobDetail != null) {
+                    dangerReason = "Bị quái vật [" + mobDetail + "] tấn công và ĐÃ HẾT TOTEM (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP)!";
+                } else {
+                    String cause = detectDamageCause(ctx);
+                    dangerReason = cause + " (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP) và ĐÃ HẾT TOTEM!";
+                }
             } else if (health <= 6.0f) {
-                String cause = detectDamageCause(ctx);
-                dangerReason = cause + " (Máu nguy kịch: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP)!";
+                if (mobDetail != null) {
+                    dangerReason = "Bị quái vật [" + mobDetail + "] tấn công NGUY KỊCH (Máu còn: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP)!";
+                } else {
+                    String cause = detectDamageCause(ctx);
+                    dangerReason = cause + " (Máu nguy kịch: " + String.format(java.util.Locale.ROOT, "%.1f", health) + "/" + (int) maxHealth + " HP)!";
+                }
+            }
+        }
+
+        // =========================================================================
+        // TRƯỜNG HỢP 3: PHÁT HIỆN NGƯỜI CHƠI ĐẾN GẦN (KỂ CẢ DÙNG THUỐC TÀNG HÌNH / INVIS)
+        // (Chỉ trường hợp này mới kiểm tra Safezone / Lobby để không kick khi ở sảnh)
+        // =========================================================================
+        if (dangerReason == null && checkPlayer && !inGracePeriod) {
+            boolean inSafezone = AutoLogoutTracker.isInLobbyOrSafezone(ctx);
+            boolean onlyMiningBlocked = Baritone.settings().autoLogoutOnlyWhileMining.value && !AutoLogoutTracker.isBaritoneBusyMining();
+
+            if (!inSafezone && !onlyMiningBlocked) {
+                AutoLogoutTracker.DetectedPlayerInfo playerThreat = AutoLogoutTracker.scanForNearbyPlayer(ctx);
+                if (playerThreat != null) {
+                    dangerReason = "Phát hiện người chơi: " + playerThreat.getFormattedDescription();
+                }
             }
         }
 
@@ -263,28 +312,94 @@ public final class EmergencySafetyBehavior extends Behavior implements Helper {
         return y < lavaSurfaceY - 0.001;
     }
 
-    public static String detectDamageCause(baritone.api.utils.IPlayerContext ctx) {
-        if (ctx == null || ctx.player() == null) return "Bị mất máu nguy hiểm";
+    public static String formatMobInfo(baritone.api.utils.IPlayerContext ctx, LivingEntity mob) {
+        if (mob == null || ctx == null || ctx.player() == null) return null;
+        try {
+            String customName = mob.getCustomName() != null ? mob.getCustomName().getString() : null;
+            String typeName = mob.getType().getDescription().getString();
+            String displayName = (customName != null && !customName.isEmpty()) ? customName : mob.getDisplayName().getString();
 
-        // 1. Quái vật gây sát thương gần nhất
+            double dist = ctx.player().distanceTo(mob);
+            double mx = mob.getX();
+            double my = mob.getY();
+            double mz = mob.getZ();
+            float mobHp = mob.getHealth();
+            float mobMaxHp = mob.getMaxHealth();
+
+            StringBuilder sb = new StringBuilder();
+            sb.append(displayName);
+            if (!displayName.equalsIgnoreCase(typeName)) {
+                sb.append(" (").append(typeName).append(")");
+            }
+            sb.append(String.format(java.util.Locale.ROOT, " • Cách: %.1fm • Vị trí: [%.1f, %.1f, %.1f]", dist, mx, my, mz));
+            if (mobMaxHp > 0) {
+                sb.append(String.format(java.util.Locale.ROOT, " • Máu: %.0f/%.0f HP", mobHp, mobMaxHp));
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            return mob.getName().getString();
+        }
+    }
+
+    public static String getDetailedMobThreatInfo(baritone.api.utils.IPlayerContext ctx) {
+        if (ctx == null || ctx.player() == null) return null;
+
+        // 1. Quái vật gây sát thương gần nhất từ gói tin DamagePacket trong vòng 3 giây
+        long now = System.currentTimeMillis();
+        if (lastMobThreatInfo != null && (now - lastMobThreatTime < 3000L)) {
+            return lastMobThreatInfo;
+        }
+
+        // 2. getLastHurtByMob từ entity Player
         try {
             LivingEntity mob = ctx.player().getLastHurtByMob();
-            if (mob != null) {
-                return "Bị quái vật (" + mob.getDisplayName().getString() + ") tấn công";
+            if (mob != null && mob.isAlive()) {
+                return formatMobInfo(ctx, mob);
             }
         } catch (Throwable ignored) {}
 
-        // 2. Quái vật ở cự ly nguy hiểm sát người chơi (5 block)
+        // 3. getLastAttacker
+        try {
+            LivingEntity attacker = ctx.player().getLastAttacker();
+            if (attacker != null && attacker.isAlive()) {
+                return formatMobInfo(ctx, attacker);
+            }
+        } catch (Throwable ignored) {}
+
+        // 4. Quét tìm quái vật gần nhất trong phạm vi 8 block
         if (ctx.world() != null) {
             try {
                 var monsters = ctx.world().getEntitiesOfClass(
                         Monster.class,
-                        ctx.player().getBoundingBox().inflate(5.0)
+                        ctx.player().getBoundingBox().inflate(8.0)
                 );
-                if (!monsters.isEmpty()) {
-                    return "Bị quái vật (" + monsters.get(0).getDisplayName().getString() + ") tấn công";
+                Monster closest = null;
+                double minDist = Double.MAX_VALUE;
+                for (Monster m : monsters) {
+                    if (m != null && m.isAlive()) {
+                        double d = ctx.player().distanceTo(m);
+                        if (d < minDist) {
+                            minDist = d;
+                            closest = m;
+                        }
+                    }
+                }
+                if (closest != null) {
+                    return formatMobInfo(ctx, closest);
                 }
             } catch (Throwable ignored) {}
+        }
+
+        return null;
+    }
+
+    public static String detectDamageCause(baritone.api.utils.IPlayerContext ctx) {
+        if (ctx == null || ctx.player() == null) return "Bị mất máu nguy hiểm";
+
+        // 1. Quái vật gây sát thương gần nhất (chi tiết tên, loại, tọa độ, khoảng cách)
+        String mobInfo = getDetailedMobThreatInfo(ctx);
+        if (mobInfo != null) {
+            return "Bị quái vật [" + mobInfo + "] tấn công";
         }
 
         // 3. Đói ăn kiệt sức (thanh đói = 0)

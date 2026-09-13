@@ -21,19 +21,23 @@ import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.utils.ClickGuiTheme;
 import baritone.utils.DiscordManager;
+import baritone.utils.FarmingStatsTracker;
 import baritone.utils.MiningStatsTracker;
 import baritone.utils.StreamerUtil;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.core.NonNullList;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Bang dieu khien toi gian cho Che do Botting (Man hinh den).
- * Hien thi day du thong tin tai khoan voi o spoiler bao mat, toa do, so du, tien trinh dao va chat
+ * Hien thi day du thong tin tai khoan voi o spoiler bao mat, toa do, so du, tien trinh dao/farm va chat
  * trong khi the gioi 3D hoan toan khong duoc render de giam tai GPU ve ~0%.
  */
 public final class BottingDashboardOverlay {
@@ -76,8 +80,8 @@ public final class BottingDashboardOverlay {
         int screenW = mc.getWindow().getGuiScaledWidth();
         int screenH = mc.getWindow().getGuiScaledHeight();
 
-        int cardW = Math.min(420, screenW - 24);
-        int cardH = Math.min(260, screenH - 24);
+        int cardW = Math.min(440, screenW - 20);
+        int cardH = Math.min(270, screenH - 20);
         int cardX = (screenW - cardW) / 2;
         int cardY = (screenH - cardH) / 2;
 
@@ -92,7 +96,7 @@ public final class BottingDashboardOverlay {
         g.fill(cardX + 2, cardY + headerH, cardX + cardW - 2, cardY + headerH + 1, 0xFF1E293B);
 
         // Header Title & Badge
-        ClickGuiTheme.drawText(g, font, "\u26A1 BOTTING DASHBOARD (ULTRA ECO)", cardX + 10, cardY + 9, 0xFF38BDF8, true);
+        ClickGuiTheme.drawText(g, font, "⚡ FARM NẶNG DASHBOARD (ULTRA ECO)", cardX + 10, cardY + 9, 0xFF38BDF8, true);
 
         int fpsVal = BaritoneAPI.getSettings().bottingFps.value;
         String badgeText = "[" + (fpsVal > 0 ? fpsVal : 10) + " FPS | GPU ~0%]";
@@ -160,6 +164,46 @@ public final class BottingDashboardOverlay {
         ClickGuiTheme.drawText(g, font, "\u00A77Sinh t\u1ED3n: \u00A7c" + hp + "/" + maxHp + " \u2764 \u00A77| \u00A76" + food + " 🍗 \u00A77| \u00A79" + armor + " \u00A77Gi\u00E1p", col1X, curY, 0xFFE2E8F0, false);
         curY += 12;
 
+        // Dung cu chinh & Do ben
+        ItemStack mainHand = player.getMainHandItem();
+        String toolText;
+        if (!mainHand.isEmpty()) {
+            String toolName = mainHand.getHoverName().getString();
+            if (toolName.length() > 14) toolName = toolName.substring(0, 12) + "..";
+            if (mainHand.getMaxDamage() > 0) {
+                int curDur = mainHand.getMaxDamage() - mainHand.getDamageValue();
+                int maxDur = mainHand.getMaxDamage();
+                String durCol = curDur < (maxDur * 0.15) ? "\u00A7c" : (curDur < (maxDur * 0.4) ? "\u00A7e" : "\u00A7a");
+                toolText = "\u00A7f" + toolName + " " + durCol + curDur + "/" + maxDur;
+            } else {
+                toolText = "\u00A7f" + toolName;
+            }
+        } else {
+            toolText = "\u00A78(Tay kh\u00F4ng)";
+        }
+        ClickGuiTheme.drawText(g, font, "\u00A77D\u1EE5ng c\u1EE5: " + toolText, col1X, curY, 0xFFE2E8F0, false);
+        curY += 12;
+
+        // O trong tui do
+        int freeSlots = 0;
+        NonNullList<ItemStack> inv = player.getInventory().getNonEquipmentItems();
+        for (ItemStack s : inv) {
+            if (s.isEmpty()) freeSlots++;
+        }
+        String slotColor = freeSlots <= 2 ? "\u00A7c" : (freeSlots <= 5 ? "\u00A7e" : "\u00A7a");
+        ClickGuiTheme.drawText(g, font, "\u00A77T\u00FAi \u0111\u1ED3: " + slotColor + freeSlots + "/36 \u00A77\u00F4 tr\u1ED1ng", col1X, curY, 0xFFE2E8F0, false);
+        curY += 12;
+
+        // RAM Usage
+        long maxMem = Runtime.getRuntime().maxMemory() / (1024L * 1024L);
+        long totalMem = Runtime.getRuntime().totalMemory() / (1024L * 1024L);
+        long freeMem = Runtime.getRuntime().freeMemory() / (1024L * 1024L);
+        long usedMem = totalMem - freeMem;
+        long ramPct = maxMem > 0 ? (usedMem * 100L / maxMem) : 0L;
+        String ramCol = ramPct > 85 ? "\u00A7c" : (ramPct > 70 ? "\u00A7e" : "\u00A7a");
+        ClickGuiTheme.drawText(g, font, "\u00A77RAM: " + ramCol + usedMem + "M/" + maxMem + "M (" + ramPct + "%)", col1X, curY, 0xFFE2E8F0, false);
+        curY += 12;
+
         // Baritone Status
         String status = "\u00A77\u0110ang ch\u1EDD l\u1EC7nh";
         IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
@@ -174,33 +218,69 @@ public final class BottingDashboardOverlay {
         }
         ClickGuiTheme.drawText(g, font, "\u00A77Tr\u1EA1ng th\u00E1i: " + status, col1X, curY, 0xFFE2E8F0, false);
 
-        // Column 2: Mining Stats (Quang & Khoi)
+        // Column 2: Farming Stats or Mining Stats
         int statY = cardY + headerH + 8;
-        MiningStatsTracker stats = MiningStatsTracker.getInstance();
-        int totalMined = stats.getTotalBlocksMined();
-        ClickGuiTheme.drawText(g, font, "\u00A77Kh\u1ED1i \u0111\u00E3 \u0111\u00E0o: \u00A7f" + totalMined, col2X, statY, 0xFFE2E8F0, false);
-        statY += 12;
+        boolean isFarming = (baritone != null && baritone.getFarmProcess().isActive()) ||
+                (FarmingStatsTracker.getInstance().getTotalHarvested() > 0 && MiningStatsTracker.getInstance().getTotalBlocksMined() == 0);
 
-        int diamond = stats.getOreCount(MiningStatsTracker.OreType.DIAMOND);
-        int diamondDrops = stats.getDiamondDropCount();
-        String diaText = diamondDrops > diamond ? diamond + " (" + diamondDrops + " vi\u00EAn)" : String.valueOf(diamond);
-        ClickGuiTheme.drawText(g, font, "\u00A7b\u25C6 Kim C\u01B0\u01A1ng: \u00A7f" + diaText, col2X, statY, 0xFF38BDF8, false);
-        statY += 12;
+        if (isFarming) {
+            FarmingStatsTracker farmStats = FarmingStatsTracker.getInstance();
+            farmStats.onInventoryTick(player);
+            int totalHarvested = farmStats.getTotalHarvested();
+            double rate = farmStats.getHarvestPerHour();
+            String rateStr = rate > 0 ? String.format(" \u00A77(%.0f/h)", rate) : "";
+            ClickGuiTheme.drawText(g, font, "\u00A76\u25C6 N\u00F4ng s\u1EA3n \u0111\u00E3 thu: \u00A7f" + totalHarvested + rateStr, col2X, statY, 0xFFF59E0B, false);
+            statY += 12;
 
-        int emerald = stats.getOreCount(MiningStatsTracker.OreType.EMERALD);
-        ClickGuiTheme.drawText(g, font, "\u00A7a\u25C6 L\u1EE5c B\u1EA3o: \u00A7f" + emerald, col2X, statY, 0xFF34D399, false);
-        statY += 12;
+            Map<FarmingStatsTracker.CropType, Integer> active = farmStats.getActiveCrops();
+            if (active.isEmpty()) {
+                ClickGuiTheme.drawText(g, font, "\u00A7e\u25C6 L\u00FAa m\u00EC: \u00A7f0", col2X, statY, 0xFFEAB308, false);
+                statY += 12;
+                ClickGuiTheme.drawText(g, font, "\u00A76\u25C6 C\u00E0 r\u1ED1t: \u00A7f0", col2X, statY, 0xFFF97316, false);
+                statY += 12;
+                ClickGuiTheme.drawText(g, font, "\u00A7e\u25C6 Khoai t\u00E2y: \u00A7f0", col2X, statY, 0xFFE2B36F, false);
+                statY += 12;
+                ClickGuiTheme.drawText(g, font, "\u00A7a\u25C6 D\u01B0a h\u1EA5u: \u00A7f0", col2X, statY, 0xFF22C55E, false);
+                statY += 12;
+                ClickGuiTheme.drawText(g, font, "\u00A7a\u25C6 M\u00EDa / Tre: \u00A7f0", col2X, statY, 0xFF84CC16, false);
+                statY += 12;
+            } else {
+                int shown = 0;
+                for (Map.Entry<FarmingStatsTracker.CropType, Integer> entry : active.entrySet()) {
+                    if (shown++ >= 6) break;
+                    FarmingStatsTracker.CropType crop = entry.getKey();
+                    ClickGuiTheme.drawText(g, font, "\u00A7e\u25C6 " + crop.getNameVi() + ": \u00A7f" + entry.getValue(), col2X, statY, crop.getColor(), false);
+                    statY += 12;
+                }
+            }
+        } else {
+            MiningStatsTracker stats = MiningStatsTracker.getInstance();
+            int totalMined = stats.getTotalBlocksMined();
+            ClickGuiTheme.drawText(g, font, "\u00A77Kh\u1ED1i \u0111\u00E3 \u0111\u00E0o: \u00A7f" + totalMined, col2X, statY, 0xFFE2E8F0, false);
+            statY += 12;
 
-        int debris = stats.getOreCount(MiningStatsTracker.OreType.ANCIENT_DEBRIS);
-        ClickGuiTheme.drawText(g, font, "\u00A7d\u25C6 M\u1EA3nh C\u1ED5 \u0110\u1EA1i: \u00A7f" + debris, col2X, statY, 0xFFC084FC, false);
-        statY += 12;
+            int diamond = stats.getOreCount(MiningStatsTracker.OreType.DIAMOND);
+            int diamondDrops = stats.getDiamondDropCount();
+            String diaText = diamondDrops > diamond ? diamond + " (" + diamondDrops + " vi\u00EAn)" : String.valueOf(diamond);
+            ClickGuiTheme.drawText(g, font, "\u00A7b\u25C6 Kim C\u01B0\u01A1ng: \u00A7f" + diaText, col2X, statY, 0xFF38BDF8, false);
+            statY += 12;
 
-        int gold = stats.getOreCount(MiningStatsTracker.OreType.GOLD);
-        ClickGuiTheme.drawText(g, font, "\u00A7e\u25C6 Qu\u1EB7ng V\u00E0ng: \u00A7f" + gold, col2X, statY, 0xFFFBBF24, false);
-        statY += 12;
+            int emerald = stats.getOreCount(MiningStatsTracker.OreType.EMERALD);
+            ClickGuiTheme.drawText(g, font, "\u00A7a\u25C6 L\u1EE5c B\u1EA3o: \u00A7f" + emerald, col2X, statY, 0xFF34D399, false);
+            statY += 12;
 
-        int iron = stats.getOreCount(MiningStatsTracker.OreType.IRON);
-        ClickGuiTheme.drawText(g, font, "\u00A7f\u25C6 Qu\u1EB7ng S\u1EAFt: \u00A7f" + iron, col2X, statY, 0xFFE2E8F0, false);
+            int debris = stats.getOreCount(MiningStatsTracker.OreType.ANCIENT_DEBRIS);
+            ClickGuiTheme.drawText(g, font, "\u00A7d\u25C6 M\u1EA3nh C\u1ED5 \u0110\u1EA1i: \u00A7f" + debris, col2X, statY, 0xFFC084FC, false);
+            statY += 12;
+
+            int gold = stats.getOreCount(MiningStatsTracker.OreType.GOLD);
+            ClickGuiTheme.drawText(g, font, "\u00A7e\u25C6 Qu\u1EB7ng V\u00E0ng: \u00A7f" + gold, col2X, statY, 0xFFFBBF24, false);
+            statY += 12;
+
+            int iron = stats.getOreCount(MiningStatsTracker.OreType.IRON);
+            ClickGuiTheme.drawText(g, font, "\u00A7f\u25C6 Qu\u1EB7ng S\u1EAFt: \u00A7f" + iron, col2X, statY, 0xFFE2E8F0, false);
+            statY += 12;
+        }
 
         // Chat / Activity Section Divider
         int chatSectionY = Math.max(curY, statY) + 8;

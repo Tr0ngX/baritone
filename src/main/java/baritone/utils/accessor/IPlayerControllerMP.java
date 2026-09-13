@@ -27,6 +27,12 @@ public interface IPlayerControllerMP {
 
     BlockPos getCurrentBlock();
 
+    void setCurrentBlock(BlockPos pos);
+
+    float getDestroyProgress();
+
+    void setDestroyProgress(float destroyProgress);
+
     void callSyncCurrentPlayItem();
 
     void setDestroyDelay(int destroyDelay);

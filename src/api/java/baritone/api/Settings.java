@@ -866,9 +866,9 @@ public final class Settings {
 
     /**
      * Tự động bảo vệ thông minh: Chỉ cho phép tự động ngắt kết nối khi đang thực sự chạy tác vụ đào quặng (#mine/#farm).
-     * Khi đang ở Sảnh chờ (Lobby / Spawn) hoặc khi đứng yên rảnh rỗi, tuyệt đối KHÔNG BAO GIỜ kick. Mặc định là true.
+     * Mặc định là false (bảo vệ an toàn 24/7 mọi lúc mọi nơi kể cả khi đứng yên, AFK hoặc đang ăn).
      */
-    public final Setting<Boolean> autoLogoutOnlyWhileMining = new Setting<>(true);
+    public final Setting<Boolean> autoLogoutOnlyWhileMining = new Setting<>(false);
 
     /**
      * Tự động bỏ qua chính bản thân và đồng đội: Tuyệt đối không bao giờ ngắt kết nối khi gặp lại chính bản thân (clone/replay/anti-cheat bot) hoặc người chơi cùng Team / Clan / Whitelist. Mặc định là true.

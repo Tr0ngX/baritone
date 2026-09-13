@@ -39,6 +39,18 @@ public abstract class MixinPlayerController implements IPlayerControllerMP {
     @Override
     public abstract BlockPos getCurrentBlock();
 
+    @Accessor("destroyBlockPos")
+    @Override
+    public abstract void setCurrentBlock(BlockPos pos);
+
+    @Accessor("destroyProgress")
+    @Override
+    public abstract float getDestroyProgress();
+
+    @Accessor("destroyProgress")
+    @Override
+    public abstract void setDestroyProgress(float destroyProgress);
+
     @Invoker("ensureHasSentCarriedItem")
     @Override
     public abstract void callSyncCurrentPlayItem();
@@ -54,6 +66,7 @@ public abstract class MixinPlayerController implements IPlayerControllerMP {
             net.minecraft.world.level.block.state.BlockState state = mc.level.getBlockState(pos);
             if (!state.isAir()) {
                 baritone.utils.MiningStatsTracker.getInstance().onBlockBroken(state, pos);
+                baritone.utils.FarmingStatsTracker.getInstance().onBlockBroken(state, pos);
             }
         }
     }

@@ -25,13 +25,19 @@ import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ConnectScreen;
+import net.minecraft.client.gui.screens.LevelLoadingScreen;
+import net.minecraft.client.gui.screens.ProgressScreen;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.core.BlockPos;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * @author Brady
@@ -46,12 +52,34 @@ public class MixinWorldRenderer {
             cancellable = true
     )
     private void onPreRenderLevel(final GraphicsResourceAllocator graphicsResourceAllocator, final DeltaTracker deltaTracker, final boolean bl, final Camera camera, final Matrix4f matrix4f, final Matrix4f matrix4f2, final Matrix4f matrix4f3, final GpuBufferSlice gpuBufferSlice, final Vector4f vector4f, final boolean bl2, final CallbackInfo ci) {
-        if (BaritoneAPI.getSettings().bottingMode.value) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null
+                || mc.screen instanceof LevelLoadingScreen
+                || mc.screen instanceof ProgressScreen
+                || mc.screen instanceof ConnectScreen) {
+            return;
+        }
+        if (BaritoneAPI.getSettings().heavyFarmMode.value || BaritoneAPI.getSettings().bottingMode.value) {
             if (baritone.utils.CleanScreenshotHelper.isCaptureRequested()) {
                 baritone.utils.CleanScreenshotHelper.markLevelRendered();
             } else {
                 ci.cancel();
             }
+        }
+    }
+
+    /**
+     * Bỏ qua việc chờ đợi chunk section compile và render trong LevelLoadTracker/LevelLoadingScreen.
+     * Tránh việc bị đứng vĩnh viễn ở màn hình "Loading terrain..." khi bật botting/farm nặng.
+     */
+    @Inject(
+            method = "isSectionCompiledAndVisible",
+            at = @At("HEAD"),
+            cancellable = true
+    )
+    private void onIsSectionCompiledAndVisible(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+        if (BaritoneAPI.getSettings().heavyFarmMode.value || BaritoneAPI.getSettings().bottingMode.value) {
+            cir.setReturnValue(true);
         }
     }
 

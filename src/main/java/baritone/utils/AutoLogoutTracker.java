@@ -44,6 +44,7 @@ import net.minecraft.util.Util;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -309,7 +310,7 @@ public final class AutoLogoutTracker {
     public static void performAutoLogout(IPlayerContext ctx, String reason) {
         if (ctx == null || ctx.player() == null) return;
         if (Baritone.settings().neverKick.value) return;
-        if (joinGraceTicks > 0) return;
+
         // Guard autoLogoutOnlyWhileMining chỉ áp dụng cho radar người chơi (tránh kick khi AFK/chat)
         // Tuyệt đối KHÔNG chặn các mối nguy hiểm sinh tử (Lava, Máu nguy kịch, Hết Totem)
         boolean isPlayerThreat = reason != null && reason.toLowerCase(Locale.ROOT).contains("người chơi");
@@ -348,12 +349,10 @@ public final class AutoLogoutTracker {
             mc.keyboardHandler.setClipboard(coordsSimple);
         } catch (Throwable ignored) {}
 
-        // Tự động tắt cả 2 tính năng bảo vệ để khi đăng nhập lại vào game không bị ngắt kết nối lặp lại
-        Baritone.settings().autoLogoutOnDanger.value = false;
-        Baritone.settings().autoLogoutOnPlayer.value = false;
-        AutoMineScreen.optAutoLogout = false;
-        AutoMineConfig.save();
-        baritone.api.utils.SettingsUtil.save(Baritone.settings());
+        // Đặt Grace Period 100 ticks (5 giây) sau khi kick để khi đăng nhập lại vào game
+        // người chơi có 5 giây an toàn để gõ lệnh (/spawn, /home...) mà không bị lặp kick ngay!
+        // TUYỆT ĐỐI KHÔNG tự động tắt vĩnh viễn setting của người chơi để đảm bảo tính năng luôn bảo vệ!
+        joinGraceTicks = 100;
 
         // Dừng mọi hành vi điều khiển của Baritone
         try {
@@ -371,15 +370,7 @@ public final class AutoLogoutTracker {
         Helper.HELPER.logDirect("§c" + alertLog);
         BaritoneFileLogger.warn(alertLog);
 
-        // Gui alert khan cap len Discord Webhook
-        try {
-            DiscordManager.getInstance().sendAlert(
-                    "🚨 [CẢNH BÁO BẢO VỆ – AUTO LOGOUT]",
-                    "**Nguyên nhân:** `" + reason + "`\n" +
-                    "**Toạ độ:** `X: " + String.format(Locale.ROOT, "%.2f", lastX) + ", Y: " + String.format(Locale.ROOT, "%.2f", lastY) + ", Z: " + String.format(Locale.ROOT, "%.2f", lastZ) + "` (" + lastDimension + ")",
-                    0xFF0000
-            );
-        } catch (Throwable ignored) {}
+        String photoPathInfo = lastScreenshotFile != null ? lastScreenshotFile.getName() : "Đang lưu vào thư mục screenshots...";
 
         // Tạo giao diện thông báo ngắt kết nối hiển thị toạ độ cực kỳ rõ nét lên màn hình (bố cục gọn gàng, không tràn/đè)
         Component kickReason = Component.literal(
@@ -389,13 +380,20 @@ public final class AutoLogoutTracker {
                 "§a§lX: " + String.format(Locale.ROOT, "%.2f", lastX) +
                 "   §8|   §a§lY: " + String.format(Locale.ROOT, "%.2f", lastY) +
                 "   §8|   §a§lZ: " + String.format(Locale.ROOT, "%.2f", lastZ) + "\n" +
-                "§7Khu vực: §f[" + (int) Math.floor(lastX) + ", " + (int) Math.floor(lastY) + ", " + (int) Math.floor(lastZ) + "]  •  §8" + lastDimension.replace("minecraft:", "")
+                "§7Khu vực: §f[" + (int) Math.floor(lastX) + ", " + (int) Math.floor(lastY) + ", " + (int) Math.floor(lastZ) + "]  •  §8" + lastDimension.replace("minecraft:", "") + "\n\n" +
+                "§b📸 ẢNH CHỤP MÀN HÌNH SỰ CỐ: §f" + photoPathInfo + "\n" +
+                "§7(Bấm nút §a[📸 Mở Ảnh]§7 bên dưới hoặc nhấn phím §e[O]§7 để mở ảnh, phím §d[Z]§7 để phóng to)"
         );
 
+        if (mc.getConnection() != null) {
+            try {
+                mc.getConnection().getConnection().disconnect(kickReason);
+            } catch (Throwable ignored) {}
+        }
         if (ctx.world() instanceof ClientLevel clientLevel) {
-            clientLevel.disconnect(kickReason);
-        } else if (mc.getConnection() != null) {
-            mc.getConnection().getConnection().disconnect(kickReason);
+            try {
+                clientLevel.disconnect(kickReason);
+            } catch (Throwable ignored) {}
         }
     }
 
@@ -410,38 +408,52 @@ public final class AutoLogoutTracker {
         }
 
         try {
-            Screenshot.takeScreenshot(mc.getMainRenderTarget(), 1, nativeImage -> {
+            Screenshot.takeScreenshot(mc.getMainRenderTarget(), nativeImage -> {
                 if (nativeImage == null) return;
+
+                File screenshotsDir = new File(mc.gameDirectory, "screenshots");
+                if (!screenshotsDir.exists()) {
+                    screenshotsDir.mkdirs();
+                }
+                String timeStr = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new Date());
+                File targetFile = new File(screenshotsDir, "autologout_" + timeStr + ".png");
+                lastScreenshotFile = targetFile;
+
+                mc.execute(() -> {
+                    try {
+                        if (lastScreenshotTexture != null) {
+                            mc.getTextureManager().release(SCREENSHOT_TEXTURE_ID);
+                            lastScreenshotTexture.close();
+                            lastScreenshotTexture = null;
+                        }
+                        lastScreenshotTexture = new DynamicTexture(() -> "AutoLogoutScreenshot", nativeImage);
+                        mc.getTextureManager().register(SCREENSHOT_TEXTURE_ID, lastScreenshotTexture);
+                        hasScreenshot = true;
+                    } catch (Throwable t) {
+                        BaritoneFileLogger.error("Lỗi đăng ký texture ảnh chụp: " + t);
+                    }
+                });
 
                 Util.ioPool().execute(() -> {
                     try {
-                        File screenshotsDir = new File(mc.gameDirectory, "screenshots");
-                        if (!screenshotsDir.exists()) {
-                            screenshotsDir.mkdirs();
-                        }
-                        String timeStr = new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss").format(new Date());
-                        File targetFile = new File(screenshotsDir, "autologout_" + timeStr + ".png");
                         nativeImage.writeToFile(targetFile);
-                        lastScreenshotFile = targetFile;
                         BaritoneFileLogger.info("Đã lưu ảnh chụp ngắt kết nối khẩn cấp: " + targetFile.getAbsolutePath());
+
+                        // Đồng thời gửi ảnh đính kèm lên Discord Webhook
+                        try {
+                            byte[] imgBytes = Files.readAllBytes(targetFile.toPath());
+                            DiscordManager.getInstance().sendAlertWithAttachment(
+                                    "🚨 [CẢNH BÁO BẢO VỆ – AUTO LOGOUT]",
+                                    "**Nguyên nhân:** `" + lastReason + "`\n" +
+                                    "**Toạ độ:** `X: " + String.format(Locale.ROOT, "%.2f", lastX) + ", Y: " + String.format(Locale.ROOT, "%.2f", lastY) + ", Z: " + String.format(Locale.ROOT, "%.2f", lastZ) + "` (" + lastDimension + ")\n" +
+                                    "📸 **Ảnh chụp sự cố:** `" + targetFile.getName() + "`",
+                                    0xFF0000,
+                                    imgBytes
+                            );
+                        } catch (Throwable ignored) {}
                     } catch (Throwable t) {
                         BaritoneFileLogger.error("Lỗi lưu file ảnh chụp ra ổ đĩa: " + t);
                     }
-
-                    mc.execute(() -> {
-                        try {
-                            if (lastScreenshotTexture != null) {
-                                mc.getTextureManager().release(SCREENSHOT_TEXTURE_ID);
-                                lastScreenshotTexture.close();
-                                lastScreenshotTexture = null;
-                            }
-                            lastScreenshotTexture = new DynamicTexture(() -> "AutoLogoutScreenshot", nativeImage);
-                            mc.getTextureManager().register(SCREENSHOT_TEXTURE_ID, lastScreenshotTexture);
-                            hasScreenshot = true;
-                        } catch (Throwable t) {
-                            BaritoneFileLogger.error("Lỗi đăng ký texture ảnh chụp: " + t);
-                        }
-                    });
                 });
             });
         } catch (Throwable t) {
@@ -462,12 +474,12 @@ public final class AutoLogoutTracker {
             // Vẽ ảnh chụp toàn màn hình tỉ lệ co giãn phủ kín nền
             guiGraphics.blit(SCREENSHOT_TEXTURE_ID, 0, 0, width, height, 0.0f, 1.0f, 0.0f, 1.0f);
 
-            // Phủ lớp màn tối kính mờ điện ảnh (Dark Cinematic Vignette) để chữ DisconnectedScreen nổi bật 100%
-            guiGraphics.fillGradient(0, 0, width, height, 0xCC0A0F1D, 0xEE020617);
+            // Phủ lớp màn tối kính mờ điện ảnh vừa phải (~50%) để chữ nổi bật mà cảnh game bên dưới vẫn nhìn rõ
+            guiGraphics.fillGradient(0, 0, width, height, 0x880A0F1D, 0x99020617);
 
             // Viền bóng tối 2 mép trên dưới (Vignette)
-            guiGraphics.fill(0, 0, width, 40, 0x80000000);
-            guiGraphics.fill(0, height - 50, width, height, 0x80000000);
+            guiGraphics.fill(0, 0, width, 40, 0x66000000);
+            guiGraphics.fill(0, height - 50, width, height, 0x66000000);
             return true;
         } catch (Throwable t) {
             return false;
@@ -540,7 +552,7 @@ public final class AutoLogoutTracker {
             guiGraphics.fill(zoomX - 1, zoomY - 1, zoomX + zoomW + 1, zoomY + zoomH + 1, 0xFF38BDF8);
 
             // Vẽ ảnh độ nét cao
-            guiGraphics.blit(SCREENSHOT_TEXTURE_ID, zoomX, zoomY, zoomX + zoomW, zoomY + zoomH, 0.0f, 1.0f, 0.0f, 1.0f);
+            guiGraphics.blit(SCREENSHOT_TEXTURE_ID, zoomX, zoomY, zoomW, zoomH, 0.0f, 1.0f, 0.0f, 1.0f);
 
             // Floating Pill Header trên cùng
             int pillW = Math.min(480, screenWidth - 20);
@@ -597,7 +609,7 @@ public final class AutoLogoutTracker {
                 // Thumbnail ảnh
                 int imgX = cardX + 4;
                 int imgY = cardY + 15;
-                guiGraphics.blit(SCREENSHOT_TEXTURE_ID, imgX, imgY, imgX + imgW, imgY + imgH, 0.0f, 1.0f, 0.0f, 1.0f);
+                guiGraphics.blit(SCREENSHOT_TEXTURE_ID, imgX, imgY, imgW, imgH, 0.0f, 1.0f, 0.0f, 1.0f);
 
                 // Viền mảnh bọc quanh ảnh
                 guiGraphics.fill(imgX - 1, imgY - 1, imgX + imgW + 1, imgY, 0x40FFFFFF);
@@ -697,7 +709,7 @@ public final class AutoLogoutTracker {
      * Nhắc lại toạ độ khi người chơi đăng nhập lại vào thế giới, đồng thời giải phóng GPU texture.
      */
     public static void onWorldJoined() {
-        joinGraceTicks = 200; // 10 giây chờ an toàn (grace period) để di chuyển / gõ lệnh
+        joinGraceTicks = 100; // 5 giây chờ an toàn (grace period 100 ticks = 5s)
         if (pendingWorldJoinAlert && hasLoggedOut) {
             pendingWorldJoinAlert = false;
             hasLoggedOut = false;
@@ -705,7 +717,10 @@ public final class AutoLogoutTracker {
                     "§6[Baritone] §eToạ độ AutoLogout gần nhất: §fX: §a%.2f §fY: §a%.2f §fZ: §a%.2f §7(%s) §d(Đã lưu)",
                     lastX, lastY, lastZ, lastDimension);
             Helper.HELPER.logDirect(msg);
-            Helper.HELPER.logDirect("§e[Baritone] §a✔ Đã tự động tắt Anti-Player & Auto-Logout để bạn an toàn vào lại thế giới. Bật lại trong ClickGUI khi cần!");
+            Helper.HELPER.logDirect("§a[Baritone] 🛡 Hệ thống bảo vệ an toàn: Chờ 5 giây an toàn (Grace Period) để bạn di chuyển/gõ lệnh. Sau 5s sẽ tiếp tục bảo vệ!");
+            if (lastScreenshotFile != null && lastScreenshotFile.exists()) {
+                Helper.HELPER.logDirect("§e[Baritone] 📸 Ảnh chụp sự cố lúc thoát: §f" + lastScreenshotFile.getName() + " §7(trong thư mục screenshots)");
+            }
         }
 
         // Giải phóng texture ảnh chụp cũ để tránh rò rỉ bộ nhớ đồ họa (Native Memory)
@@ -728,10 +743,24 @@ public final class AutoLogoutTracker {
      */
     public static boolean isInLobbyOrSafezone(IPlayerContext ctx) {
         if (ctx == null || ctx.player() == null) {
-            return true;
+            return false;
         }
 
-        // 1. Chế độ chơi: ADVENTURE, CREATIVE, SPECTATOR
+        // Nếu người chơi đang ở dưới lòng đất (Y < 55) hoặc đang ở Nether / The End:
+        // 100% là môi trường sinh tồn nguy hiểm / đào quặng / hầm mỏ -> KHÔNG BAO GIỜ LÀ LOBBY!
+        if (ctx.player().getY() < 55) {
+            return false;
+        }
+        if (ctx.world() != null && ctx.world().dimension() != null) {
+            try {
+                String dim = ctx.world().dimension().identifier().getPath();
+                if (dim.contains("nether") || dim.contains("end")) {
+                    return false;
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        // 1. Chế độ chơi: ADVENTURE, CREATIVE, SPECTATOR (chỉ khi ở trên mặt đất Y >= 55)
         try {
             if (ctx.playerController() != null) {
                 GameType gt = ctx.playerController().getGameType();
@@ -741,7 +770,7 @@ public final class AutoLogoutTracker {
             }
         } catch (Throwable ignored) {}
 
-        // 2. Scoreboard (Bảng điểm bên phải)
+        // 2. Scoreboard (Bảng điểm bên phải) - Chỉ kiểm tra tiêu đề Scoreboard, TUYỆT ĐỐI KHÔNG quét PlayerTeams
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc.level != null) {
@@ -750,16 +779,6 @@ public final class AutoLogoutTracker {
                     for (Objective obj : scoreboard.getObjectives()) {
                         if (obj != null && containsLobbyKeywords(obj.getDisplayName().getString())) {
                             return true;
-                        }
-                    }
-                    for (PlayerTeam team : scoreboard.getPlayerTeams()) {
-                        if (team != null) {
-                            String prefix = team.getPlayerPrefix() != null ? team.getPlayerPrefix().getString() : "";
-                            String suffix = team.getPlayerSuffix() != null ? team.getPlayerSuffix().getString() : "";
-                            String display = team.getDisplayName() != null ? team.getDisplayName().getString() : "";
-                            if (containsLobbyKeywords(prefix) || containsLobbyKeywords(suffix) || containsLobbyKeywords(display)) {
-                                return true;
-                            }
                         }
                     }
                 }
@@ -772,12 +791,14 @@ public final class AutoLogoutTracker {
     private static boolean containsLobbyKeywords(String text) {
         if (text == null || text.isEmpty()) return false;
         String t = text.toLowerCase(Locale.ROOT);
-        return t.contains("sảnh") || t.contains("sanh") ||
-               t.contains("lobby") || t.contains("hub") ||
-               t.contains("chờ") || t.contains("cho ") ||
+        return t.contains("sảnh chính") || t.contains("sanh chinh") ||
+               t.contains("sảnh chờ") || t.contains("sanh cho") ||
+               t.contains("khu vực chờ") || t.contains("khu vuc cho") ||
                t.contains("chọn cụm") || t.contains("chon cum") ||
-               t.contains("chuyển cụm") || t.contains("waiting") ||
-               t.contains("limbo") || t.contains("spawn");
+               t.contains("chuyển cụm") || t.contains("chuyen cum") ||
+               t.contains("chọn máy chủ") || t.contains("server selector") ||
+               t.contains("waiting room") || t.contains("limbo") ||
+               t.contains("lobby-") || t.contains("hub-");
     }
 
     /**
@@ -928,18 +949,20 @@ public final class AutoLogoutTracker {
                 Team selfTeam = self.getTeam();
                 Team pTeam = p.getTeam();
                 if (selfTeam != null && pTeam != null) {
-                    if (selfTeam == pTeam || selfTeam.getName().equalsIgnoreCase(pTeam.getName())) {
-                        return true;
-                    }
                     if (selfTeam.isAlliedTo(pTeam)) {
                         return true;
                     }
-                    if (selfTeam instanceof PlayerTeam selfPt && pTeam instanceof PlayerTeam pPt) {
-                        String selfPrefix = selfPt.getPlayerPrefix() != null ? selfPt.getPlayerPrefix().getString().trim() : "";
-                        String pPrefix = pPt.getPlayerPrefix() != null ? pPt.getPlayerPrefix().getString().trim() : "";
-                        if (!selfPrefix.isEmpty() && selfPrefix.length() >= 2 && selfPrefix.equalsIgnoreCase(pPrefix)) {
-                            return true;
-                        }
+                    String selfTeamName = selfTeam.getName().toLowerCase(Locale.ROOT);
+                    String pTeamName = pTeam.getName().toLowerCase(Locale.ROOT);
+                    // Server Survival thường dùng scoreboard team cho rank/tablist hiển thị (vd: 001_member, 999_default, vip...)
+                    // Nếu là rank/tablist chung của server thì TUYỆT ĐỐI KHÔNG coi là teammate!
+                    boolean isServerRankTeam = selfTeamName.contains("member") || selfTeamName.contains("default")
+                            || selfTeamName.contains("player") || selfTeamName.contains("vip")
+                            || selfTeamName.contains("rank") || selfTeamName.contains("group")
+                            || selfTeamName.contains("guest") || selfTeamName.contains("mem")
+                            || selfTeamName.matches("^[0-9]+_.*"); // TAB plugin prefix sorting (0001_..., 001_...)
+                    if (!isServerRankTeam && selfTeamName.equals(pTeamName)) {
+                        return true;
                     }
                 }
             } catch (Throwable ignored) {}

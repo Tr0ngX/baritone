@@ -75,6 +75,7 @@ import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -892,6 +893,16 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         stuckTicks = 0;
         stuckRetries = 0;
         shaftConsecutiveFailures = 0;
+        consecutiveCalcFailures = 0;
+        if (activeMiningBlock != null && ctx.player() != null && ctx.player().connection != null) {
+            try {
+                ctx.player().connection.send(new ServerboundPlayerActionPacket(
+                        ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK,
+                        activeMiningBlock,
+                        Direction.DOWN
+                ));
+            } catch (Throwable ignored) {}
+        }
         activeMiningBlock = null;
         activeMiningBlockIsObstructing = false;
         pendingOreAfterObstructing = null;
@@ -6605,9 +6616,34 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
         this.shaftConsecutiveFailures = 0;
         this.pillarFailCount = 0;
         this.hasReachedTargetY = ctx.player() != null && ctx.playerFeet().y <= Baritone.settings().legitMineYLevel.value;
+        if (filter != null) {
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
+            baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+        }
+        if (this.activeMiningBlock != null && ctx.player() != null && ctx.player().connection != null) {
+            try {
+                ctx.player().connection.send(new ServerboundPlayerActionPacket(
+                        ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK,
+                        this.activeMiningBlock,
+                        Direction.DOWN
+                ));
+            } catch (Throwable ignored) {}
+        }
         this.activeMiningBlock = null;
+        this.activeMiningBlockIsObstructing = false;
+        this.pendingOreAfterObstructing = null;
+        this.obstructingTransitionTicks = 0;
         this.activeMiningTicks = 0;
         this.lockedTargetOre = null;
+        this.isTargetingOre = false;
+        this.oreTargetCooldown = 0;
+        this.consecutiveCalcFailures = 0;
+        this.confinedIn5x5Ticks = 0;
+        this.antiStuckSuspensionCooldownTicks = 0;
+        this.confinementAnchorPos = null;
+        this.pendingDropSlots.clear();
+        this.dropCooldown = 0;
         this.stuckTicks = 0;
         this.stuckRetries = 0;
         this.placeBreakOscillationCount = 0;

@@ -97,6 +97,31 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
     }
 
     @Inject(
+            method = "sendCommand(Ljava/lang/String;)V",
+            at = @At("HEAD"),
+            cancellable = true
+    )
+    private void onSendCommand(String command, CallbackInfo ci) {
+        if (command != null) {
+            String trimmed = command.trim();
+            if (trimmed.equalsIgnoreCase("dn") || trimmed.equalsIgnoreCase("rejoin") || trimmed.equalsIgnoreCase("autorejoin")) {
+                this.minecraft.execute(() -> this.minecraft.setScreen(new baritone.utils.gui.AutoRejoinScreen(this.minecraft.screen)));
+                ci.cancel();
+                return;
+            }
+            if (trimmed.toLowerCase().startsWith("dn ") || trimmed.toLowerCase().startsWith("login ")) {
+                String pass = trimmed.substring(trimmed.indexOf(' ') + 1).trim();
+                if (!pass.isEmpty()) {
+                    baritone.utils.AutoRejoinConfig.password = pass;
+                    baritone.utils.AutoRejoinConfig.enabled = true;
+                    baritone.utils.AutoRejoinConfig.save();
+                    baritone.api.utils.Helper.HELPER.logDirect("§a§l[Auto Rejoin] Đã nhận mật khẩu /dn và TỰ ĐỘNG BẬT Rejoin KingMC!");
+                }
+            }
+        }
+    }
+
+    @Inject(
             method = "handleLevelChunkWithLight",
             at = @At("RETURN")
     )
@@ -216,7 +241,7 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
             at = @At("RETURN")
     )
     private void onHandleLogin(ClientboundLoginPacket packetIn, CallbackInfo ci) {
-        baritone.utils.AutoLogoutTracker.setJoinGraceTicks(200);
+        baritone.utils.AutoLogoutTracker.setJoinGraceTicks(100);
     }
 
     @Inject(
@@ -224,7 +249,7 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
             at = @At("RETURN")
     )
     private void onHandleRespawn(ClientboundRespawnPacket packetIn, CallbackInfo ci) {
-        baritone.utils.AutoLogoutTracker.setJoinGraceTicks(200);
+        baritone.utils.AutoLogoutTracker.setJoinGraceTicks(100);
     }
 
     @Inject(

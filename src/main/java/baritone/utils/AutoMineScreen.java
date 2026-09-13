@@ -96,7 +96,7 @@ public class AutoMineScreen extends Screen implements Helper {
     public static boolean optAutoTotem = true;
     public static boolean optAutoLogout = false;
     public static boolean optNeverKick = false;
-    public static boolean optAutoLogoutOnlyWhileMining = true;
+    public static boolean optAutoLogoutOnlyWhileMining = false;
     public static boolean optAutoDrop = true;
     public static boolean optShulkerStorage = true;
     public static boolean optMobAvoid = true;
@@ -448,33 +448,38 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.TOTEM_OF_UNDYING), "Tự Cầm Totem", "Tự động cầm Totem bất tử ra tay phụ & tự mua /shop khi hết",
                 "Kiểm tra tay phụ liên tục: nếu mất Totem, bot sẽ tự lôi Totem dự phòng ra tay phụ trong 1 tick. Tự mở /shop mua thêm khi hết.",
                 "SURVIVAL", 0xFFFBBF24, () -> optAutoTotem, () -> optAutoTotem = !optAutoTotem));
-        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Tự Thoát Khẩn Cấp", "Tự thoát game khi ở trong hồ lava quá 5s, máu thấp hoặc nguy hiểm",
-                "Hệ thống an toàn tuyệt đối (LavaGuard): Tự thoát game khi ở trong hồ lava liên tục quá 5 giây (cả thân và mắt ngập trong lava), hoặc khi máu <= 6 HP. Tự ngắt tính năng sau khi kick để tránh lặp vô hạn!",
+        allModules.add(new ModuleItem(new ItemStack(Items.BARRIER), "Tự Thoát Khẩn Cấp", "Tự thoát game khi rơi vào dung nham (>0.6s/mất máu), máu thấp hoặc hết Totem",
+                "Hệ thống an toàn tuyệt đối (LavaGuard): Tự thoát game tức thì khi rơi vào hồ dung nham quá 0.6 giây, hoặc khi nhận sát thương thiêu đốt, hoặc khi máu <= 6 HP. Bảo toàn 100% trang bị và tính mạng!",
                 "SURVIVAL", 0xFFF87171, () -> optAutoLogout, () -> {
             optAutoLogout = !optAutoLogout;
             Baritone.settings().autoLogoutOnDanger.value = optAutoLogout;
+            AutoMineConfig.save();
         }));
         allModules.add(new ModuleItem(new ItemStack(Items.PLAYER_HEAD), "Phát Hiện Người Chơi", "Tự ngắt kết nối ngay khi thấy người chơi (kể cả tàng hình)",
-                "Quét radar người chơi trong phạm vi 32 ô (bao gồm cả người chơi tàng hình). Tự động ngắt kết nối tức thì để chống bị phục kích PvP.",
+                "Quét radar người chơi xung quanh (kể cả người chơi dùng thuốc tàng hình). Tự động ngắt kết nối tức thì để chống bị phục kích PvP.",
                 "SURVIVAL", 0xFFEF4444, () -> Baritone.settings().autoLogoutOnPlayer.value, () -> {
             Baritone.settings().autoLogoutOnPlayer.value = !Baritone.settings().autoLogoutOnPlayer.value;
+            AutoMineConfig.save();
         }));
         allModules.add(new ModuleItem(new ItemStack(Items.SHIELD), "Không Bao Giờ Kick", "Tuyệt đối không bao giờ ngắt kết nối (kể cả nguy hiểm hay gặp player)",
                 "Chế độ Không Bao Giờ Kick: Vô hiệu hóa 100% mọi hành vi tự động thoát game/ngắt kết nối. Cho phép bạn thoải mái treo máy, đứng ở sảnh hoặc PvP mà không lo bị văng bot.",
                 "SURVIVAL", 0xFF10B981, () -> optNeverKick, () -> {
             optNeverKick = !optNeverKick;
             Baritone.settings().neverKick.value = optNeverKick;
+            AutoMineConfig.save();
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.IRON_DOOR), "Bảo Vệ Chỉ Khi Đào", "Chỉ tự ngắt kết nối khi đang đào (#mine). Ở sảnh/đứng yên sẽ KHÔNG kick",
-                "Chống kick oan ở Sảnh (Lobby / Hub / Spawn): Khi đang ở khu vực an toàn, sảnh chờ hoặc khi không chạy lệnh đào quặng, bot sẽ KHÔNG BAO GIỜ tự ngắt kết nối dù có người chơi đứng quanh.",
+        allModules.add(new ModuleItem(new ItemStack(Items.IRON_DOOR), "Bảo Vệ Chỉ Khi Đào", "Chỉ tự ngắt kết nối khi đang đào (#mine). Mặc định TẮT để bảo vệ 24/7",
+                "Khi BẬT: Radar người chơi chỉ kích hoạt khi Baritone đang thực sự chạy lệnh đào quặng (#mine). Khi TẮT (khuyên dùng): Bảo vệ liên tục mọi lúc mọi nơi kể cả khi đứng yên, AFK hay đang ăn đồ.",
                 "SURVIVAL", 0xFF38BDF8, () -> optAutoLogoutOnlyWhileMining, () -> {
             optAutoLogoutOnlyWhileMining = !optAutoLogoutOnlyWhileMining;
             Baritone.settings().autoLogoutOnlyWhileMining.value = optAutoLogoutOnlyWhileMining;
+            AutoMineConfig.save();
         }));
         allModules.add(new ModuleItem(new ItemStack(Items.CHAINMAIL_HELMET), "Bỏ Qua Đồng Đội & Team", "Không kick khi gặp đồng đội cùng Team/Clan hoặc clone chính mình",
                 "Tự động nhận diện và bỏ qua người chơi cùng Team, Party, Bang hội (Clan), danh sách Whitelist và các thực thể clone nhái tên chính mình do anti-cheat tạo ra.",
                 "SURVIVAL", 0xFF60A5FA, () -> Baritone.settings().autoLogoutIgnoreTeammates.value, () -> {
             Baritone.settings().autoLogoutIgnoreTeammates.value = !Baritone.settings().autoLogoutIgnoreTeammates.value;
+            AutoMineConfig.save();
         }));
         allModules.add(new ModuleItem(new ItemStack(Items.SHULKER_BOX), "Lưu Trữ Shulker Box", "Tự mua /shop, cất đồ vào Shulker và cất vào Rương Ender",
                 "Khi túi đồ đầy khoáng sản: Tự đặt Hộp Shulker cất đồ. Khi đầy 3 Shulker, tự đặt Rương Ender cất Shulker vào trong và đập lại bằng Silk Touch.",
@@ -494,6 +499,27 @@ public class AutoMineScreen extends Screen implements Helper {
             boolean newVal = !Baritone.settings().discordWebhookEnabled.value;
             Baritone.settings().discordWebhookEnabled.value = newVal;
             AutoMineConfig.save();
+        }));
+        allModules.add(new ModuleItem(new ItemStack(Items.RECOVERY_COMPASS), "Tự Động Rejoin (KingMC)", "Tự động kết nối lại khi kick/mất mạng, nhập /dn và vào KingSMP",
+                "Tự động kết nối lại server khi bị ngắt kết nối. Tự động nhập lệnh /dn <mật_khẩu>, chuột phải Đồng Hồ mở Menu và click chọn cụm KingSMP. BẢO VỆ TUYỆT ĐỐI: KHÔNG BAO GIỜ rejoin nếu bị kick khẩn cấp do gặp Dung Nham hoặc Player! Bấm chuột phải để mở GUI cài đặt chi tiết.",
+                "SURVIVAL", 0xFF10B981, () -> AutoRejoinConfig.enabled && AutoRejoinConfig.hasPassword(), () -> {
+            AutoRejoinConfig.ensureLoaded();
+            if (!AutoRejoinConfig.enabled) {
+                if (!AutoRejoinConfig.hasPassword()) {
+                    Helper.HELPER.logDirect("§c[Auto Rejoin] Bạn phải nhập mật khẩu /dn trước khi bật Tự Động Rejoin! Đang mở giao diện...");
+                    Minecraft mc = Minecraft.getInstance();
+                    if (mc != null) {
+                        mc.execute(() -> mc.setScreen(new baritone.utils.gui.AutoRejoinScreen(this)));
+                    }
+                    return;
+                }
+                AutoRejoinConfig.enabled = true;
+                Helper.HELPER.logDirect("§a[Auto Rejoin] ĐÃ BẬT Tự Động Rejoin (Đã có mật khẩu /dn)!");
+            } else {
+                AutoRejoinConfig.enabled = false;
+                Helper.HELPER.logDirect("§c[Auto Rejoin] ĐÃ TẮT Tự Động Rejoin!");
+            }
+            AutoRejoinConfig.save();
         }));
 
         // 5. TAB GIAO DIỆN
@@ -522,16 +548,11 @@ public class AutoMineScreen extends Screen implements Helper {
             Baritone.settings().oreEspXray.value = !Baritone.settings().oreEspXray.value;
             AutoMineConfig.save();
         }));
-        allModules.add(new ModuleItem(new ItemStack(Items.NETHERITE_CHESTPLATE), "Chế độ farm nặng", "Ép ESP tắt, tắt animation trang trí khi treo farm lớn",
-                "Khi bật: ESP bị ép tắt và không cho bật lại, animation goal/path chuyển tĩnh, tooltip gọn. Dùng khi treo máy farm hàng nghìn block.",
+        allModules.add(new ModuleItem(new ItemStack(Items.NETHERITE_CHESTPLATE), "Chế độ farm nặng", "Cực tối ưu treo farm: Đen màn hình, ngắt 3D (GPU ~0%), 10 FPS, ép tắt ESP",
+                "Chế độ Farm Nặng kết hợp Botting tối ưu cực hạn: Dừng render thế giới 3D (GPU ~0%), khóa 10 FPS native, màn hình đen với Dashboard, ép tắt ESP & animation. Tự động tắt khi thoát map/server! Vẫn chụp ảnh 3D thực tế khi gửi Discord Webhook.",
                 "HUD", 0xFFF59E0B, () -> Baritone.settings().heavyFarmMode.value, () -> {
-            Baritone.settings().heavyFarmMode.value = !Baritone.settings().heavyFarmMode.value;
-            AutoMineConfig.save();
-        }));
-        allModules.add(new ModuleItem(new ItemStack(Items.OBSIDIAN), "Chế độ Botting (Màn hình đen)", "Cực tối ưu botting: Đen màn hình, ngắt 3D, khóa 10 FPS",
-                "Tối ưu cực hạn khi cắm bot/treo farm nhiều acc: Dừng 100% render thế giới 3D (GPU ~0%), khóa 10 FPS native, màn hình đen kèm bảng điều khiển Botting Dashboard. Vẫn tự động chụp ảnh thực tế khi gửi Discord Webhook.",
-                "HUD", 0xFF0EA5E9, () -> Baritone.settings().bottingMode.value, () -> {
-            boolean next = !Baritone.settings().bottingMode.value;
+            boolean next = !Baritone.settings().heavyFarmMode.value;
+            Baritone.settings().heavyFarmMode.value = next;
             Baritone.settings().bottingMode.value = next;
             optBottingMode = next;
             AutoMineConfig.save();
@@ -1210,6 +1231,16 @@ public class AutoMineScreen extends Screen implements Helper {
                     }
                     return true;
                 }
+                if (item != null && isRejoinModule(item)) {
+                    int textW = Math.max(40, contentW - 16);
+                    int[] btn = webhookConfigButtonRect(entry, item, textW);
+                    if (inside(mouseX, mouseY, btn)) {
+                        playClickSound();
+                        Minecraft.getInstance().setScreen(new baritone.utils.gui.AutoRejoinScreen(this));
+                        return true;
+                    }
+                    return true;
+                }
             }
         }
 
@@ -1366,6 +1397,10 @@ public class AutoMineScreen extends Screen implements Helper {
 
     private boolean isWebhookModule(ModuleItem item) {
         return item.name.equals("Gửi Discord Webhook");
+    }
+
+    private boolean isRejoinModule(ModuleItem item) {
+        return item != null && "Tự Động Rejoin (KingMC)".equals(item.name);
     }
 
     /**
@@ -1650,6 +1685,14 @@ public class AutoMineScreen extends Screen implements Helper {
             }
             ClickGuiTheme.drawActionButton(graphics, this.font, ItemStack.EMPTY, "Mở cài đặt webhook",
                     btn[0], btn[1], btn[2], btn[3], 0xFF5865F2, btnHover);
+        }
+
+        if (isRejoinModule(item)) {
+            int[] btn = webhookConfigButtonRect(entry, item, textW);
+            boolean btnHover = inBounds && mouseX >= btn[0] && mouseX <= btn[0] + btn[2]
+                    && mouseY >= btn[1] && mouseY <= btn[1] + btn[3];
+            ClickGuiTheme.drawActionButton(graphics, this.font, ItemStack.EMPTY, "Mở Cài Đặt Rejoin & Mật Khẩu /dn",
+                    btn[0], btn[1], btn[2], btn[3], 0xFF10B981, btnHover);
         }
     }
 
@@ -2946,6 +2989,7 @@ public class AutoMineScreen extends Screen implements Helper {
         }
 
         baritone.getPathingBehavior().cancelSegmentIfSafe();
+        baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
         Helper.HELPER.logDirect(Component.literal("§b[Quặng] Đang đào: " + String.join(", ", oreNames) + " (Y=" + targetY + ")  "),
                 ChatButtons.openGuiButton(),

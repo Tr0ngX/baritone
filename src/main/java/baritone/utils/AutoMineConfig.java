@@ -83,7 +83,7 @@ public final class AutoMineConfig {
         public boolean optAutoLogout = false; // Anti-Death
         public boolean autoLogoutOnPlayer = false; // Anti-Player
         public boolean neverKick = false;
-        public boolean autoLogoutOnlyWhileMining = true;
+        public boolean autoLogoutOnlyWhileMining = false;
         public boolean autoLogoutIgnoreTeammates = true;
         public boolean optShulkerStorage = true;
         public boolean optAutoDrop = true;
@@ -205,9 +205,21 @@ public final class AutoMineConfig {
         AutoMineScreen.optStreamerMode = data.optStreamerMode;
         AutoMineScreen.optHideScoreboard = data.optHideScoreboard;
         AutoMineScreen.optHidePlayerName = data.optHidePlayerName;
-        AutoMineScreen.optBottingMode = data.optBottingMode;
+        // Chế độ Farm Nặng (gộp Botting): luôn tắt khi không ở trong thế giới/khởi động game
+        boolean inWorld = false;
+        try {
+            inWorld = net.minecraft.client.Minecraft.getInstance() != null && net.minecraft.client.Minecraft.getInstance().level != null;
+        } catch (Throwable ignored) {}
+        if (!inWorld) {
+            AutoMineScreen.optBottingMode = false;
+            Baritone.settings().heavyFarmMode.value = false;
+            Baritone.settings().bottingMode.value = false;
+        } else {
+            AutoMineScreen.optBottingMode = data.optBottingMode;
+            Baritone.settings().heavyFarmMode.value = data.optBottingMode;
+            Baritone.settings().bottingMode.value = data.optBottingMode;
+        }
         AutoMineScreen.optBottingFps = data.optBottingFps > 0 ? data.optBottingFps : 10;
-        Baritone.settings().bottingMode.value = data.optBottingMode;
         Baritone.settings().bottingFps.value = AutoMineScreen.optBottingFps;
 
         // Tầng Y
@@ -271,6 +283,7 @@ public final class AutoMineConfig {
             Baritone.settings().sprintAscends.value = AutoMineScreen.optAutoSprint;
             Baritone.settings().overshootTraverse.value = AutoMineScreen.optOvershoot;
             Baritone.settings().sprintInWater.value = AutoMineScreen.optWaterSprint;
+            Baritone.settings().heavyFarmMode.value = AutoMineScreen.optBottingMode;
             Baritone.settings().bottingMode.value = AutoMineScreen.optBottingMode;
             Baritone.settings().bottingFps.value = AutoMineScreen.optBottingFps > 0 ? AutoMineScreen.optBottingFps : 10;
 
@@ -345,7 +358,7 @@ public final class AutoMineConfig {
             data.optStreamerMode = AutoMineScreen.optStreamerMode;
             data.optHideScoreboard = AutoMineScreen.optHideScoreboard;
             data.optHidePlayerName = AutoMineScreen.optHidePlayerName;
-            data.optBottingMode = Baritone.settings().bottingMode.value;
+            data.optBottingMode = Baritone.settings().heavyFarmMode.value || Baritone.settings().bottingMode.value;
             data.optBottingFps = Baritone.settings().bottingFps.value;
 
             // Tầng Y

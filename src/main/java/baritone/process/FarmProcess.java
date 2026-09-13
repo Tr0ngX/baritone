@@ -34,6 +34,7 @@ import baritone.api.utils.RotationUtils;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.MovementHelper;
 import baritone.utils.BaritoneProcessHelper;
+import baritone.utils.FarmingStatsTracker;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
@@ -51,7 +52,9 @@ import net.minecraft.world.level.block.CactusBlock;
 import net.minecraft.world.level.block.CocoaBlock;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.NetherWartBlock;
+import net.minecraft.world.level.block.PitcherCropBlock;
 import net.minecraft.world.level.block.SugarCaneBlock;
+import net.minecraft.world.level.block.SweetBerryBushBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -60,7 +63,9 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
 public final class FarmProcess extends BaritoneProcessHelper implements IFarmProcess {
@@ -73,13 +78,20 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
     private int range;
     private BlockPos center;
 
+    private boolean isWaitingForGrowth;
+    private int idleScanCount;
+    private int calcFailCount;
+    private final Map<BlockPos, Item> plannedPlantMap = new ConcurrentHashMap<>();
+
     private static final List<Item> FARMLAND_PLANTABLE = Arrays.asList(
             Items.BEETROOT_SEEDS,
             Items.MELON_SEEDS,
             Items.WHEAT_SEEDS,
             Items.PUMPKIN_SEEDS,
             Items.POTATO,
-            Items.CARROT
+            Items.CARROT,
+            Items.TORCHFLOWER_SEEDS,
+            Items.PITCHER_POD
     );
 
     private static final List<Item> PICKUP_DROPPED = Arrays.asList(
@@ -98,7 +110,14 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
             Items.COCOA_BEANS,
             Blocks.SUGAR_CANE.asItem(),
             Blocks.BAMBOO.asItem(),
-            Blocks.CACTUS.asItem()
+            Blocks.CACTUS.asItem(),
+            Items.SWEET_BERRIES,
+            Items.GLOW_BERRIES,
+            Items.TORCHFLOWER,
+            Items.TORCHFLOWER_SEEDS,
+            Items.PITCHER_POD,
+            Items.PITCHER_PLANT,
+            Items.BONE_MEAL
     );
 
     public FarmProcess(Baritone baritone) {
@@ -120,6 +139,10 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
         this.range = range;
         active = true;
         locations = null;
+        isWaitingForGrowth = false;
+        idleScanCount = 0;
+        calcFailCount = 0;
+        plannedPlantMap.clear();
     }
 
     private enum Harvest {
@@ -127,10 +150,13 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
         CARROTS((CropBlock) Blocks.CARROTS),
         POTATOES((CropBlock) Blocks.POTATOES),
         BEETROOT((CropBlock) Blocks.BEETROOTS),
+        TORCHFLOWER((CropBlock) Blocks.TORCHFLOWER_CROP),
         PUMPKIN(Blocks.PUMPKIN, state -> true),
         MELON(Blocks.MELON, state -> true),
         NETHERWART(Blocks.NETHER_WART, state -> state.getValue(NetherWartBlock.AGE) >= 3),
         COCOA(Blocks.COCOA, state -> state.getValue(CocoaBlock.AGE) >= 2),
+        SWEET_BERRY(Blocks.SWEET_BERRY_BUSH, state -> state.getValue(SweetBerryBushBlock.AGE) >= 2),
+        PITCHER(Blocks.PITCHER_CROP, state -> state.getValue(PitcherCropBlock.AGE) >= 4),
         SUGARCANE(Blocks.SUGAR_CANE, null) {
             @Override
             public boolean readyToHarvest(Level world, BlockPos pos, BlockState state) {
@@ -186,7 +212,55 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
     }
 
     private boolean isPlantable(ItemStack stack) {
-        return FARMLAND_PLANTABLE.contains(stack.getItem());
+        return !stack.isEmpty() && FARMLAND_PLANTABLE.contains(stack.getItem());
+    }
+
+    private boolean hasItemInInventory(Item item) {
+        if (ctx.player() == null || item == null) return false;
+        for (ItemStack stack : ctx.player().getInventory().getNonEquipmentItems()) {
+            if (!stack.isEmpty() && stack.getItem() == item) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Item getSeedForCrop(Block b) {
+        if (b == Blocks.WHEAT) return Items.WHEAT_SEEDS;
+        if (b == Blocks.CARROTS) return Items.CARROT;
+        if (b == Blocks.POTATOES) return Items.POTATO;
+        if (b == Blocks.BEETROOTS) return Items.BEETROOT_SEEDS;
+        if (b == Blocks.TORCHFLOWER_CROP) return Items.TORCHFLOWER_SEEDS;
+        if (b == Blocks.PITCHER_CROP) return Items.PITCHER_POD;
+        if (b == Blocks.NETHER_WART) return Items.NETHER_WART;
+        if (b == Blocks.COCOA) return Items.COCOA_BEANS;
+        return null;
+    }
+
+    private boolean isPlannedOrAnyPlantable(BlockPos pos, ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        Item planned = plannedPlantMap.get(pos);
+        if (planned != null && hasItemInInventory(planned)) {
+            return stack.getItem() == planned;
+        }
+        return isPlantable(stack);
+    }
+
+    private boolean hasFarmLandOrCrops() {
+        if (locations == null || locations.isEmpty()) {
+            return false;
+        }
+        for (BlockPos pos : locations) {
+            BlockState state = ctx.world().getBlockState(pos);
+            Block b = state.getBlock();
+            if (b == Blocks.FARMLAND || b == Blocks.SOUL_SAND || b instanceof CropBlock
+                    || b == Blocks.SUGAR_CANE || b == Blocks.BAMBOO || b == Blocks.CACTUS
+                    || b == Blocks.COCOA || b == Blocks.NETHER_WART || b == Blocks.SWEET_BERRY_BUSH
+                    || b == Blocks.TORCHFLOWER_CROP || b == Blocks.PITCHER_CROP) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isBoneMeal(ItemStack stack) {
@@ -203,6 +277,7 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
 
     @Override
     public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+        FarmingStatsTracker.getInstance().onInventoryTick(ctx.player());
         if (Baritone.settings().mineGoalUpdateInterval.value != 0 && tickCount++ % Baritone.settings().mineGoalUpdateInterval.value == 0) {
             ArrayList<Block> scan = new ArrayList<>();
             for (Harvest harvest : Harvest.values()) {
@@ -263,6 +338,10 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
             }
             if (readyForHarvest(ctx.world(), pos, state)) {
                 toBreak.add(pos);
+                Item seed = getSeedForCrop(state.getBlock());
+                if (seed != null) {
+                    plannedPlantMap.put(pos, seed);
+                }
                 continue;
             }
             if (state.getBlock() instanceof BonemealableBlock) {
@@ -298,12 +377,13 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
             }
             boolean soulsand = openSoulsand.contains(pos);
             Optional<Rotation> rot = RotationUtils.reachableOffset(ctx, pos, new Vec3(pos.getX() + 0.5, pos.getY() + 1, pos.getZ() + 0.5), blockReachDistance, false);
-            if (rot.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, soulsand ? this::isNetherWart : this::isPlantable)) {
+            if (rot.isPresent() && isSafeToCancel && baritone.getInventoryBehavior().throwaway(true, soulsand ? this::isNetherWart : (stack -> isPlannedOrAnyPlantable(pos, stack)))) {
                 HitResult result = RayTraceUtils.rayTraceTowards(ctx.player(), rot.get(), blockReachDistance);
                 if (result instanceof BlockHitResult && ((BlockHitResult) result).getDirection() == Direction.UP) {
                     baritone.getLookBehavior().updateTarget(rot.get(), true);
                     if (ctx.isLookingAt(pos)) {
                         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
+                        plannedPlantMap.remove(pos);
                     }
                     return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
                 }
@@ -346,12 +426,18 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
         }
 
         if (calcFailed) {
-            logDirect("Farm failed");
+            calcFailCount++;
+            if (calcFailCount < 5) {
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+            logDirect("Farm failed: Không thể tìm đường đến mục tiêu");
             if (Baritone.settings().notificationOnFarmFail.value) {
                 logNotification("Farm failed", true);
             }
             onLostControl();
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        } else {
+            calcFailCount = 0;
         }
 
         List<Goal> goalz = new ArrayList<>();
@@ -392,23 +478,44 @@ public final class FarmProcess extends BaritoneProcessHelper implements IFarmPro
             }
         }
         if (goalz.isEmpty()) {
-            logDirect("Farm failed");
-            if (Baritone.settings().notificationOnFarmFail.value) {
-                logNotification("Farm failed", true);
+            if (hasFarmLandOrCrops()) {
+                idleScanCount = 0;
+                if (!isWaitingForGrowth) {
+                    isWaitingForGrowth = true;
+                    logDirect("§e[Farm] Cây trồng đang phát triển. Tự động chờ đợt thu hoạch tiếp theo...");
+                }
+                if (center != null && playerPos.distSqr(center) > 4 * 4) {
+                    return new PathingCommand(new GoalBlock(center), PathingCommandType.SET_GOAL_AND_PATH);
+                }
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
             }
-            onLostControl();
+            idleScanCount++;
+            if (idleScanCount >= 10) {
+                logDirect("Farm failed: Không có cây trồng trong khu vực");
+                if (Baritone.settings().notificationOnFarmFail.value) {
+                    logNotification("Farm failed", true);
+                }
+                onLostControl();
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
+        isWaitingForGrowth = false;
+        idleScanCount = 0;
         return new PathingCommand(new GoalComposite(goalz.toArray(new Goal[0])), PathingCommandType.SET_GOAL_AND_PATH);
     }
 
     @Override
     public void onLostControl() {
         active = false;
+        isWaitingForGrowth = false;
+        idleScanCount = 0;
+        calcFailCount = 0;
+        plannedPlantMap.clear();
     }
 
     @Override
     public String displayName0() {
-        return "Farming";
+        return isWaitingForGrowth ? "Farming (Chờ cây lớn)" : "Farming";
     }
 }

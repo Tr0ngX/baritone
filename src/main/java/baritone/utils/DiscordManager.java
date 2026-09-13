@@ -37,6 +37,9 @@ import net.minecraft.util.Util;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
+import net.minecraft.network.chat.numbers.NumberFormat;
+import net.minecraft.network.chat.numbers.StyledFormat;
+import net.minecraft.ChatFormatting;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.PlayerScoreEntry;
@@ -48,6 +51,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Collection;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -58,6 +62,7 @@ import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -101,124 +106,432 @@ public final class DiscordManager implements Helper {
     private int lastReportTotalBlocks = 0;
     private long lastFarmingReportTime = 0;
 
-    // Trích xuất số dư / tiền tệ cho Webhook
-    private static final Pattern BALANCE_KEYWORD_PATTERN = Pattern.compile(
-            "(?i)(?:xu|tiền|tien|số\\s*dư|so\\s*du|ví|vi|balance|money|coins?|coin|ngân\\s*hàng|ngan\\s*hang|tài\\s*sản|tai\\s*san|tài\\s*khoản|tai\\s*khoan|bank|cash|funds?|points?|điểm|diem)\\s*[:：\\-–—=]?\\s*([$₫¥€]?\\s*[0-9]+(?:[.,][0-9]+)*(?:\\s*[kmbKMB%])?\\s*[$₫¥€]?(?:\\s*(?:xu|đ|vnđ|vnd|coins?|points?|bucks?))?)",
+    // Trích xuất số dư / tiền tệ cho Webhook & HUD
+    // Hỗ trợ phân cách hàng nghìn bằng dấu chấm, dấu phẩy, khoảng trắng, dấu nháy đơn, và hậu tố k, m, b, K, M, B
+    private static final String NUM_PART_REGEX = "[0-9]+(?:(?:[.,'\\u00A0\\u202F]|\\s+)[0-9]+)*(?:\\s*[kmbKMB])?";
+    private static final String CURR_PREFIX_REGEX = "(?:[$₫¥€£]\\s*)";
+    private static final String CURR_SUFFIX_REGEX = "(?:\\s*(?:[$₫¥€£]|xu|coins?|coin|điểm|diem|points?|bucks?|đ|vnđ|vnd))";
+    private static final String BAL_KEYWORDS_REGEX = "(?:số\\s*dư\\s*ví|so\\s*du\\s*vi|số\\s*dư|so\\s*du|ví\\s*tiền|vi\\s*tien|ví|vi|balance|money|coins?|coin|xu|ngân\\s*hàng|ngan\\s*hang|tài\\s*sản|tai\\s*san|cash|funds?)";
+
+    // 1. Khớp từ khóa số dư kèm số tiền (hỗ trợ cả "$ MONEY 136.69M" và "MONEY: 136.69M $")
+    private static final Pattern BALANCE_WITH_KEYWORD_PATTERN = Pattern.compile(
+            "(?i)(?:[$₫¥€£]\\s*)?" + BAL_KEYWORDS_REGEX + "\\s*[:：\\-–—=]?\\s*(" + CURR_PREFIX_REGEX + "?" + NUM_PART_REGEX + CURR_SUFFIX_REGEX + "?)",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
     );
 
-    private static final Pattern CURRENCY_PATTERN = Pattern.compile(
-            "([$₫¥€]\\s*[0-9]+(?:[.,][0-9]+)*(?:\\s*[kmbKMB])?|[0-9]+(?:[.,][0-9]+)*(?:\\s*[kmbKMB])?\\s*[$₫¥€])"
+    // 2. Khớp số tiền có ký hiệu/đơn vị tiền tệ độc lập
+    private static final Pattern STANDALONE_CURRENCY_PATTERN = Pattern.compile(
+            "(?i)(" + CURR_PREFIX_REGEX + NUM_PART_REGEX + "|" + NUM_PART_REGEX + CURR_SUFFIX_REGEX + ")",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
     );
 
+    // 3. Khớp số thuần túy (cho dòng số tiền nằm riêng biệt bên dưới dòng nhãn)
+    private static final Pattern PURE_NUMBER_PATTERN = Pattern.compile(
+            "^\\s*(" + NUM_PART_REGEX + ")\\s*$"
+    );
+
+    // 4. Kiểm tra dòng có chứa từ khóa số dư hay không
+    private static final Pattern KEYWORD_CHECK_PATTERN = Pattern.compile(
+            "(?i)\\b" + BAL_KEYWORDS_REGEX + "\\b",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+    );
+
+    // 5. Các từ khóa chỉ thống kê/thông tin khác (không phải số dư ví) để loại trừ
+    private static final Pattern REJECT_LINE_PATTERN = Pattern.compile(
+            "(?i)(?:[0-9]{1,2}:[0-9]{2}|[0-9]+/[0-9]+|[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}|ping|fps|cấp|level|online|top|tài\\s*khoản|tai\\s*khoan|người\\s*chơi|nguoi\\s*choi|tọa\\s*độ|toa\\s*do|rank|thứ\\s*hạng|thu\\s*hang|thời\\s*gian|thoi\\s*gian|ngày|ngay|giờ|gio|balo|kho|nhiệm\\s*vụ|nhiem\\s*vu|máu|hp|thức\\s*ăn|food|ip|mc\\.|shard|mảnh|kills?|deaths?|keys?|played|team)",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+    );
+
+    // 6. Nhận diện tin nhắn biến động nhỏ / giao dịch / delta / bán quặng để không ghi đè số dư ví
+    private static final Pattern TRANSACTION_DELTA_PATTERN = Pattern.compile(
+            "(?i)(?:[+\\-]\\s*[$₫¥€£0-9]|nhận\\s*được|nhan\\s*duoc|đã\\s*cộng|da\\s*cong|cộng\\s*vào|cong\\s*vao|cộng\\s*thêm|cong\\s*them|đã\\s*trừ|da\\s*tru|trừ\\s*bớt|tru\\s*bot|bán\\s*được|ban\\s*duoc|đã\\s*bán|da\\s*ban|bán\\s*tự\\s*động|ban\\s*tu\\s*dong|tự\\s*động\\s*bán|autosell|thưởng|thuong|chuyển\\s*cho|chuyen\\s*cho|gửi\\s*cho|gui\\s*cho|thanh\\s*toán|thanh\\s*toan|chi\\s*phí|chi\\s*phi|lãi\\s*suất|lai\\s*suat|giá\\s*bán|gia\\s*ban|mỗi\\s*khối|moi\\s*khoi|/\\s*block|/\\s*item|quét\\s*rác|hút\\s*vật\\s*phẩm)",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE
+    );
+
+    private static class ScoreboardLine {
+        final String name;
+        final String scoreText;
+        final int scoreValue;
+
+        ScoreboardLine(String name, String scoreText, int scoreValue) {
+            this.name = name != null ? name : "";
+            this.scoreText = scoreText != null ? scoreText : "";
+            this.scoreValue = scoreValue;
+        }
+    }
+
+    private static volatile String lastScoreboardBalance = null;
+    private static volatile Objective lastActiveSidebarObjective = null;
+    private static volatile String lastTabBalance = null;
+    private static volatile Component lastTabHeader = null;
+    private static volatile Component lastTabFooter = null;
     private static volatile String lastKnownBalance = "Đang cập nhật...";
+
+    public static void updateActiveScoreboard(Objective objective) {
+        if (objective != null) {
+            lastActiveSidebarObjective = objective;
+            scanScoreboardObjective(objective);
+        }
+    }
+
+    public static void onWorldChanged() {
+        lastScoreboardBalance = null;
+        lastTabBalance = null;
+        lastActiveSidebarObjective = null;
+        lastTabHeader = null;
+        lastTabFooter = null;
+        lastKnownBalance = "Đang cập nhật...";
+    }
+
+    public static void updateTabListHeader(Component header) {
+        lastTabHeader = header;
+        if (header != null) {
+            scanTabListText(header.getString());
+        }
+    }
+
+    public static void updateTabListFooter(Component footer) {
+        lastTabFooter = footer;
+        if (footer != null) {
+            scanTabListText(footer.getString());
+        }
+    }
+
+    public static void scanTabListText(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        String[] lines = text.split("\n");
+        for (String line : lines) {
+            String clean = cleanText(line);
+            if (clean.isEmpty()) continue;
+            // Bỏ qua các dòng thống kê không liên quan (như Kills, Deaths, Keys, Played, Shards, Team...)
+            if (REJECT_LINE_PATTERN.matcher(clean).find() && !KEYWORD_CHECK_PATTERN.matcher(clean).find()) {
+                continue;
+            }
+            if (KEYWORD_CHECK_PATTERN.matcher(clean).find()) {
+                String bal = parseBalanceFromText(line);
+                if (bal != null && !bal.isEmpty() && !bal.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                    lastTabBalance = bal;
+                    lastKnownBalance = bal;
+                    return;
+                }
+            }
+        }
+    }
+
+    public static String cleanText(String rawText) {
+        if (rawText == null || rawText.isEmpty()) return "";
+        return rawText.replaceAll("§[0-9a-fk-orA-FK-OR]", "")
+                .replace("\u200B", "")
+                .replace("\u200C", "")
+                .replace("\u200D", "")
+                .replace("\uFEFF", "")
+                .replace("\u00A0", " ")
+                .replace("\u202F", " ")
+                .trim();
+    }
+
+    private static String normalizeCurrency(String val, String fullText) {
+        if (val == null) return null;
+        val = val.trim();
+        String lowVal = val.toLowerCase(Locale.ROOT);
+        String lowFull = fullText.toLowerCase(Locale.ROOT);
+
+        boolean hasCurrency = val.contains("$") || val.contains("₫") || val.contains("¥") || val.contains("€") || val.contains("£")
+                || lowVal.contains("xu") || lowVal.contains("đ") || lowVal.contains("coin") || lowVal.contains("vnđ") || lowVal.contains("vnd")
+                || lowVal.contains("điểm") || lowVal.contains("point") || lowVal.contains("buck");
+
+        if (!hasCurrency) {
+            if (lowFull.contains("xu")) {
+                return val + " Xu";
+            } else if (lowFull.contains("coin")) {
+                return val + " Coins";
+            } else if (lowFull.contains("điểm") || lowFull.contains("point")) {
+                return val + " Điểm";
+            } else if (lowFull.contains("$") || lowFull.contains("tiền") || lowFull.contains("balance") || lowFull.contains("money")
+                    || lowFull.contains("ví") || lowFull.contains("ngân hàng") || lowFull.contains("tài sản") || lowFull.contains("cash")) {
+                return val + " $";
+            }
+        }
+        return val;
+    }
 
     public static void updateBalanceIfDetected(String text) {
         if (text == null || text.trim().isEmpty()) return;
-        String parsed = parseBalanceFromText(text);
+        String clean = cleanText(text);
+        if (clean.isEmpty()) return;
+
+        // Bỏ qua tin nhắn delta/giao dịch bán tự động (+10 $, bán 1 quặng: 10 $...) để tránh ghi đè số dư ví
+        if (TRANSACTION_DELTA_PATTERN.matcher(clean).find()) {
+            return;
+        }
+
+        String parsed = parseBalanceFromText(clean);
         if (parsed != null && !parsed.isEmpty()) {
-            lastKnownBalance = parsed;
+            // Không nhận các số quá nhỏ mà không có đơn vị rõ ràng nếu trông giống row score (<= 15)
+            if (!parsed.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                lastKnownBalance = parsed;
+            }
         }
     }
 
     public static String parseBalanceFromText(String rawText) {
         if (rawText == null || rawText.trim().isEmpty()) return null;
-        String clean = rawText.replaceAll("§[0-9a-fk-orA-FK-OR]", "")
-                .replace("\u200B", "")
-                .replace("\u200C", "")
-                .replace("\u200D", "")
-                .replace("\uFEFF", "")
-                .trim();
+        String clean = cleanText(rawText);
         if (clean.isEmpty()) return null;
 
-        Matcher km = BALANCE_KEYWORD_PATTERN.matcher(clean);
+        // Nếu dòng chứa các thông tin loại trừ (như ping, level, timestamp, tỉ lệ) mà không có từ khóa ví/tiền
+        if (REJECT_LINE_PATTERN.matcher(clean).find() && !KEYWORD_CHECK_PATTERN.matcher(clean).find()) {
+            return null;
+        }
+
+        // 1. Khớp từ khóa ví + số tiền (ví dụ: "$ MONEY 137.92M", "Ví: 10,000 $", "Balance: $1,200")
+        Matcher km = BALANCE_WITH_KEYWORD_PATTERN.matcher(clean);
         if (km.find()) {
             String val = km.group(1).trim();
-            if (!val.isEmpty() && val.matches(".*[0-9].*")) {
-                String lowerClean = clean.toLowerCase(Locale.ROOT);
-                if (!val.contains("$") && !val.contains("₫") && !val.contains("¥") && !val.contains("€")
-                        && !val.toLowerCase(Locale.ROOT).contains("xu") && !val.toLowerCase(Locale.ROOT).contains("đ")
-                        && !val.toLowerCase(Locale.ROOT).contains("coin")) {
-                    if (lowerClean.contains("xu")) {
-                        val = val + " Xu";
-                    } else if (lowerClean.contains("coin")) {
-                        val = val + " Coins";
-                    } else if (lowerClean.contains("điểm") || lowerClean.contains("point")) {
-                        val = val + " Điểm";
-                    } else if (lowerClean.contains("tiền") || lowerClean.contains("balance") || lowerClean.contains("money") || lowerClean.contains("ví")) {
-                        val = val + "$";
-                    }
+            if (val.matches(".*[0-9].*")) {
+                int endIdx = km.end();
+                String tail = endIdx < clean.length() ? clean.substring(endIdx).trim() : "";
+                if (!tail.startsWith(":") && !tail.startsWith("/")) {
+                    return normalizeCurrency(val, clean);
                 }
-                return val;
             }
         }
 
-        Matcher cm = CURRENCY_PATTERN.matcher(clean);
+        // 2. Khớp số tiền có ký hiệu tiền tệ độc lập
+        Matcher cm = STANDALONE_CURRENCY_PATTERN.matcher(clean);
         if (cm.find()) {
             String val = cm.group(1).trim();
-            if (!val.isEmpty() && val.matches(".*[0-9].*")) {
-                return val;
+            if (val.matches(".*[0-9].*")) {
+                int endIdx = cm.end();
+                String tail = endIdx < clean.length() ? clean.substring(endIdx).trim() : "";
+                if (!tail.startsWith(":") && !tail.startsWith("/")) {
+                    return val;
+                }
             }
         }
         return null;
+    }
+
+    /**
+     * Tìm bảng điểm (Scoreboard Objective) đang hiển thị ở Sidebar.
+     * Hỗ trợ đầy đủ: Objective vừa render, Team Color Slot của người chơi, DisplaySlot.SIDEBAR và quét mọi slot.
+     */
+    public static Objective findActiveSidebarObjective(Minecraft mc) {
+        if (mc == null || mc.level == null) return null;
+        Scoreboard scoreboard = mc.level.getScoreboard();
+        if (scoreboard == null) return null;
+
+        // 1. Objective vừa được render gần nhất qua MixinGui.displayScoreboardSidebar
+        if (lastActiveSidebarObjective != null) {
+            if (scoreboard.getObjective(lastActiveSidebarObjective.getName()) != null) {
+                return lastActiveSidebarObjective;
+            }
+        }
+
+        // 2. Logic chuẩn của Minecraft vanilla renderScoreboardSidebar (Hỗ trợ Team Color slot)
+        if (mc.player != null) {
+            PlayerTeam playerTeam = scoreboard.getPlayersTeam(mc.player.getScoreboardName());
+            if (playerTeam != null) {
+                ChatFormatting color = playerTeam.getColor();
+                DisplaySlot teamSlot = DisplaySlot.teamColorToSlot(color);
+                if (teamSlot != null) {
+                    Objective teamObj = scoreboard.getDisplayObjective(teamSlot);
+                    if (teamObj != null) return teamObj;
+                }
+            }
+        }
+
+        // 3. Slot DisplaySlot.SIDEBAR tiêu chuẩn
+        Objective sidebar = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+        if (sidebar != null) return sidebar;
+
+        // 4. Quét qua toàn bộ DisplaySlot values
+        for (DisplaySlot slot : DisplaySlot.values()) {
+            Objective obj = scoreboard.getDisplayObjective(slot);
+            if (obj != null) return obj;
+        }
+
+        // 5. Quét tất cả objectives hiện có trong scoreboard
+        for (Objective obj : scoreboard.getObjectives()) {
+            if (obj != null) return obj;
+        }
+
+        return null;
+    }
+
+    /**
+     * Quét trực tiếp nội dung Objective của Scoreboard Sidebar để trích xuất số dư ví.
+     * Hỗ trợ 100% các server Paper/Spigot dùng TAB plugin, FastBoard, FeatherBoard (Minecraft 1.8 -> 1.21).
+     */
+    public static void scanScoreboardObjective(Objective objective) {
+        if (objective == null) return;
+        try {
+            Scoreboard scoreboard = objective.getScoreboard();
+            if (scoreboard == null) return;
+
+            NumberFormat defaultFormat = objective.numberFormatOrDefault(StyledFormat.SIDEBAR_DEFAULT);
+            Collection<PlayerScoreEntry> entries = scoreboard.listPlayerScores(objective);
+            if (entries == null || entries.isEmpty()) return;
+
+            List<ScoreboardLine> lines = new ArrayList<>();
+
+            for (PlayerScoreEntry entry : entries) {
+                if (entry.isHidden()) continue;
+
+                PlayerTeam team = scoreboard.getPlayersTeam(entry.owner());
+                Component nameComp = PlayerTeam.formatNameForTeam(team, entry.ownerName());
+                String name = nameComp != null ? nameComp.getString() : "";
+
+                Component scoreComp = entry.formatValue(defaultFormat);
+                String scoreText = scoreComp != null ? scoreComp.getString() : "";
+                int scoreVal = entry.value();
+
+                lines.add(new ScoreboardLine(name, scoreText, scoreVal));
+
+                // 1. Quét ngay khi ghép cả 2 cột trên cùng 1 dòng (cột name bên trái + cột score bên phải):
+                // Server KingMC và đa số server SMP dùng TAB plugin hiển thị "$ MONEY" ở name và "137.92M" ở score
+                String rowCombined = (name + " " + scoreText).trim();
+                String cleanRow = cleanText(rowCombined);
+                if (KEYWORD_CHECK_PATTERN.matcher(cleanRow).find()) {
+                    String bal = parseBalanceFromText(cleanRow);
+                    if (bal != null && !bal.isEmpty() && !bal.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                        lastScoreboardBalance = bal;
+                        lastKnownBalance = bal;
+                        return;
+                    }
+                }
+
+                // 2. Nếu name có từ khóa và scoreText là số tiền (FixedFormat / custom NumberFormat)
+                String cleanName = cleanText(name);
+                String cleanScore = cleanText(scoreText);
+                if (KEYWORD_CHECK_PATTERN.matcher(cleanName).find() && !cleanScore.isEmpty()) {
+                    boolean isRowNumber = cleanScore.equals(String.valueOf(scoreVal)) && scoreVal >= 0 && scoreVal <= 15;
+                    if (!isRowNumber) {
+                        Matcher pm = PURE_NUMBER_PATTERN.matcher(cleanScore);
+                        if (pm.find()) {
+                            String norm = normalizeCurrency(pm.group(1).trim(), cleanName);
+                            if (norm != null && !norm.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                                lastScoreboardBalance = norm;
+                                lastKnownBalance = norm;
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                // 3. Nếu toàn bộ nằm trong cột name
+                if (KEYWORD_CHECK_PATTERN.matcher(cleanName).find()) {
+                    String balName = parseBalanceFromText(name);
+                    if (balName != null && !balName.isEmpty() && !balName.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                        lastScoreboardBalance = balName;
+                        lastKnownBalance = balName;
+                        return;
+                    }
+                }
+            }
+
+            // 4. Nếu số tiền nằm ở dòng tiếp theo (Dòng i là nhãn, dòng i+1 là số tiền)
+            for (int i = 0; i < lines.size() - 1; i++) {
+                ScoreboardLine cur = lines.get(i);
+                ScoreboardLine next = lines.get(i + 1);
+
+                String curClean = cleanText(cur.name + " " + cur.scoreText);
+                String nextClean = cleanText(next.name + " " + next.scoreText);
+
+                if (KEYWORD_CHECK_PATTERN.matcher(curClean).find() && !REJECT_LINE_PATTERN.matcher(nextClean).find()) {
+                    String combined = curClean + " " + nextClean;
+                    String bal = parseBalanceFromText(combined);
+                    if (bal != null && !bal.isEmpty() && !bal.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                        lastScoreboardBalance = bal;
+                        lastKnownBalance = bal;
+                        return;
+                    }
+
+                    Matcher pm = PURE_NUMBER_PATTERN.matcher(nextClean);
+                    if (pm.find()) {
+                        String norm = normalizeCurrency(pm.group(1).trim(), curClean);
+                        if (norm != null && !norm.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                            lastScoreboardBalance = norm;
+                            lastKnownBalance = norm;
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     public static String getPlayerBalance() {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc != null && mc.level != null) {
-                Scoreboard scoreboard = mc.level.getScoreboard();
-                if (scoreboard != null) {
-                    List<String> rawLines = new ArrayList<>();
+                // ƯU TIÊN 1: SCOREBOARD SIDEBAR (Bảng thông tin trực tiếp trên màn hình game)
+                Objective sidebarObj = findActiveSidebarObjective(mc);
+                if (sidebarObj != null) {
+                    scanScoreboardObjective(sidebarObj);
+                }
+                if (lastScoreboardBalance != null && !lastScoreboardBalance.isEmpty() && !lastScoreboardBalance.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                    return lastScoreboardBalance;
+                }
 
-                    // 1. Quét Sidebar Objective
-                    Objective sidebar = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
-                    if (sidebar != null) {
-                        for (PlayerScoreEntry entry : scoreboard.listPlayerScores(sidebar)) {
-                            PlayerTeam team = scoreboard.getPlayersTeam(entry.owner());
-                            Component formatted = PlayerTeam.formatNameForTeam(team, entry.ownerName());
-                            if (formatted != null) {
-                                String line = formatted.getString();
-                                if (line != null && !line.trim().isEmpty()) {
-                                    rawLines.add(line);
+                // ƯU TIÊN 2: TAB LIST (Header / Footer / Player entries)
+                if (lastTabHeader != null) {
+                    scanTabListText(lastTabHeader.getString());
+                }
+                if (lastTabFooter != null) {
+                    scanTabListText(lastTabFooter.getString());
+                }
+                if (lastTabBalance != null && !lastTabBalance.isEmpty() && !lastTabBalance.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                    return lastTabBalance;
+                }
+
+                // Quét danh sách người chơi trong Tab
+                if (mc.getConnection() != null) {
+                    for (net.minecraft.client.multiplayer.PlayerInfo info : mc.getConnection().getOnlinePlayers()) {
+                        Component disp = info.getTabListDisplayName();
+                        if (disp != null) {
+                            String txt = disp.getString();
+                            String clean = cleanText(txt);
+                            if (KEYWORD_CHECK_PATTERN.matcher(clean).find()) {
+                                String bal = parseBalanceFromText(txt);
+                                if (bal != null && !bal.isEmpty() && !bal.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                                    lastTabBalance = bal;
+                                    lastKnownBalance = bal;
+                                    return bal;
                                 }
                             }
                         }
                     }
+                }
 
-                    // 2. Quét Player Teams (nhiều server lưu dòng Scoreboard vào Team prefix/suffix)
+                // ƯU TIÊN 3: Quét Player Teams dự phòng (khi server dùng Team prefix/suffix)
+                Scoreboard scoreboard = mc.level.getScoreboard();
+                if (scoreboard != null) {
                     for (PlayerTeam team : scoreboard.getPlayerTeams()) {
                         String prefix = team.getPlayerPrefix() != null ? team.getPlayerPrefix().getString() : "";
                         String suffix = team.getPlayerSuffix() != null ? team.getPlayerSuffix().getString() : "";
                         String full = (prefix + " " + suffix).trim();
-                        if (!full.isEmpty()) {
-                            rawLines.add(full);
-                        }
-                    }
-
-                    // Quét từng dòng đơn
-                    for (String line : rawLines) {
-                        String bal = parseBalanceFromText(line);
-                        if (bal != null && !bal.isEmpty()) {
-                            lastKnownBalance = bal;
-                            return bal;
-                        }
-                    }
-
-                    // Quét cặp 2 dòng liền kề (trường hợp nhãn ở dòng trên, số tiền ở dòng dưới)
-                    for (int i = 0; i < rawLines.size() - 1; i++) {
-                        String combined = rawLines.get(i) + " " + rawLines.get(i + 1);
-                        String bal = parseBalanceFromText(combined);
-                        if (bal != null && !bal.isEmpty()) {
-                            lastKnownBalance = bal;
-                            return bal;
+                        String cleanFull = cleanText(full);
+                        if (KEYWORD_CHECK_PATTERN.matcher(cleanFull).find()) {
+                            String bal = parseBalanceFromText(full);
+                            if (bal != null && !bal.isEmpty() && !bal.matches("^[0-9]{1,2}\\s*\\$?$")) {
+                                lastScoreboardBalance = bal;
+                                lastKnownBalance = bal;
+                                return bal;
+                            }
                         }
                     }
                 }
             }
         } catch (Throwable ignored) {}
 
-        if (lastKnownBalance != null && !lastKnownBalance.equals("Đang cập nhật...")) {
+        if (lastScoreboardBalance != null && !lastScoreboardBalance.isEmpty() && !lastScoreboardBalance.matches("^[0-9]{1,2}\\s*\\$?$")) {
+            return lastScoreboardBalance;
+        }
+        if (lastTabBalance != null && !lastTabBalance.isEmpty() && !lastTabBalance.matches("^[0-9]{1,2}\\s*\\$?$")) {
+            return lastTabBalance;
+        }
+        if (lastKnownBalance != null && !lastKnownBalance.equals("Đang cập nhật...") && !lastKnownBalance.matches("^[0-9]{1,2}\\s*\\$?$")) {
             return lastKnownBalance;
         }
 
@@ -748,6 +1061,68 @@ public final class DiscordManager implements Helper {
             sendAsyncToWebhook(webhookUrl, payload.toString());
         } catch (Exception e) {
             logDebug("[DiscordManager] Lỗi gửi alert: " + e.getMessage());
+        }
+    }
+
+    public void sendAlertWithAttachment(String title, String message, int colorHex, byte[] imageBytes) {
+        if (!Baritone.settings().discordWebhookEnabled.value) {
+            return;
+        }
+        String webhookUrl = Baritone.settings().discordWebhookUrl.value;
+        if (webhookUrl == null || webhookUrl.trim().isEmpty()) {
+            return;
+        }
+
+        try {
+            LocalPlayer player = Minecraft.getInstance().player;
+            String rawPlayerName = getRawPlayerName();
+            String spoilerPlayerName = "||" + rawPlayerName + "||";
+            String playerBalance = getPlayerBalance();
+            String serverIp = getServerIp();
+
+            JsonArray fields = new JsonArray();
+
+            JsonObject playerField = new JsonObject();
+            playerField.addProperty("name", "👤 Tài khoản");
+            playerField.addProperty("value", spoilerPlayerName);
+            playerField.addProperty("inline", true);
+            fields.add(playerField);
+
+            JsonObject balField = new JsonObject();
+            balField.addProperty("name", "💰 Số dư");
+            balField.addProperty("value", "**" + playerBalance + "**");
+            balField.addProperty("inline", true);
+            fields.add(balField);
+
+            if (player != null) {
+                JsonObject hpField = new JsonObject();
+                hpField.addProperty("name", "❤️ Sinh lực");
+                hpField.addProperty("value", (int) player.getHealth() + " / " + (int) player.getMaxHealth());
+                hpField.addProperty("inline", true);
+                fields.add(hpField);
+
+                JsonObject posField = new JsonObject();
+                posField.addProperty("name", "📍 Tọa độ");
+                posField.addProperty("value", "`X: " + player.getBlockX() + ", Y: " + player.getBlockY() + ", Z: " + player.getBlockZ() + "`");
+                posField.addProperty("inline", true);
+                fields.add(posField);
+            }
+
+            JsonObject srvField = new JsonObject();
+            srvField.addProperty("name", "🌐 Máy chủ");
+            srvField.addProperty("value", "`" + serverIp + "`");
+            srvField.addProperty("inline", true);
+            fields.add(srvField);
+
+            String alertContent = "🚨 **" + title + "** • Người chơi: " + spoilerPlayerName + " • Số dư: **" + playerBalance + "**";
+            JsonObject payload = buildDiscordWebhookEmbedPayload(alertContent, "🚨 BARITONE HỆ THỐNG CẢNH BÁO", title, message, colorHex, fields, imageBytes != null && imageBytes.length > 0);
+            if (imageBytes != null && imageBytes.length > 0) {
+                sendMultipartAsyncToWebhook(webhookUrl, payload.toString(), imageBytes);
+            } else {
+                sendAsyncToWebhook(webhookUrl, payload.toString());
+            }
+        } catch (Exception e) {
+            logDebug("[DiscordManager] Lỗi gửi alert kèm ảnh: " + e.getMessage());
         }
     }
 

@@ -74,7 +74,8 @@ public final class DefaultCommands {
                 new SelCommand(baritone),
                 new ElytraCommand(baritone),
                 new DoiHuongCommand(baritone),
-                new BottingCommand(baritone)
+                new BottingCommand(baritone),
+                new AutoRejoinCommand(baritone)
         ));
         ExecutionControlCommands prc = new ExecutionControlCommands(baritone);
         commands.add(prc.pauseCommand);

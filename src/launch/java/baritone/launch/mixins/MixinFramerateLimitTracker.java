@@ -36,7 +36,14 @@ public class MixinFramerateLimitTracker {
 
     @Inject(method = "getFramerateLimit", at = @At("HEAD"), cancellable = true)
     private void onGetFramerateLimit(CallbackInfoReturnable<Integer> cir) {
-        if (BaritoneAPI.getSettings().bottingMode.value && !CleanScreenshotHelper.isCaptureRequested()) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null || mc.player == null
+                || mc.screen instanceof net.minecraft.client.gui.screens.LevelLoadingScreen
+                || mc.screen instanceof net.minecraft.client.gui.screens.ProgressScreen
+                || mc.screen instanceof net.minecraft.client.gui.screens.ConnectScreen) {
+            return;
+        }
+        if ((BaritoneAPI.getSettings().heavyFarmMode.value || BaritoneAPI.getSettings().bottingMode.value) && !CleanScreenshotHelper.isCaptureRequested()) {
             int fps = BaritoneAPI.getSettings().bottingFps.value;
             cir.setReturnValue(fps > 0 ? fps : 10);
         }

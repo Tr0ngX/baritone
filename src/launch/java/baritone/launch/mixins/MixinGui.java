@@ -47,6 +47,11 @@ public class MixinGui {
      */
     @Inject(method = "displayScoreboardSidebar", at = @At("HEAD"), cancellable = true)
     private void onDisplayScoreboardSidebar(GuiGraphics guiGraphics, Objective objective, CallbackInfo ci) {
+        if (objective != null) {
+            try {
+                baritone.utils.DiscordManager.updateActiveScoreboard(objective);
+            } catch (Throwable ignored) {}
+        }
         if (StreamerUtil.isHideScoreboardActive()) {
             ci.cancel();
         }
@@ -75,9 +80,15 @@ public class MixinGui {
      */
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)
     private void onRenderHead(GuiGraphics guiGraphics, DeltaTracker deltaTracker, CallbackInfo ci) {
-        if (baritone.api.BaritoneAPI.getSettings().bottingMode.value && !baritone.utils.CleanScreenshotHelper.isCaptureRequested()) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null || mc.player == null
+                || mc.screen instanceof net.minecraft.client.gui.screens.LevelLoadingScreen
+                || mc.screen instanceof net.minecraft.client.gui.screens.ProgressScreen
+                || mc.screen instanceof net.minecraft.client.gui.screens.ConnectScreen) {
+            return;
+        }
+        if ((baritone.api.BaritoneAPI.getSettings().heavyFarmMode.value || baritone.api.BaritoneAPI.getSettings().bottingMode.value) && !baritone.utils.CleanScreenshotHelper.isCaptureRequested()) {
             guiGraphics.fill(0, 0, guiGraphics.guiWidth(), guiGraphics.guiHeight(), 0xFF000000);
-            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
             if (mc.screen == null && mc.font != null) {
                 try {
                     baritone.utils.hud.BottingDashboardOverlay.render(guiGraphics, mc);

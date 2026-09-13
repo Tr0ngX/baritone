@@ -129,7 +129,9 @@ public class AutoMineCommand extends Command {
             boms.add(new BlockOptionalMeta(Blocks.EMERALD_ORE));
             boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_EMERALD_ORE));
         }
-
+        if (baritone instanceof baritone.Baritone b) {
+            b.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+        }
         BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
         logDirect(net.minecraft.network.chat.Component.literal("§b[Quặng] Đang đào: Kim Cương, Lưu Ly, Đá Đỏ, Lục Bảo (Y=-58)  "),
                 ChatButtons.openGuiButton(),

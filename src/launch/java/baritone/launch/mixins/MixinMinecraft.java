@@ -107,6 +107,10 @@ public class MixinMinecraft {
             baritone.getGameEventHandler().onPostTick(this.tickProvider.apply(EventState.POST, type));
         }
 
+        try {
+            baritone.utils.AutoRejoinManager.onClientTick((Minecraft) (Object) this);
+        } catch (Throwable ignored) {}
+
         this.tickProvider = null;
     }
 
@@ -137,6 +141,7 @@ public class MixinMinecraft {
             return;
         }
 
+        baritone.utils.DiscordManager.onWorldChanged();
         // mc.world changing is only the primary baritone
 
         BaritoneAPI.getProvider().getPrimaryBaritone().getGameEventHandler().onWorldEvent(
@@ -161,6 +166,10 @@ public class MixinMinecraft {
                         EventState.POST
                 )
         );
+
+        if (world == null) {
+            baritone.command.defaults.BottingCommand.autoDisableOnLeave();
+        }
     }
 
     @Redirect(

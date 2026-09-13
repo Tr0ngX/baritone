@@ -54,9 +54,7 @@ public abstract class MixinDisconnectedScreen extends Screen {
 
     @Inject(method = "init", at = @At("TAIL"))
     private void onInit(CallbackInfo ci) {
-        if (!AutoLogoutTracker.hasLoggedOut()) {
-            return;
-        }
+        baritone.command.defaults.BottingCommand.autoDisableOnLeave();
 
         // Tìm nút có sẵn của DisconnectedScreen (thường là nút Back to Server List hoặc To Title Screen)
         Button backButton = null;
@@ -64,6 +62,11 @@ public abstract class MixinDisconnectedScreen extends Screen {
             if (child instanceof Button b) {
                 backButton = b;
             }
+        }
+
+        if (!AutoLogoutTracker.hasLoggedOut()) {
+            baritone.utils.AutoRejoinManager.onDisconnectedScreenInit((DisconnectedScreen) (Object) this, backButton, this::addRenderableWidget);
+            return;
         }
 
         int btnH = 20;
@@ -170,5 +173,13 @@ public abstract class MixinDisconnectedScreen extends Screen {
             }
         }
         return super.keyPressed(event);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (!AutoLogoutTracker.hasLoggedOut()) {
+            baritone.utils.AutoRejoinManager.onDisconnectedScreenTick((DisconnectedScreen) (Object) this);
+        }
     }
 }
