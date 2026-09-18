@@ -19,6 +19,7 @@ package baritone.utils;
 
 import baritone.Baritone;
 import baritone.api.BaritoneAPI;
+import baritone.api.IBaritone;
 import baritone.api.utils.BlockOptionalMeta;
 import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
@@ -2698,17 +2699,24 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private void stopAutoMine() {
+        stopAutoMine(this.baritone);
+    }
+
+    public static void stopAutoMine(IBaritone baritone) {
         baritone.getPathingBehavior().cancelEverything();
         baritone.getPathingBehavior().forceCancel();
         baritone.getMineProcess().cancel();
         baritone.getInputOverrideHandler().clearAllKeys();
-        baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+        if (baritone instanceof Baritone b) {
+            b.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+        }
         if (baritone.getPlayerContext().player() != null && baritone.getPlayerContext().player().containerMenu != baritone.getPlayerContext().player().inventoryMenu) {
             baritone.getPlayerContext().player().closeContainer();
         }
-        Helper.HELPER.logDirect(Component.literal("§e[Quặng] Đã dừng  "),
+        Helper.HELPER.logDirect(Component.literal("§e[Quặng] Đã dừng đào khoáng sản!  "),
                 ChatButtons.openGuiButton());
     }
+
 
     private void startAutoChop() {
         AutoMineConfig.save();
@@ -2840,13 +2848,10 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private void startAutoMine() {
-        AutoMineConfig.save();
-        IPlayerContext playerCtx = baritone.getPlayerContext();
-        if (playerCtx.player() == null || playerCtx.world() == null) {
-            Helper.HELPER.logDirect("§e[Tr0ngX] Hãy vào world rồi mới bắt đầu đào!");
-            return;
-        }
+        startAutoMine(this.baritone);
+    }
 
+    public static void applyMiningSettings() {
         Baritone.settings().autoTool.value = optAutoTool;
         Baritone.settings().assumeExternalAutoTool.value = false;
         Baritone.settings().allowInventory.value = true;
@@ -2924,6 +2929,22 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().straightDownMine.value = optShaftDown;
         Baritone.settings().preferWaterBucketOverDigging.value = true;
         Baritone.settings().mineStrictOneDirection.value = optStrictOneDirection;
+    }
+
+    public static void startAutoMine(IBaritone baritone) {
+        startAutoMineWithBlocks(baritone, null);
+    }
+
+    public static void startAutoMineWithBlocks(IBaritone baritone, List<BlockOptionalMeta> customBlocks) {
+        AutoMineConfig.ensureLoaded();
+        AutoMineConfig.save();
+        IPlayerContext playerCtx = baritone.getPlayerContext();
+        if (playerCtx.player() == null || playerCtx.world() == null) {
+            Helper.HELPER.logDirect("§e[Tr0ngX] Hãy vào world rồi mới bắt đầu đào!");
+            return;
+        }
+
+        applyMiningSettings();
 
         int targetY = optTargetY == 999 ? -54 : optTargetY;
         Baritone.settings().legitMineYLevel.value = targetY;
@@ -2932,64 +2953,75 @@ public class AutoMineScreen extends Screen implements Helper {
         List<BlockOptionalMeta> boms = new ArrayList<>();
         List<String> oreNames = new ArrayList<>();
 
-        if (oreDiamond) {
-            boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
-            oreNames.add("Kim Cương");
-        }
-        if (oreLapis) {
-            boms.add(new BlockOptionalMeta(Blocks.LAPIS_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_LAPIS_ORE));
-            oreNames.add("Ngọc Lưu Ly");
-        }
-        if (oreRedstone) {
-            boms.add(new BlockOptionalMeta(Blocks.REDSTONE_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_REDSTONE_ORE));
-            oreNames.add("Đá Đỏ");
-        }
-        if (oreGold) {
-            boms.add(new BlockOptionalMeta(Blocks.GOLD_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_GOLD_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.NETHER_GOLD_ORE));
-            oreNames.add("Vàng");
-        }
-        if (oreIron) {
-            boms.add(new BlockOptionalMeta(Blocks.IRON_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_IRON_ORE));
-            oreNames.add("Sắt");
-        }
-        if (oreEmerald) {
-            boms.add(new BlockOptionalMeta(Blocks.EMERALD_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_EMERALD_ORE));
-            oreNames.add("Ngọc Lục Bảo");
-        }
-        if (oreDebris) {
-            boms.add(new BlockOptionalMeta(Blocks.ANCIENT_DEBRIS));
-            oreNames.add("Mảnh Cổ Đại");
-        }
-        if (oreCopper) {
-            boms.add(new BlockOptionalMeta(Blocks.COPPER_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COPPER_ORE));
-            oreNames.add("Đồng");
-        }
-        if (oreCoal) {
-            boms.add(new BlockOptionalMeta(Blocks.COAL_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COAL_ORE));
-            oreNames.add("Than Đá");
-        }
-        if (oreQuartz) {
-            boms.add(new BlockOptionalMeta(Blocks.NETHER_QUARTZ_ORE));
-            oreNames.add("Thạch Anh");
+        if (customBlocks != null && !customBlocks.isEmpty()) {
+            boms.addAll(customBlocks);
+            for (BlockOptionalMeta bom : customBlocks) {
+                oreNames.add(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(bom.getBlock()).getPath());
+            }
+        } else {
+            if (oreDiamond) {
+                boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
+                oreNames.add("Kim Cương");
+            }
+            if (oreLapis) {
+                boms.add(new BlockOptionalMeta(Blocks.LAPIS_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_LAPIS_ORE));
+                oreNames.add("Ngọc Lưu Ly");
+            }
+            if (oreRedstone) {
+                boms.add(new BlockOptionalMeta(Blocks.REDSTONE_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_REDSTONE_ORE));
+                oreNames.add("Đá Đỏ");
+            }
+            if (oreGold) {
+                boms.add(new BlockOptionalMeta(Blocks.GOLD_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_GOLD_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.NETHER_GOLD_ORE));
+                oreNames.add("Vàng");
+            }
+            if (oreIron) {
+                boms.add(new BlockOptionalMeta(Blocks.IRON_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_IRON_ORE));
+                oreNames.add("Sắt");
+            }
+            if (oreEmerald) {
+                boms.add(new BlockOptionalMeta(Blocks.EMERALD_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_EMERALD_ORE));
+                oreNames.add("Ngọc Lục Bảo");
+            }
+            if (oreDebris) {
+                boms.add(new BlockOptionalMeta(Blocks.ANCIENT_DEBRIS));
+                oreNames.add("Mảnh Cổ Đại");
+            }
+            if (oreCopper) {
+                boms.add(new BlockOptionalMeta(Blocks.COPPER_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COPPER_ORE));
+                oreNames.add("Đồng");
+            }
+            if (oreCoal) {
+                boms.add(new BlockOptionalMeta(Blocks.COAL_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COAL_ORE));
+                oreNames.add("Than Đá");
+            }
+            if (oreQuartz) {
+                boms.add(new BlockOptionalMeta(Blocks.NETHER_QUARTZ_ORE));
+                oreNames.add("Thạch Anh");
+            }
+
+            if (boms.isEmpty()) {
+                boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
+                oreNames.add("Kim Cương (Mặc Định)");
+            }
         }
 
-        if (boms.isEmpty()) {
-            boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
-            oreNames.add("Kim Cương (Mặc Định)");
+        if (baritone instanceof Baritone b) {
+            b.getPathingBehavior().cancelSegmentIfSafe();
+            b.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
+        } else {
+            baritone.getPathingBehavior().cancelEverything();
         }
-
-        baritone.getPathingBehavior().cancelSegmentIfSafe();
-        baritone.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
         BaritoneAPI.getProvider().getWorldScanner().repack(playerCtx);
         Helper.HELPER.logDirect(Component.literal("§b[Quặng] Đang đào: " + String.join(", ", oreNames) + " (Y=" + targetY + ")  "),
                 ChatButtons.openGuiButton(),
@@ -2999,3 +3031,4 @@ public class AutoMineScreen extends Screen implements Helper {
         baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }
 }
+

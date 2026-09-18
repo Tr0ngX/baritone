@@ -784,6 +784,10 @@ public interface MovementHelper extends ActionCosts, Helper {
         return isWater(BlockStateInterface.get(ctx, bp));
     }
 
+    static boolean isLava(IPlayerContext ctx, BlockPos bp) {
+        return isLava(BlockStateInterface.get(ctx, bp));
+    }
+
     static boolean isLava(BlockState state) {
         Fluid f = state.getFluidState().getType();
         return f == Fluids.LAVA || f == Fluids.FLOWING_LAVA;
@@ -845,48 +849,79 @@ public interface MovementHelper extends ActionCosts, Helper {
 
     static PlaceResult attemptToPlaceABlock(MovementState state, IBaritone baritone, BlockPos placeAt, boolean preferDown, boolean wouldSneak) {
         IPlayerContext ctx = baritone.getPlayerContext();
-        Optional<Rotation> direct = RotationUtils.reachable(ctx, placeAt, wouldSneak); // we assume that if there is a block there, it must be replacable
+        BlockState placeAtState = BlockStateInterface.get(ctx, placeAt);
+        // Only allow direct click if placeAt is a non-air, non-liquid replaceable block (e.g. grass, fern, snow layer)
+        boolean canPlaceDirect = !placeAtState.isAir() && !isLiquid(placeAtState) && placeAtState.canBeReplaced();
         boolean found = false;
-        if (direct.isPresent()) {
-            state.setTarget(new MovementTarget(direct.get(), true));
-            found = true;
+        if (canPlaceDirect) {
+            Optional<Rotation> direct = RotationUtils.reachable(ctx, placeAt, wouldSneak);
+            if (direct.isPresent()) {
+                state.setTarget(new MovementTarget(direct.get(), true));
+                found = true;
+            }
         }
         for (int i = 0; i < 5; i++) {
-            BlockPos against1 = placeAt.relative(HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i]);
+            Direction facing = HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP[i];
+            BlockPos against1 = placeAt.relative(facing);
             if (MovementHelper.canPlaceAgainst(ctx, against1)) {
-                if (!((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(false, placeAt.getX(), placeAt.getY(), placeAt.getZ())) { // get ready to place a throwaway block
+                if (!((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(false, placeAt.getX(), placeAt.getY(), placeAt.getZ())) {
                     Helper.HELPER.logDebug("bb pls get me some blocks. dirt, netherrack, cobble");
                     state.setStatus(MovementStatus.UNREACHABLE);
                     return PlaceResult.NO_OPTION;
                 }
-                double faceX = (placeAt.getX() + against1.getX() + 1.0D) * 0.5D;
-                double faceY = (placeAt.getY() + against1.getY() + 0.5D) * 0.5D;
-                double faceZ = (placeAt.getZ() + against1.getZ() + 1.0D) * 0.5D;
-                Rotation place = RotationUtils.calcRotationFromVec3d(wouldSneak ? RayTraceUtils.inferSneakingEyePosition(ctx.player()) : ctx.playerHead(), new Vec3(faceX, faceY, faceZ), ctx.playerRotations());
-                Rotation actual = baritone.getLookBehavior().getAimProcessor().peekRotation(place);
-                HitResult res = RayTraceUtils.rayTraceTowards(ctx.player(), actual, ctx.playerController().getBlockReachDistance(), wouldSneak);
-                if (res != null && res.getType() == HitResult.Type.BLOCK && ((BlockHitResult) res).getBlockPos().equals(against1) && ((BlockHitResult) res).getBlockPos().relative(((BlockHitResult) res).getDirection()).equals(placeAt)) {
-                    state.setTarget(new MovementTarget(place, true));
-                    found = true;
+                Direction dir = facing.getOpposite(); // The face of against1 facing towards placeAt
+                double cx = against1.getX() + 0.5D;
+                double cy = against1.getY() + 0.5D;
+                double cz = against1.getZ() + 0.5D;
+                double faceX = cx + dir.getStepX() * 0.5D;
+                double faceY = cy + dir.getStepY() * 0.5D;
+                double faceZ = cz + dir.getStepZ() * 0.5D;
 
-                    if (!preferDown) {
-                        // if preferDown is true, we want the last option
-                        // if preferDown is false, we want the first
-                        break;
+                Vec3 eyePos = wouldSneak ? RayTraceUtils.inferSneakingEyePosition(ctx.player()) : ctx.playerHead();
+                double reach = ctx.playerController().getBlockReachDistance();
+
+                // For horizontal faces, also try aiming near the top edge of the side face (0.88 and 0.95)
+                // so a player standing on against1 can clearly see and click the side face without being occluded by against1's top surface!
+                double[] yOffsets;
+                if (dir.getAxis().isHorizontal()) {
+                    yOffsets = new double[]{faceY, against1.getY() + 0.88D, against1.getY() + 0.95D, against1.getY() + 0.70D};
+                } else {
+                    yOffsets = new double[]{faceY};
+                }
+
+                boolean faceFound = false;
+                for (double targetY : yOffsets) {
+                    Rotation place = RotationUtils.calcRotationFromVec3d(eyePos, new Vec3(faceX, targetY, faceZ), ctx.playerRotations());
+                    Rotation actual = baritone.getLookBehavior().getAimProcessor().peekRotation(place);
+                    HitResult res = RayTraceUtils.rayTraceTowards(ctx.player(), actual, reach, wouldSneak);
+                    if (res != null && res.getType() == HitResult.Type.BLOCK) {
+                        BlockHitResult bhr = (BlockHitResult) res;
+                        if (bhr.getBlockPos().equals(against1) && bhr.getBlockPos().relative(bhr.getDirection()).equals(placeAt)) {
+                            state.setTarget(new MovementTarget(place, true));
+                            found = true;
+                            faceFound = true;
+                            break;
+                        }
                     }
+                }
+
+                if (faceFound && !preferDown) {
+                    break;
                 }
             }
         }
         if (ctx.getSelectedBlock().isPresent()) {
             BlockPos selectedBlock = ctx.getSelectedBlock().get();
-            Direction side = ((BlockHitResult) ctx.objectMouseOver()).getDirection();
-            // only way for selectedBlock.equals(placeAt) to be true is if it's replaceable
-            if (selectedBlock.equals(placeAt) || (MovementHelper.canPlaceAgainst(ctx, selectedBlock) && selectedBlock.relative(side).equals(placeAt))) {
-                if (wouldSneak) {
-                    state.setInput(Input.SNEAK, true);
+            HitResult mouseOver = ctx.objectMouseOver();
+            if (mouseOver != null && mouseOver.getType() == HitResult.Type.BLOCK) {
+                Direction side = ((BlockHitResult) mouseOver).getDirection();
+                if ((canPlaceDirect && selectedBlock.equals(placeAt)) || (MovementHelper.canPlaceAgainst(ctx, selectedBlock) && selectedBlock.relative(side).equals(placeAt))) {
+                    if (wouldSneak) {
+                        state.setInput(Input.SNEAK, true);
+                    }
+                    ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, placeAt.getX(), placeAt.getY(), placeAt.getZ());
+                    return PlaceResult.READY_TO_PLACE;
                 }
-                ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, placeAt.getX(), placeAt.getY(), placeAt.getZ());
-                return PlaceResult.READY_TO_PLACE;
             }
         }
         if (found) {

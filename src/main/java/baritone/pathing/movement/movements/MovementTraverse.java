@@ -53,6 +53,7 @@ public class MovementTraverse extends Movement {
      * Did we have to place a bridge block or was it always there
      */
     private boolean wasTheBridgeBlockAlwaysThere = true;
+    private int ticksWithoutPlacement = 0;
 
     public MovementTraverse(IBaritone baritone, BetterBlockPos from, BetterBlockPos to) {
         super(baritone, from, to, Baritone.settings().crawlMineMode.value ? new BetterBlockPos[]{to} : new BetterBlockPos[]{to.above(), to}, to.below());
@@ -62,6 +63,7 @@ public class MovementTraverse extends Movement {
     public void reset() {
         super.reset();
         wasTheBridgeBlockAlwaysThere = true;
+        ticksWithoutPlacement = 0;
     }
 
     @Override
@@ -258,14 +260,20 @@ public class MovementTraverse extends Movement {
         BlockPos feet = ctx.playerFeet();
         if (feet.getY() != dest.getY() && !ladder) {
             logDebug("Wrong Y coordinate");
-            MovementHelper.moveTowards(ctx, state, dest);
-            if (feet.getY() < dest.getY()) {
-                return state.setInput(Input.JUMP, true);
+            if (isTheBridgeBlockThere) {
+                MovementHelper.moveTowards(ctx, state, dest);
+                if (feet.getY() < dest.getY()) {
+                    return state.setInput(Input.JUMP, true);
+                }
+                return state;
             }
-            return state;
+            // Block cầu chưa được đặt -> TUYỆT ĐỐI KHÔNG NHẢY!
+            state.setInput(Input.JUMP, false);
+            state.setInput(Input.SPRINT, false);
         }
 
         if (isTheBridgeBlockThere) {
+            ticksWithoutPlacement = 0;
             if (feet.equals(dest)) {
                 return state.setStatus(MovementStatus.SUCCESS);
             }
@@ -317,6 +325,31 @@ public class MovementTraverse extends Movement {
             return state;
         } else {
             wasTheBridgeBlockAlwaysThere = false;
+            ticksWithoutPlacement++;
+
+            // TUYỆT ĐỐI KHÔNG NHẢY HOẶC SPRINT KHI BLOCK CẦU CHƯA ĐƯỢC ĐẶT
+            state.setInput(Input.JUMP, false);
+            state.setInput(Input.SPRINT, false);
+            state.setInput(Input.SNEAK, true);
+
+            if (!((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
+                logDebug("No throwaway blocks for bridging. Failing movement.");
+                state.setInput(Input.MOVE_FORWARD, false);
+                return state.setStatus(MovementStatus.UNREACHABLE);
+            }
+
+            // Detect lava or hazard below or around destination
+            boolean overLava = isLavaNearby(dest);
+
+            if (ticksWithoutPlacement > (overLava ? 40 : 60)) {
+                logDebug("Bridging block placement timed out. Backing up and failing movement.");
+                state.setInput(Input.MOVE_FORWARD, false);
+                // Back up onto src safely before marking unreachable to avoid uncrouching into the void/lava
+                MovementHelper.moveTowards(ctx, state, src);
+                state.setInput(Input.SNEAK, true);
+                return state.setStatus(MovementStatus.UNREACHABLE);
+            }
+
             Block standingOn = BlockStateInterface.get(ctx, feet.below()).getBlock();
             if (standingOn.equals(Blocks.SOUL_SAND) || standingOn instanceof SlabBlock) { // see issue #118
                 double dist = Math.max(Math.abs(dest.getX() + 0.5 - ctx.player().position().x), Math.abs(dest.getZ() + 0.5 - ctx.player().position().z));
@@ -326,38 +359,61 @@ public class MovementTraverse extends Movement {
                             .setInput(Input.MOVE_BACK, true);
                 }
             }
+
             double dist1 = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
-            PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, !Baritone.settings().assumeSafeWalk.value);
-            if ((p == PlaceResult.READY_TO_PLACE || dist1 < 0.6) && !Baritone.settings().assumeSafeWalk.value) {
+
+            // If over lava and getting too close to the edge without having placed the block yet, stop moving forward!
+            if (overLava) {
+                if (dist1 < 0.55) {
+                    // Too close or already hanging over lava: back up slightly towards src
+                    MovementHelper.moveTowards(ctx, state, src);
+                    state.setInput(Input.MOVE_FORWARD, false);
+                    state.setInput(Input.MOVE_BACK, true);
+                    state.setInput(Input.SNEAK, true);
+                } else if (dist1 < 0.75) {
+                    // In safe edge zone on src: stop moving forward so we don't slip into lava
+                    state.setInput(Input.MOVE_FORWARD, false);
+                }
+            }
+
+            MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, !Baritone.settings().assumeSafeWalk.value);
+            if ((p == MovementHelper.PlaceResult.READY_TO_PLACE || dist1 < 0.6) && !Baritone.settings().assumeSafeWalk.value) {
                 state.setInput(Input.SNEAK, true);
             }
             switch (p) {
                 case READY_TO_PLACE: {
+                    state.setInput(Input.SNEAK, true);
+                    state.setInput(Input.MOVE_FORWARD, false);
                     if (ctx.player().isCrouching() || Baritone.settings().assumeSafeWalk.value) {
                         state.setInput(Input.CLICK_RIGHT, true);
                     }
                     return state;
                 }
                 case ATTEMPTING: {
-                    if (dist1 > 0.83) {
+                    state.setInput(Input.SNEAK, true);
+                    if (dist1 > 0.83 && (!overLava || dist1 > 0.75)) {
                         // might need to go forward a bit
                         float yaw = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()).getYaw();
                         if (Math.abs(state.getTarget().rotation.getYaw() - yaw) < 0.1) {
                             // but only if our attempted place is straight ahead
                             return state.setInput(Input.MOVE_FORWARD, true);
                         }
-                    } else if (ctx.playerRotations().isCloseTo(state.getTarget().rotation, 20.0F) || Baritone.settings().f5FreeLook.value) {
-                        // well i guess theres something in the way
-                        return state.setInput(Input.CLICK_LEFT, true);
+                    } else {
+                        // Stop moving forward while aiming, do NOT click left!
+                        state.setInput(Input.MOVE_FORWARD, false);
                     }
                     return state;
                 }
                 default:
+                    if (!((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
+                        state.setInput(Input.MOVE_FORWARD, false);
+                        return state.setStatus(MovementStatus.UNREACHABLE);
+                    }
                     break;
             }
+
             if (feet.equals(dest)) {
                 // If we are in the block that we are trying to get to, we are sneaking over air and we need to place a block beneath us against the one we just walked off of
-                // Out.log(from + " " + to + " " + faceX + "," + faceY + "," + faceZ + " " + whereAmI);
                 double faceX = (dest.getX() + src.getX() + 1.0D) * 0.5D;
                 double faceY = (dest.getY() + src.getY() - 1.0D) * 0.5D;
                 double faceZ = (dest.getZ() + src.getZ() + 1.0D) * 0.5D;
@@ -374,18 +430,43 @@ public class MovementTraverse extends Movement {
                 } else {
                     state.setTarget(new MovementState.MovementTarget(backToFace, true));
                 }
+
+                // Ensure throwaway block is actively selected in hotbar
+                ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, dest.below().getX(), dest.below().getY(), dest.below().getZ());
+
                 if (ctx.isLookingAt(goalLook)) {
+                    state.setInput(Input.SNEAK, true);
                     return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
                 }
-                // Out.log("Trying to look at " + goalLook + ", actually looking at" + Baritone.whatAreYouLookingAt());
-                if (ctx.playerRotations().isCloseTo(state.getTarget().rotation, 20.0F) || Baritone.settings().f5FreeLook.value) {
-                    state.setInput(Input.CLICK_LEFT, true);
+
+                // If stuck hanging over empty space / lava for more than 15 ticks without placement, back up onto src!
+                if (ticksWithoutPlacement > 15 || overLava) {
+                    MovementHelper.moveTowards(ctx, state, src);
+                    state.setInput(Input.MOVE_BACK, true);
+                    state.setInput(Input.SNEAK, true);
                 }
+
                 return state;
             }
-            MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
+
+            state.setInput(Input.SNEAK, true);
+            if (!overLava || dist1 >= 0.75) {
+                MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
+            } else {
+                state.setInput(Input.MOVE_FORWARD, false);
+            }
             return state;
         }
+    }
+
+    private boolean isLavaNearby(BlockPos pos) {
+        for (int dy = 0; dy <= 3; dy++) {
+            BlockState bs = BlockStateInterface.get(ctx, pos.below(dy));
+            if (MovementHelper.isLava(bs)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

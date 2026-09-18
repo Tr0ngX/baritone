@@ -17,16 +17,14 @@
 
 package baritone.command.defaults;
 
-import baritone.Baritone;
-import baritone.api.BaritoneAPI;
 import baritone.api.IBaritone;
 import baritone.api.command.Command;
 import baritone.api.command.argument.IArgConsumer;
 import baritone.api.command.datatypes.ForBlockOptionalMeta;
 import baritone.api.command.exception.CommandException;
 import baritone.api.utils.BlockOptionalMeta;
+import baritone.utils.AutoMineConfig;
 import baritone.utils.AutoMineScreen;
-import net.minecraft.world.level.block.Blocks;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,112 +34,57 @@ import java.util.stream.Stream;
 public class AutoMineCommand extends Command {
 
     public AutoMineCommand(IBaritone baritone) {
-        super(baritone, "automine", "diamondmine", "orefarm");
+        super(baritone, "automine", "am", "diamondmine", "orefarm");
     }
 
     @Override
     public void execute(String label, IArgConsumer args) throws CommandException {
-        // === CẤU HÌNH TỐI ƯU CHO SERVER (BYPASS ANTI-CHEAT KINGMC) ===
-        Baritone.settings().autoTool.value = true;
-        Baritone.settings().assumeExternalAutoTool.value = false;
-        Baritone.settings().allowInventory.value = true;
-        Baritone.settings().ticksBetweenInventoryMoves.value = 1;
-        Baritone.settings().strictLiquidCheck.value = true;
-        Baritone.settings().antiLavaOnly.value = true;
-        Baritone.settings().waterCheck.value = true;
-        Baritone.settings().allowDownward.value = true;
-        Baritone.settings().allowBreak.value = true;
-        Baritone.settings().allowPlace.value = true;
-        Baritone.settings().allowPlaceInFluidsSource.value = true;
-        Baritone.settings().allowPlaceInFluidsFlow.value = true;
-        Baritone.settings().allowSprint.value = true;
-        Baritone.settings().sprintAscends.value = true;
-        Baritone.settings().overshootTraverse.value = true;
-        Baritone.settings().sprintInWater.value = true;
-        Baritone.settings().assumeStep.value = false;
-        Baritone.settings().allowWaterBucketFall.value = true;
-        Baritone.settings().preferWaterBucketOverDigging.value = true;
-
-        Baritone.settings().legitMine.value = false;
-        Baritone.settings().exploreForBlocks.value = true;
-        Baritone.settings().mineScanDroppedItems.value = true;
-        Baritone.settings().blacklistClosestOnFailure.value = true;
-        Baritone.settings().mineMaxOreLocationsCount.value = 256;
-        Baritone.settings().maxCachedWorldScanCount.value = 1000;
-        Baritone.settings().extendCacheOnThreshold.value = true;
-        Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L;
-
-        Baritone.settings().blockBreakSpeed.value = 6;
-        Baritone.settings().rightClickSpeed.value = 1;
-        Baritone.settings().blockBreakAdditionalPenalty.value = 2.0;
-        Baritone.settings().blockPlacementPenalty.value = 0.0;
-        Baritone.settings().jumpPenalty.value = 0.0;
-
-        Baritone.settings().useAnytimeSearch.value = true;
-        Baritone.settings().anytimeSearchEpsilon.value = 2.0;
-        Baritone.settings().planningTickLookahead.value = 400;
-        Baritone.settings().mineGoalUpdateInterval.value = 5;
-        Baritone.settings().primaryTimeoutMS.value = 2500L;
-        Baritone.settings().failureTimeoutMS.value = 4000L;
-        Baritone.settings().planAheadPrimaryTimeoutMS.value = 2500L;
-        Baritone.settings().planAheadFailureTimeoutMS.value = 4000L;
-        Baritone.settings().movementTimeoutTicks.value = 140;
-
-        Baritone.settings().avoidance.value = true;
-        Baritone.settings().mobAvoidanceRadius.value = 14;
-        Baritone.settings().mobAvoidanceCoefficient.value = 500.0;
-        Baritone.settings().mobSpawnerAvoidanceRadius.value = 16;
-        Baritone.settings().mobSpawnerAvoidanceCoefficient.value = 500.0;
-        Baritone.settings().autoEat.value = true;
-        Baritone.settings().autoEatThreshold.value = 19;
-        Baritone.settings().autoTotem.value = true;
-        Baritone.settings().autoLogoutOnDanger.value = AutoMineScreen.optAutoLogout;
-        Baritone.settings().autoShulkerStorage.value = true;
-        Baritone.settings().autoBuyShulker.value = true;
-        Baritone.settings().autoBuyFood.value = true;
-        Baritone.settings().autoDrop.value = true;
-
-        Baritone.settings().allowParkour.value = true;
-        Baritone.settings().allowParkourPlace.value = true;
-        Baritone.settings().allowParkourAscend.value = true;
-        Baritone.settings().allowDiagonalAscend.value = true;
-        Baritone.settings().allowDiagonalDescend.value = true;
-        Baritone.settings().tunnelSprintJump.value = true;
-        Baritone.settings().fastJump.value = true;
-
-        Baritone.settings().legitMineYLevel.value = -58;
-        Baritone.settings().exploreMaintainY.value = -58;
-        Baritone.settings().mineStrictOneDirection.value = true;
-
-        List<BlockOptionalMeta> boms = new ArrayList<>();
         if (args.hasAny()) {
+            String firstArg = args.peek().getValue().toLowerCase();
+
+            // 1. Ép Tắt: #automine off / stop / 0 / tat / dung
+            if (firstArg.equals("off") || firstArg.equals("stop") || firstArg.equals("0") || firstArg.equals("tat") || firstArg.equals("dung")) {
+                AutoMineScreen.stopAutoMine(baritone);
+                return;
+            }
+
+            // 2. Ép Bật: #automine on / start / 1 / bat / dao
+            if (firstArg.equals("on") || firstArg.equals("start") || firstArg.equals("1") || firstArg.equals("bat") || firstArg.equals("dao")) {
+                args.getString();
+                AutoMineConfig.load();
+                AutoMineScreen.startAutoMine(baritone);
+                return;
+            }
+
+            // 3. Tùy biến đào khối chỉ định: #automine <blocks...>
+            AutoMineConfig.load();
+            List<BlockOptionalMeta> boms = new ArrayList<>();
             while (args.hasAny()) {
                 boms.add(args.getDatatypeFor(ForBlockOptionalMeta.INSTANCE));
             }
+            AutoMineScreen.startAutoMineWithBlocks(baritone, boms);
+            return;
+        }
+
+        // === 1 LỆNH DUY NHẤT TỰ ĐỘNG BẬT TẮT (TOGGLE) ===
+        // Y nguyên 100% logic của H:\baritone:
+        // - Nếu đang đào -> Tự động dừng an toàn
+        // - Nếu chưa đào -> Nạp config automine.json, tự động chọn đào cái gì và tắt cái gì, bắt đầu đào!
+        if (baritone.getMineProcess().isActive()) {
+            AutoMineScreen.stopAutoMine(baritone);
         } else {
-            // Default: Kim Cương (Diamond), Lapis, Đá Đỏ (Redstone), Ngọc Lục Bảo (Emerald)
-            boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.LAPIS_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_LAPIS_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.REDSTONE_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_REDSTONE_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.EMERALD_ORE));
-            boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_EMERALD_ORE));
+            AutoMineConfig.load();
+            AutoMineScreen.startAutoMine(baritone);
         }
-        if (baritone instanceof baritone.Baritone b) {
-            b.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
-        }
-        BaritoneAPI.getProvider().getWorldScanner().repack(ctx);
-        logDirect(net.minecraft.network.chat.Component.literal("§b[Quặng] Đang đào: Kim Cương, Lưu Ly, Đá Đỏ, Lục Bảo (Y=-58)  "),
-                ChatButtons.openGuiButton(),
-                net.minecraft.network.chat.Component.literal(" "),
-                ChatButtons.stopButton());
-        baritone.getMineProcess().mine(0, boms.toArray(new BlockOptionalMeta[0]));
     }
 
     @Override
     public Stream<String> tabComplete(String label, IArgConsumer args) throws CommandException {
+        if (args.hasExactlyOne()) {
+            String prefix = args.getString().toLowerCase();
+            return Stream.of("on", "off", "stop", "start")
+                    .filter(s -> s.startsWith(prefix));
+        }
         while (args.has(2)) {
             args.getDatatypeFor(ForBlockOptionalMeta.INSTANCE);
         }
@@ -150,18 +93,20 @@ public class AutoMineCommand extends Command {
 
     @Override
     public String getShortDesc() {
-        return "Auto descend to Y=-58, tunnel, and mine Diamonds/Lapis/Redstone safely without stopping";
+        return "1 lệnh tự động bật/tắt AutoMine theo đúng cấu hình quặng và tối ưu server";
     }
 
     @Override
     public List<String> getLongDesc() {
         return Arrays.asList(
-                "The automine command safely descends down to Y=-58, digs a horizontal tunnel, and automatically mines all Diamonds, Lapis, and Redstone nearby.",
-                "Whenever ores are cleared, it seamlessly resumes the tunnel forward infinitely without cancelling.",
+                "Lệnh điều khiển AutoMine 1 chạm (Toggle):",
+                "  - Nếu đang đào -> Tự động dừng an toàn.",
+                "  - Nếu chưa đào -> Tự động nạp cấu hình quặng từ automine.json, kích hoạt toàn bộ cơ chế bảo vệ, tối ưu di chuyển và bắt đầu đào.",
                 "",
-                "Usage:",
-                "> automine - Mines Diamonds, Lapis, and Redstone at Y=-58.",
-                "> automine <blocks...> - Custom target blocks with auto-tunneling."
+                "Sử dụng:",
+                "> #automine (hoặc #am) - Tự động Bật / Tắt theo trạng thái hiện tại",
+                "> #automine on / off - Ép Bật hoặc Tắt",
+                "> #automine <blocks...> - Đào theo danh sách block tùy chọn"
         );
     }
 }

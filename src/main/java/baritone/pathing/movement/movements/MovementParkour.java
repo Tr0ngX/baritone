@@ -45,12 +45,19 @@ public class MovementParkour extends Movement {
     private final Direction direction;
     private final int dist;
     private final boolean ascend;
+    private int ticksWithoutPlacement = 0;
 
     private MovementParkour(IBaritone baritone, BetterBlockPos src, int dist, Direction dir, boolean ascend) {
         super(baritone, src, src.relative(dir, dist).above(ascend ? 1 : 0), EMPTY, src.relative(dir, dist).below(ascend ? 0 : 1));
         this.direction = dir;
         this.dist = dist;
         this.ascend = ascend;
+    }
+
+    @Override
+    public void reset() {
+        super.reset();
+        ticksWithoutPlacement = 0;
     }
 
     public static MovementParkour cost(CalculationContext context, BetterBlockPos src, Direction direction) {
@@ -259,6 +266,78 @@ public class MovementParkour extends Movement {
             logDebug("sorry");
             return state.setStatus(MovementStatus.UNREACHABLE);
         }
+
+        Block d = BlockStateInterface.getBlock(ctx, dest);
+        boolean ladderOrVine = (d == Blocks.VINE || d == Blocks.LADDER);
+        boolean isLandingBlockThere = MovementHelper.canWalkOn(ctx, positionToPlace)
+                || (ascend && MovementHelper.canWalkOn(ctx, dest))
+                || ladderOrVine
+                || MovementHelper.canUseFrostWalker(ctx, positionToPlace);
+
+        // ĐẢM BẢO BLOCK ĐƯỢC ĐẶT THÌ MỚI ĐƯỢC PHÉP NHẢY HOẶC CHẠY VÀO KHOẢNG TRỐNG
+        if (!isLandingBlockThere) {
+            state.setInput(Input.JUMP, false);
+            state.setInput(Input.SPRINT, false);
+
+            if (!Baritone.settings().allowPlace.value || !((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
+                logDebug("Landing block does not exist and cannot place throwaway. Aborting parkour.");
+                state.setInput(Input.MOVE_FORWARD, false);
+                return state.setStatus(MovementStatus.UNREACHABLE);
+            }
+
+            ticksWithoutPlacement++;
+            if (ticksWithoutPlacement > 40) {
+                logDebug("Parkour place timed out without placement. Aborting parkour.");
+                state.setInput(Input.MOVE_FORWARD, false);
+                return state.setStatus(MovementStatus.UNREACHABLE);
+            }
+
+            MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, positionToPlace, false, true);
+            switch (p) {
+                case READY_TO_PLACE: {
+                    state.setInput(Input.SNEAK, true);
+                    state.setInput(Input.MOVE_FORWARD, false);
+                    if (ctx.player().isCrouching() || Baritone.settings().assumeSafeWalk.value) {
+                        state.setInput(Input.CLICK_RIGHT, true);
+                    }
+                    return state;
+                }
+                case ATTEMPTING: {
+                    state.setInput(Input.SNEAK, true);
+                    if (ctx.playerFeet().equals(src)) {
+                        MovementHelper.moveTowards(ctx, state, positionToPlace);
+                    } else {
+                        state.setInput(Input.MOVE_FORWARD, false);
+                    }
+                    return state;
+                }
+                default: {
+                    if (ticksWithoutPlacement > 15) {
+                        logDebug("No placement option for parkour landing block. Aborting parkour.");
+                        state.setInput(Input.MOVE_FORWARD, false);
+                        return state.setStatus(MovementStatus.UNREACHABLE);
+                    }
+                    state.setInput(Input.SNEAK, true);
+                    return state;
+                }
+            }
+        }
+
+        // Sau khi đã đặt xong block điểm đáp, nếu bot đang đứng quá sát mép src do sneak đặt block,
+        // lùi nhẹ lại tâm src để lấy đà chạy sprint nhảy cho parkour từ 3 block trở lên
+        if (ticksWithoutPlacement > 0 && ctx.player().onGround() && !ctx.playerFeet().equals(dest)) {
+            double xDiff = (src.x + 0.5) - ctx.player().position().x;
+            double zDiff = (src.z + 0.5) - ctx.player().position().z;
+            double distFromCenter = Math.max(Math.abs(xDiff), Math.abs(zDiff));
+            if (dist >= 3 && distFromCenter > 0.25) {
+                MovementHelper.moveTowards(ctx, state, src);
+                state.setInput(Input.SPRINT, false);
+                state.setInput(Input.JUMP, false);
+                return state;
+            }
+            ticksWithoutPlacement = 0;
+        }
+
         if (dist >= 4 || ascend) {
             state.setInput(Input.SPRINT, true);
         }
@@ -268,8 +347,7 @@ public class MovementParkour extends Movement {
 
         MovementHelper.moveTowards(ctx, state, dest);
         if (ctx.playerFeet().equals(dest)) {
-            Block d = BlockStateInterface.getBlock(ctx, dest);
-            if (d == Blocks.VINE || d == Blocks.LADDER) {
+            if (ladderOrVine) {
                 // it physically hurt me to add support for parkour jumping onto a vine
                 // but i did it anyway
                 return state.setStatus(MovementStatus.SUCCESS);
@@ -279,11 +357,18 @@ public class MovementParkour extends Movement {
             }
         } else if (!ctx.playerFeet().equals(src)) {
             if (ctx.playerFeet().equals(src.relative(direction)) || ctx.player().position().y - src.y > 0.0001) {
+                if (!isLandingBlockThere) {
+                    // Block điểm đáp bất ngờ biến mất, tuyệt đối không nhảy vào vực!
+                    state.setInput(Input.JUMP, false);
+                    state.setInput(Input.SPRINT, false);
+                    return state.setStatus(MovementStatus.UNREACHABLE);
+                }
+
                 if (Baritone.settings().allowPlace.value // see PR #3775
                         && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()
                         && !MovementHelper.canWalkOn(ctx, dest.below())
                         && !ctx.player().onGround()
-                        && MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == PlaceResult.READY_TO_PLACE
+                        && MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == MovementHelper.PlaceResult.READY_TO_PLACE
                 ) {
                     // go in the opposite order to check DOWN before all horizontals -- down is preferable because you don't have to look to the side while in midair, which could mess up the trajectory
                     state.setInput(Input.CLICK_RIGHT, true);
