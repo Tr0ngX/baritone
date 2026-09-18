@@ -396,6 +396,14 @@ public class MovementTraverse extends Movement {
 
             double dist1 = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
 
+            // Failsafe: tuyệt đối không được bước vào không gian rỗng dest khi chưa có block sàn bên dưới
+            if (feet.equals(dest)) {
+                state.setInput(Input.MOVE_FORWARD, false);
+                MovementHelper.moveTowards(ctx, state, src);
+                state.setInput(Input.SNEAK, true);
+                return state;
+            }
+
             MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, true);
             switch (p) {
                 case READY_TO_PLACE: {
@@ -408,57 +416,22 @@ public class MovementTraverse extends Movement {
                 }
                 case ATTEMPTING: {
                     state.setInput(Input.SNEAK, true);
-                    if (dist1 > 0.83) {
-                        // might need to go forward a bit
-                        float yaw = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()).getYaw();
-                        if (Math.abs(state.getTarget().rotation.getYaw() - yaw) < 0.1) {
-                            // but only if our attempted place is straight ahead
-                            return state.setInput(Input.MOVE_FORWARD, true);
-                        }
-                    } else {
-                        // Stop moving forward while aiming, do NOT click left!
-                        state.setInput(Input.MOVE_FORWARD, false);
-                    }
+                    // Dừng di chuyển tới trước khi tâm ngắm đang xoay về rìa block mục tiêu để không bị trượt ra ngoài
+                    state.setInput(Input.MOVE_FORWARD, false);
                     return state;
                 }
                 default:
                     break;
             }
 
-            if (feet.equals(dest)) {
-                // If we are in the block that we are trying to get to, we are sneaking over air and we need to place a block beneath us against the one we just walked off of
-                double faceX = (dest.getX() + src.getX() + 1.0D) * 0.5D;
-                double faceY = (dest.getY() + src.getY() - 1.0D) * 0.5D;
-                double faceZ = (dest.getZ() + src.getZ() + 1.0D) * 0.5D;
-                // faceX, faceY, faceZ is the middle of the face between from and to
-                BlockPos goalLook = src.below(); // this is the block we were just standing on, and the one we want to place against
-
-                Rotation backToFace = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3(faceX, faceY, faceZ), ctx.playerRotations());
-                float pitch = backToFace.getPitch();
-                double dist2 = Math.max(Math.abs(ctx.player().position().x - faceX), Math.abs(ctx.player().position().z - faceZ));
-                if (dist2 < 0.29) { // see issue #208
-                    float yaw = RotationUtils.calcRotationFromVec3d(VecUtils.getBlockPosCenter(dest), ctx.playerHead(), ctx.playerRotations()).getYaw();
-                    state.setTarget(new MovementState.MovementTarget(new Rotation(yaw, pitch), true));
-                    state.setInput(Input.MOVE_BACK, true);
-                } else {
-                    state.setTarget(new MovementState.MovementTarget(backToFace, true));
-                }
-
-                // Ensure throwaway block is actively selected in hotbar
-                ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, dest.below().getX(), dest.below().getY(), dest.below().getZ());
-
-                state.setInput(Input.SNEAK, true);
-
-                if (ctx.isLookingAt(goalLook)) {
-                    return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
-                }
-
-                // TUYỆT ĐỐI KHÔNG CLICK_LEFT Ở ĐÂY ĐỂ TRÁNH ĐÀO MẤT BLOCK src.below() ĐANG ĐỨNG!
-                return state;
-            }
-
+            // Nếu đứng quá xa chưa với tới điểm ngắm trên rìa block, nhích nhẹ tới trước khi đang sneak
+            // nhưng luôn dừng lại trước mép an toàn (không bao giờ để dist1 <= 0.86 khi chưa đặt block)
             state.setInput(Input.SNEAK, true);
-            MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
+            if (dist1 > 0.88) {
+                MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
+            } else {
+                state.setInput(Input.MOVE_FORWARD, false);
+            }
             return state;
         }
     }

@@ -880,11 +880,11 @@ public interface MovementHelper extends ActionCosts, Helper {
                 Vec3 eyePos = wouldSneak ? RayTraceUtils.inferSneakingEyePosition(ctx.player()) : ctx.playerHead();
                 double reach = ctx.playerController().getBlockReachDistance();
 
-                // For horizontal faces, also try aiming near the top edge of the side face (0.88 and 0.95)
-                // so a player standing on against1 can clearly see and click the side face without being occluded by against1's top surface!
+                // For horizontal faces, try aiming at the top-most edge of the side face (0.995, 0.98, 0.95) first
+                // so a player standing safely on against1 can clearly see and click the side face without being occluded by against1's top surface!
                 double[] yOffsets;
                 if (dir.getAxis().isHorizontal()) {
-                    yOffsets = new double[]{faceY, against1.getY() + 0.88D, against1.getY() + 0.95D, against1.getY() + 0.70D};
+                    yOffsets = new double[]{against1.getY() + 0.995D, against1.getY() + 0.98D, against1.getY() + 0.95D, against1.getY() + 0.88D, faceY, against1.getY() + 0.70D};
                 } else {
                     yOffsets = new double[]{faceY};
                 }

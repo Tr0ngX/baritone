@@ -21,11 +21,13 @@ import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
+import baritone.api.utils.Rotation;
 import baritone.api.utils.input.Input;
 import baritone.pathing.movement.CalculationContext;
 import baritone.pathing.movement.Movement;
 import baritone.pathing.movement.MovementHelper;
 import baritone.pathing.movement.MovementState;
+import baritone.pathing.movement.MovementState.MovementTarget;
 import baritone.utils.BlockStateInterface;
 import baritone.utils.pathing.MutableMoveResult;
 import net.minecraft.core.Direction;
@@ -116,7 +118,7 @@ public class MovementParkour extends Movement {
         } else if (context.canSprint) {
             maxJump = 4;
         } else {
-            maxJump = 3;
+            maxJump = 2; // Đi bộ bình thường chỉ nhảy tối đa qua khoảng cách 2 block (hố 1 block), không thể nhảy 3 block nếu không sprint
         }
 
         // check parkour jumps from smallest to largest for obstacles/walls and landing positions
@@ -261,9 +263,14 @@ public class MovementParkour extends Movement {
         if (state.getStatus() != MovementStatus.RUNNING) {
             return state;
         }
-        if (ctx.playerFeet().y < src.y) {
+
+        double px = ctx.player().position().x;
+        double py = ctx.player().position().y;
+        double pz = ctx.player().position().z;
+
+        if (py < src.y - 0.75D || (ctx.playerFeet().y < src.y && ctx.player().onGround())) {
             // we have fallen
-            logDebug("sorry");
+            logDebug("Parkour failed: fallen below takeoff level");
             return state.setStatus(MovementStatus.UNREACHABLE);
         }
 
@@ -274,125 +281,121 @@ public class MovementParkour extends Movement {
                 || ladderOrVine
                 || MovementHelper.canUseFrostWalker(ctx, positionToPlace);
 
-        // ĐẢM BẢO BLOCK ĐƯỢC ĐẶT THÌ MỚI ĐƯỢC PHÉP NHẢY HOẶC CHẠY VÀO KHOẢNG TRỐNG
+        double dirX = direction.getStepX();
+        double dirZ = direction.getStepZ();
+        double srcCenterX = src.x + 0.5D;
+        double srcCenterZ = src.z + 0.5D;
+        double destCenterX = dest.x + 0.5D;
+        double destCenterZ = dest.z + 0.5D;
+
+        // Tiến độ di chuyển dọc theo hướng nhảy (0.0 = tâm src, 0.5 = mép src, > 0.5 = vượt ra ngoài hố)
+        double progress = (px - srcCenterX) * dirX + (pz - srcCenterZ) * dirZ;
+        // Độ lệch ngang so với trục nhảy thẳng (dương/âm là lệch trái/phải)
+        double lateral = (px - srcCenterX) * (-dirZ) + (pz - srcCenterZ) * dirX;
+        // Khoảng cách còn lại tới tâm dest theo hướng nhảy
+        double toDest = (destCenterX - px) * dirX + (destCenterZ - pz) * dirZ;
+
+        // 1. KIỂM TRA ĐIỂM ĐÁP VÀ ĐẶT BLOCK
         if (!isLandingBlockThere) {
-            state.setInput(Input.JUMP, false);
-            state.setInput(Input.SPRINT, false);
-
-            if (!Baritone.settings().allowPlace.value || !((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
-                logDebug("Landing block does not exist and cannot place throwaway. Aborting parkour.");
-                state.setInput(Input.MOVE_FORWARD, false);
-                return state.setStatus(MovementStatus.UNREACHABLE);
-            }
-
-            ticksWithoutPlacement++;
-            if (ticksWithoutPlacement > 40) {
-                logDebug("Parkour place timed out without placement. Aborting parkour.");
-                state.setInput(Input.MOVE_FORWARD, false);
-                return state.setStatus(MovementStatus.UNREACHABLE);
-            }
-
-            MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, positionToPlace, false, true);
-            switch (p) {
-                case READY_TO_PLACE: {
-                    state.setInput(Input.SNEAK, true);
-                    state.setInput(Input.MOVE_FORWARD, false);
-                    if (ctx.player().isCrouching() || Baritone.settings().assumeSafeWalk.value) {
-                        state.setInput(Input.CLICK_RIGHT, true);
+            // Nếu block đáp chưa có và bot vẫn còn ở src, kiểm tra xem có thể đặt block trước khi nhảy không
+            if (ctx.player().onGround() && progress < 0.5D) {
+                if (dist == 2 && Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
+                    ticksWithoutPlacement++;
+                    if (ticksWithoutPlacement <= 20) {
+                        MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, positionToPlace, false, true);
+                        if (p == MovementHelper.PlaceResult.READY_TO_PLACE) {
+                            state.setInput(Input.SNEAK, true);
+                            state.setInput(Input.MOVE_FORWARD, false);
+                            state.setInput(Input.CLICK_RIGHT, true);
+                            return state;
+                        } else if (p == MovementHelper.PlaceResult.ATTEMPTING) {
+                            state.setInput(Input.SNEAK, true);
+                            state.setInput(Input.MOVE_FORWARD, false);
+                            return state;
+                        }
                     }
-                    return state;
                 }
-                case ATTEMPTING: {
-                    state.setInput(Input.SNEAK, true);
-                    if (ctx.playerFeet().equals(src)) {
-                        MovementHelper.moveTowards(ctx, state, positionToPlace);
-                    } else {
-                        state.setInput(Input.MOVE_FORWARD, false);
-                    }
-                    return state;
-                }
-                default: {
-                    if (ticksWithoutPlacement > 15) {
-                        logDebug("No placement option for parkour landing block. Aborting parkour.");
-                        state.setInput(Input.MOVE_FORWARD, false);
-                        return state.setStatus(MovementStatus.UNREACHABLE);
-                    }
-                    state.setInput(Input.SNEAK, true);
-                    return state;
-                }
-            }
-        }
-
-        // Sau khi đã đặt xong block điểm đáp, nếu bot đang đứng quá sát mép src do sneak đặt block,
-        // lùi nhẹ lại tâm src để lấy đà chạy sprint nhảy cho parkour từ 3 block trở lên
-        if (ticksWithoutPlacement > 0 && ctx.player().onGround() && !ctx.playerFeet().equals(dest)) {
-            double xDiff = (src.x + 0.5) - ctx.player().position().x;
-            double zDiff = (src.z + 0.5) - ctx.player().position().z;
-            double distFromCenter = Math.max(Math.abs(xDiff), Math.abs(zDiff));
-            if (dist >= 3 && distFromCenter > 0.25) {
-                MovementHelper.moveTowards(ctx, state, src);
-                state.setInput(Input.SPRINT, false);
+                // Nếu không thể đặt trước, tuyệt đối không nhảy vào khoảng không/vực/lava
+                logDebug("Landing block does not exist and cannot be placed before jump. Aborting parkour.");
                 state.setInput(Input.JUMP, false);
-                return state;
+                state.setInput(Input.SPRINT, false);
+                state.setInput(Input.MOVE_FORWARD, false);
+                return state.setStatus(MovementStatus.UNREACHABLE);
             }
-            ticksWithoutPlacement = 0;
-        }
-
-        if (dist >= 4 || ascend) {
-            state.setInput(Input.SPRINT, true);
-        }
-        if (Baritone.settings().allowWalkOnMagmaBlocks.value && ctx.world().getBlockState(ctx.playerFeet().below()).is(Blocks.MAGMA_BLOCK)) {
-            state.setInput(Input.SNEAK, true);
-        }
-
-        MovementHelper.moveTowards(ctx, state, dest);
-        if (ctx.playerFeet().equals(dest)) {
-            if (ladderOrVine) {
-                // it physically hurt me to add support for parkour jumping onto a vine
-                // but i did it anyway
-                return state.setStatus(MovementStatus.SUCCESS);
-            }
-            if (ctx.player().position().y - ctx.playerFeet().getY() < 0.094) { // lilypads
-                state.setStatus(MovementStatus.SUCCESS);
-            }
-        } else if (!ctx.playerFeet().equals(src)) {
-            if (ctx.playerFeet().equals(src.relative(direction)) || ctx.player().position().y - src.y > 0.0001) {
-                if (!isLandingBlockThere) {
-                    // Block điểm đáp bất ngờ biến mất, tuyệt đối không nhảy vào vực!
-                    state.setInput(Input.JUMP, false);
-                    state.setInput(Input.SPRINT, false);
-                    return state.setStatus(MovementStatus.UNREACHABLE);
-                }
-
-                if (Baritone.settings().allowPlace.value // see PR #3775
-                        && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()
-                        && !MovementHelper.canWalkOn(ctx, dest.below())
-                        && !ctx.player().onGround()
-                        && MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == MovementHelper.PlaceResult.READY_TO_PLACE
-                ) {
-                    // go in the opposite order to check DOWN before all horizontals -- down is preferable because you don't have to look to the side while in midair, which could mess up the trajectory
+            // Nếu đang trên không trung (midair) và allowPlace bật: thử đặt clutch
+            if (!ctx.player().onGround() && Baritone.settings().allowPlace.value && ((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
+                if (MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), true, false) == MovementHelper.PlaceResult.READY_TO_PLACE) {
                     state.setInput(Input.CLICK_RIGHT, true);
                 }
-                // prevent jumping too late by checking for ascend
-                if (dist == 3 && !ascend) { // this is a 2 block gap, dest = src + direction * 3
-                    double xDiff = (src.x + 0.5) - ctx.player().position().x;
-                    double zDiff = (src.z + 0.5) - ctx.player().position().z;
-                    double distFromStart = Math.max(Math.abs(xDiff), Math.abs(zDiff));
-                    if (distFromStart < 0.7) {
-                        return state;
-                    }
-                }
-
-                state.setInput(Input.JUMP, true);
-            } else if (!ctx.playerFeet().equals(dest.relative(direction, -1))) {
-                state.setInput(Input.SPRINT, false);
-                if (ctx.playerFeet().equals(src.relative(direction, -1))) {
-                    MovementHelper.moveTowards(ctx, state, src);
-                } else {
-                    MovementHelper.moveTowards(ctx, state, src.relative(direction, -1));
-                }
             }
         }
+
+        // 2. TIẾP ĐẤT & PHANH CHỐNG TRƯỢT QUÁ ĐÀ (ANTI-OVERSHOOT)
+        if (ctx.playerFeet().equals(dest) || (toDest <= 0.35D && toDest >= -0.4D && ctx.player().onGround() && Math.abs(lateral) < 0.45D)) {
+            // Đã đáp lên block đích: lập tức cắt sprint
+            state.setInput(Input.SPRINT, false);
+            if (ladderOrVine) {
+                return state.setStatus(MovementStatus.SUCCESS);
+            }
+            if (py - ctx.playerFeet().getY() < 0.094D) { // lilypads
+                return state.setStatus(MovementStatus.SUCCESS);
+            }
+            // Phanh nhẹ nếu còn quán tính trượt lớn
+            if (toDest < 0.15D && ctx.player().getDeltaMovement().horizontalDistance() > 0.10D) {
+                state.setInput(Input.MOVE_FORWARD, false);
+                state.setInput(Input.SNEAK, true);
+            } else {
+                state.setInput(Input.MOVE_FORWARD, false);
+            }
+            if (ctx.player().onGround()) {
+                return state.setStatus(MovementStatus.SUCCESS);
+            }
+            return state;
+        }
+
+        // 3. ĐANG TRÊN KHÔNG TRUNG (AIRBORNE PHASE)
+        if (!ctx.player().onGround()) {
+            state.setInput(Input.JUMP, false);
+            state.setInput(Input.MOVE_FORWARD, true);
+            state.setInput(Input.SPRINT, true);
+            // Khóa chặt góc nhìn (yaw lock) theo hướng nhảy để không bị air-strafing làm lệch quỹ đạo
+            state.setTarget(new MovementTarget(new Rotation(direction.toYRot(), 0.0F), false));
+            return state;
+        }
+
+        // 4. TRÊN MẶT ĐẤT CHUẨN BỊ LẤY ĐÀ VÀ DẬM NHẢY (TAKEOFF PHASE)
+        if (ctx.player().getFoodData().getFoodLevel() > 6) {
+            state.setInput(Input.SPRINT, true);
+        }
+        state.setInput(Input.MOVE_FORWARD, true);
+
+        // Điều chỉnh hướng chạy triệt tiêu độ lệch ngang
+        float desiredYaw = direction.toYRot();
+        if (Math.abs(lateral) > 0.05D) {
+            float lateralCorrection = (float) Math.toDegrees(Math.atan2(-lateral, 1.0D)) * 0.4F;
+            lateralCorrection = Math.max(-15.0F, Math.min(15.0F, lateralCorrection));
+            desiredYaw += lateralCorrection;
+        }
+        state.setTarget(new MovementTarget(new Rotation(desiredYaw, 0.0F), false));
+
+        // Điểm dậm nhảy chính xác dựa trên khoảng cách (takeoff threshold)
+        double takeoffThreshold;
+        if (dist == 2) {
+            takeoffThreshold = 0.20D; // hố 1 block: dậm sớm an toàn
+        } else if (dist == 3) {
+            takeoffThreshold = ascend ? 0.35D : 0.40D; // hố 2 block: dậm ở 0.40
+        } else {
+            takeoffThreshold = 0.52D; // hố 3 block (dist 4): dậm ở 0.52 với full sprint speed
+        }
+
+        if (progress >= takeoffThreshold && ctx.player().onGround()) {
+            state.setInput(Input.JUMP, true);
+        }
+        // Failsafe khẩn cấp: nếu đã sát mép ngoài (>= 0.62) mà vẫn còn trên mặt đất, BẮT BUỘC dậm nhảy ngay
+        if (progress >= 0.62D && ctx.player().onGround()) {
+            state.setInput(Input.JUMP, true);
+        }
+
         return state;
     }
 }
