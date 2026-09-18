@@ -1855,6 +1855,13 @@ public final class Settings {
     public final Setting<Boolean> allowWalkOnMagmaBlocks = new Setting<>(false);
 
     /**
+     * Tuyệt đối không bao giờ bắc cầu qua dung nham (lava).
+     * Khi bật, Baritone sẽ coi mọi hành động đặt block bắc cầu bên trên hoặc sát hồ dung nham là bất khả thi (COST_INF),
+     * buộc thuật toán A* phải tìm đường vòng trên địa hình rắn an toàn. Mặc định: bật (true).
+     */
+    public final Setting<Boolean> neverBridgeOverLava = new Setting<>(true);
+
+    /**
      * URL Webhook cua Discord de gui bao cao ket qua farm
      */
     public final Setting<String> discordWebhookUrl = new Setting<>("");

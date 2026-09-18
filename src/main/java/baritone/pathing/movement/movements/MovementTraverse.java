@@ -32,6 +32,7 @@ import baritone.pathing.movement.MovementState;
 import baritone.utils.BlockStateInterface;
 import com.google.common.collect.ImmutableSet;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.AirBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -137,6 +138,22 @@ public class MovementTraverse extends Movement {
         } else {//this is a bridge, so we need to place a block
             if (MovementHelper.isClimbable(srcDownBlock)) {
                 return COST_INF;
+            }
+            if (Baritone.settings().neverBridgeOverLava.value) {
+                if (MovementHelper.isLava(destOn)) {
+                    return COST_INF;
+                }
+                for (int dy = 1; dy <= 6; dy++) {
+                    if (MovementHelper.isLava(context.get(destX, y - 1 - dy, destZ))) {
+                        return COST_INF;
+                    }
+                }
+                for (int i = 0; i < 4; i++) {
+                    Direction dir = Direction.from2DDataValue(i);
+                    if (MovementHelper.isLava(context.get(destX + dir.getStepX(), y - 1, destZ + dir.getStepZ()))) {
+                        return COST_INF;
+                    }
+                }
             }
             if (MovementHelper.isReplaceable(destX, y - 1, destZ, destOn, context.bsi)) {
                 boolean throughWater = MovementHelper.isWater(pb0) || MovementHelper.isWater(pb1);
@@ -332,6 +349,17 @@ public class MovementTraverse extends Movement {
             state.setInput(Input.SPRINT, false);
             state.setInput(Input.SNEAK, true);
 
+            if (Baritone.settings().neverBridgeOverLava.value && isLavaNearbyOrBelow(dest)) {
+                logDebug("neverBridgeOverLava is active and lava detected near bridge destination. Aborting movement.");
+                state.setInput(Input.MOVE_FORWARD, false);
+                if (feet.equals(dest)) {
+                    MovementHelper.moveTowards(ctx, state, src);
+                    state.setInput(Input.SNEAK, true);
+                    return state;
+                }
+                return state.setStatus(MovementStatus.UNREACHABLE);
+            }
+
             if (!((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
                 logDebug("No throwaway blocks for bridging. Failing movement.");
                 state.setInput(Input.MOVE_FORWARD, false);
@@ -433,6 +461,24 @@ public class MovementTraverse extends Movement {
             MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
             return state;
         }
+    }
+
+    private boolean isLavaNearbyOrBelow(BlockPos pos) {
+        BlockState destDown = BlockStateInterface.get(ctx, pos.below());
+        if (MovementHelper.isLava(destDown)) {
+            return true;
+        }
+        for (int dy = 2; dy <= 6; dy++) {
+            if (MovementHelper.isLava(BlockStateInterface.get(ctx, pos.below(dy)))) {
+                return true;
+            }
+        }
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            if (MovementHelper.isLava(BlockStateInterface.get(ctx, pos.below().relative(dir)))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override

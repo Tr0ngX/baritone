@@ -203,6 +203,16 @@ public class CalculationContext {
         if (!worldBorder.canPlaceAt(x, z)) {
             return COST_INF;
         }
+        if (Baritone.settings().neverBridgeOverLava.value) {
+            if (MovementHelper.isLava(current)) {
+                return COST_INF;
+            }
+            for (int dy = 1; dy <= 6; dy++) {
+                if (MovementHelper.isLava(get(x, y - dy, z))) {
+                    return COST_INF;
+                }
+            }
+        }
         if (!Baritone.settings().allowPlaceInFluidsSource.value && current.getFluidState().isSource()) {
             return COST_INF;
         }
