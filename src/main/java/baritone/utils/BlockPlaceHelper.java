@@ -18,7 +18,10 @@
 package baritone.utils;
 
 import baritone.Baritone;
+import baritone.api.BaritoneAPI;
 import baritone.api.utils.IPlayerContext;
+import net.minecraft.core.BlockPos;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
@@ -31,10 +34,19 @@ public class BlockPlaceHelper {
     private static final int BASE_PLACE_DELAY = 1;
 
     private final IPlayerContext ctx;
+    private final Baritone baritone;
     private int rightClickTimer;
+
+    BlockPlaceHelper(Baritone baritone) {
+        this.baritone = baritone;
+        this.ctx = baritone.getPlayerContext();
+    }
 
     BlockPlaceHelper(IPlayerContext playerContext) {
         this.ctx = playerContext;
+        this.baritone = (playerContext != null && playerContext.player() != null)
+                ? (Baritone) BaritoneAPI.getProvider().getBaritoneForPlayer(playerContext.player())
+                : null;
     }
 
     public void tick(boolean rightClickRequested) {
@@ -50,6 +62,14 @@ public class BlockPlaceHelper {
         ItemStack mainHand = ctx.player().getMainHandItem();
         ItemStack offHand = ctx.player().getOffhandItem();
 
+        // If neither hand has a BlockItem, try to auto-select a throwaway block from inventory
+        if (!(mainHand.getItem() instanceof BlockItem) && !(offHand.getItem() instanceof BlockItem) && baritone != null) {
+            BlockPos targetPos = ((BlockHitResult) mouseOver).getBlockPos();
+            baritone.getInventoryBehavior().selectThrowawayForLocation(true, targetPos.getX(), targetPos.getY(), targetPos.getZ());
+            mainHand = ctx.player().getMainHandItem();
+            offHand = ctx.player().getOffhandItem();
+        }
+
         InteractionHand hand = InteractionHand.MAIN_HAND;
         ItemStack stack = mainHand;
         if (stack.isEmpty() || (!(stack.getItem() instanceof BlockItem) && offHand.getItem() instanceof BlockItem)) {
@@ -58,6 +78,14 @@ public class BlockPlaceHelper {
         }
 
         if (stack.isEmpty()) {
+            return;
+        }
+
+        // Never right-click a block with a mining/harvesting tool or weapon (pickaxe, axe, shovel, hoe, sword)
+        // when attempting to place a block. Right-clicking blocks with tools strips logs, tills dirt,
+        // or loses weapon charge without ever placing a block!
+        if (stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES) || stack.is(ItemTags.SHOVELS)
+                || stack.is(ItemTags.HOES) || stack.is(ItemTags.SWORDS)) {
             return;
         }
 

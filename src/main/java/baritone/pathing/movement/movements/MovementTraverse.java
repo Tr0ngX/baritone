@@ -43,6 +43,8 @@ import net.minecraft.world.level.block.LadderBlock;
 import net.minecraft.world.level.block.SlabBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SlabType;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Optional;
@@ -396,27 +398,17 @@ public class MovementTraverse extends Movement {
 
             double dist1 = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
 
-            // Failsafe: tuyệt đối không được bước vào không gian rỗng dest khi chưa có block sàn bên dưới
-            if (feet.equals(dest)) {
-                state.setInput(Input.MOVE_FORWARD, false);
-                MovementHelper.moveTowards(ctx, state, src);
-                state.setInput(Input.SNEAK, true);
-                return state;
-            }
-
+            // 1. Kiểm tra nếu có thể đặt trực tiếp từ cự ly hiện tại (ví dụ có tường bên cạnh hoặc block bên dưới)
             MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, true);
             switch (p) {
                 case READY_TO_PLACE: {
                     state.setInput(Input.SNEAK, true);
                     state.setInput(Input.MOVE_FORWARD, false);
-                    if (ctx.player().isCrouching() || Baritone.settings().assumeSafeWalk.value) {
-                        state.setInput(Input.CLICK_RIGHT, true);
-                    }
+                    state.setInput(Input.CLICK_RIGHT, true);
                     return state;
                 }
                 case ATTEMPTING: {
                     state.setInput(Input.SNEAK, true);
-                    // Dừng di chuyển tới trước khi tâm ngắm đang xoay về rìa block mục tiêu để không bị trượt ra ngoài
                     state.setInput(Input.MOVE_FORWARD, false);
                     return state;
                 }
@@ -424,14 +416,52 @@ public class MovementTraverse extends Movement {
                     break;
             }
 
-            // Nếu đứng quá xa chưa với tới điểm ngắm trên rìa block, nhích nhẹ tới trước khi đang sneak
-            // nhưng luôn dừng lại trước mép an toàn (không bao giờ để dist1 <= 0.86 khi chưa đặt block)
-            state.setInput(Input.SNEAK, true);
-            if (dist1 > 0.88) {
-                MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
-            } else {
-                state.setInput(Input.MOVE_FORWARD, false);
+            // 2. Pha 2: Nếu không thể đặt trực tiếp từ xa (bắc cầu đơn lập trên không/hố):
+            // Sneak ra mép block và quay đầu 180° nhìn ngược lại mặt bên của src.below()
+            double faceX = (dest.getX() + src.getX() + 1.0D) * 0.5D;
+            double faceY = (dest.getY() + src.getY() - 1.0D) * 0.5D;
+            double faceZ = (dest.getZ() + src.getZ() + 1.0D) * 0.5D;
+            BlockPos goalLook = src.below(); // Mặt bên của block dưới chân vừa đứng
+
+            Rotation backToFace = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3(faceX, faceY, faceZ), ctx.playerRotations());
+            double dist2 = Math.max(Math.abs(ctx.player().position().x - faceX), Math.abs(ctx.player().position().z - faceZ));
+
+            if (feet.equals(dest) || dist1 <= 0.83) {
+                // Đã chạm mép hoặc chớm vượt mép khi đang sneak an toàn: quay đầu nhìn ngược lại mặt bên
+                if (dist2 < 0.28) {
+                    // Quá sát mép ngoài: bước lùi nhẹ về src để giữ thăng bằng an toàn
+                    MovementHelper.moveTowards(ctx, state, src);
+                    state.setTarget(new MovementState.MovementTarget(backToFace, true));
+                } else {
+                    state.setTarget(new MovementState.MovementTarget(backToFace, true));
+                    state.setInput(Input.MOVE_FORWARD, false);
+                }
+                state.setInput(Input.SNEAK, true);
+                state.setInput(Input.SPRINT, false);
+                state.setInput(Input.JUMP, false);
+
+                ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, dest.below().getX(), dest.below().getY(), dest.below().getZ());
+
+                HitResult mouseOver = ctx.objectMouseOver();
+                if (mouseOver != null && mouseOver.getType() == HitResult.Type.BLOCK) {
+                    BlockHitResult bhr = (BlockHitResult) mouseOver;
+                    if (bhr.getBlockPos().equals(goalLook) && bhr.getBlockPos().relative(bhr.getDirection()).equals(dest.below())) {
+                        state.setInput(Input.CLICK_RIGHT, true);
+                        return state;
+                    }
+                }
+                if (ctx.isLookingAt(goalLook)) {
+                    state.setInput(Input.CLICK_RIGHT, true);
+                    return state;
+                }
+                return state;
             }
+
+            // Pha 1: Vẫn còn ở trên src (dist1 > 0.83): sneak nhẹ nhàng tiến về mép
+            state.setInput(Input.SNEAK, true);
+            state.setInput(Input.SPRINT, false);
+            state.setInput(Input.JUMP, false);
+            MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
             return state;
         }
     }

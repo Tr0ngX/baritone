@@ -184,9 +184,7 @@ public class MovementAscend extends Movement {
             MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, true);
             if (p == MovementHelper.PlaceResult.READY_TO_PLACE) {
                 state.setInput(Input.SNEAK, true);
-                if (ctx.player().isCrouching()) {
-                    state.setInput(Input.CLICK_RIGHT, true);
-                }
+                state.setInput(Input.CLICK_RIGHT, true);
             } else if (p == MovementHelper.PlaceResult.NO_OPTION && ticksWithoutPlacement > 10) {
                 state.setInput(Input.MOVE_FORWARD, false);
                 return state.setStatus(MovementStatus.UNREACHABLE);

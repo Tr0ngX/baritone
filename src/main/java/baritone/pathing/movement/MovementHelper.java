@@ -892,10 +892,23 @@ public interface MovementHelper extends ActionCosts, Helper {
                 boolean faceFound = false;
                 for (double targetY : yOffsets) {
                     Rotation place = RotationUtils.calcRotationFromVec3d(eyePos, new Vec3(faceX, targetY, faceZ), ctx.playerRotations());
-                    Rotation actual = baritone.getLookBehavior().getAimProcessor().peekRotation(place);
-                    HitResult res = RayTraceUtils.rayTraceTowards(ctx.player(), actual, reach, wouldSneak);
+                    // 1. Kiểm tra trực tiếp góc ngắm mục tiêu (place): nếu quay camera tới đây thì có nhìn thấy mặt khối không?
+                    HitResult res = RayTraceUtils.rayTraceTowards(ctx.player(), place, reach, wouldSneak);
                     if (res != null && res.getType() == HitResult.Type.BLOCK) {
                         BlockHitResult bhr = (BlockHitResult) res;
+                        if (bhr.getBlockPos().equals(against1) && bhr.getBlockPos().relative(bhr.getDirection()).equals(placeAt)) {
+                            state.setTarget(new MovementTarget(place, true));
+                            found = true;
+                            faceFound = true;
+                            break;
+                        }
+                    }
+
+                    // 2. Kiểm tra thêm góc ngắm thực tế tick này (actual sau khi làm mượt)
+                    Rotation actual = baritone.getLookBehavior().getAimProcessor().peekRotation(place);
+                    HitResult resActual = RayTraceUtils.rayTraceTowards(ctx.player(), actual, reach, wouldSneak);
+                    if (resActual != null && resActual.getType() == HitResult.Type.BLOCK) {
+                        BlockHitResult bhr = (BlockHitResult) resActual;
                         if (bhr.getBlockPos().equals(against1) && bhr.getBlockPos().relative(bhr.getDirection()).equals(placeAt)) {
                             state.setTarget(new MovementTarget(place, true));
                             found = true;
