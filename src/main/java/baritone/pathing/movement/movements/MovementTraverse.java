@@ -335,18 +335,24 @@ public class MovementTraverse extends Movement {
             if (!((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
                 logDebug("No throwaway blocks for bridging. Failing movement.");
                 state.setInput(Input.MOVE_FORWARD, false);
+                if (feet.equals(dest)) {
+                    // Đang lơ lửng ngoài mép: lùi về src an toàn trước khi báo UNREACHABLE
+                    MovementHelper.moveTowards(ctx, state, src);
+                    state.setInput(Input.SNEAK, true);
+                    return state;
+                }
                 return state.setStatus(MovementStatus.UNREACHABLE);
             }
 
-            // Detect lava or hazard below or around destination
-            boolean overLava = isLavaNearby(dest);
-
-            if (ticksWithoutPlacement > (overLava ? 40 : 60)) {
+            if (ticksWithoutPlacement > 60) {
                 logDebug("Bridging block placement timed out. Backing up and failing movement.");
                 state.setInput(Input.MOVE_FORWARD, false);
-                // Back up onto src safely before marking unreachable to avoid uncrouching into the void/lava
-                MovementHelper.moveTowards(ctx, state, src);
-                state.setInput(Input.SNEAK, true);
+                if (feet.equals(dest)) {
+                    // Đang lơ lửng ngoài mép: lùi về src an toàn trước khi báo UNREACHABLE
+                    MovementHelper.moveTowards(ctx, state, src);
+                    state.setInput(Input.SNEAK, true);
+                    return state;
+                }
                 return state.setStatus(MovementStatus.UNREACHABLE);
             }
 
@@ -362,24 +368,7 @@ public class MovementTraverse extends Movement {
 
             double dist1 = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
 
-            // If over lava and getting too close to the edge without having placed the block yet, stop moving forward!
-            if (overLava) {
-                if (dist1 < 0.55) {
-                    // Too close or already hanging over lava: back up slightly towards src
-                    MovementHelper.moveTowards(ctx, state, src);
-                    state.setInput(Input.MOVE_FORWARD, false);
-                    state.setInput(Input.MOVE_BACK, true);
-                    state.setInput(Input.SNEAK, true);
-                } else if (dist1 < 0.75) {
-                    // In safe edge zone on src: stop moving forward so we don't slip into lava
-                    state.setInput(Input.MOVE_FORWARD, false);
-                }
-            }
-
-            MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, !Baritone.settings().assumeSafeWalk.value);
-            if ((p == MovementHelper.PlaceResult.READY_TO_PLACE || dist1 < 0.6) && !Baritone.settings().assumeSafeWalk.value) {
-                state.setInput(Input.SNEAK, true);
-            }
+            MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, true);
             switch (p) {
                 case READY_TO_PLACE: {
                     state.setInput(Input.SNEAK, true);
@@ -391,7 +380,7 @@ public class MovementTraverse extends Movement {
                 }
                 case ATTEMPTING: {
                     state.setInput(Input.SNEAK, true);
-                    if (dist1 > 0.83 && (!overLava || dist1 > 0.75)) {
+                    if (dist1 > 0.83) {
                         // might need to go forward a bit
                         float yaw = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), VecUtils.getBlockPosCenter(dest), ctx.playerRotations()).getYaw();
                         if (Math.abs(state.getTarget().rotation.getYaw() - yaw) < 0.1) {
@@ -405,10 +394,6 @@ public class MovementTraverse extends Movement {
                     return state;
                 }
                 default:
-                    if (!((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
-                        state.setInput(Input.MOVE_FORWARD, false);
-                        return state.setStatus(MovementStatus.UNREACHABLE);
-                    }
                     break;
             }
 
@@ -434,39 +419,20 @@ public class MovementTraverse extends Movement {
                 // Ensure throwaway block is actively selected in hotbar
                 ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, dest.below().getX(), dest.below().getY(), dest.below().getZ());
 
+                state.setInput(Input.SNEAK, true);
+
                 if (ctx.isLookingAt(goalLook)) {
-                    state.setInput(Input.SNEAK, true);
                     return state.setInput(Input.CLICK_RIGHT, true); // wait to right click until we are able to place
                 }
 
-                // If stuck hanging over empty space / lava for more than 15 ticks without placement, back up onto src!
-                if (ticksWithoutPlacement > 15 || overLava) {
-                    MovementHelper.moveTowards(ctx, state, src);
-                    state.setInput(Input.MOVE_BACK, true);
-                    state.setInput(Input.SNEAK, true);
-                }
-
+                // TUYỆT ĐỐI KHÔNG CLICK_LEFT Ở ĐÂY ĐỂ TRÁNH ĐÀO MẤT BLOCK src.below() ĐANG ĐỨNG!
                 return state;
             }
 
             state.setInput(Input.SNEAK, true);
-            if (!overLava || dist1 >= 0.75) {
-                MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
-            } else {
-                state.setInput(Input.MOVE_FORWARD, false);
-            }
+            MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
             return state;
         }
-    }
-
-    private boolean isLavaNearby(BlockPos pos) {
-        for (int dy = 0; dy <= 3; dy++) {
-            BlockState bs = BlockStateInterface.get(ctx, pos.below(dy));
-            if (MovementHelper.isLava(bs)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Override

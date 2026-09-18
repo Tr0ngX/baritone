@@ -380,7 +380,10 @@ public class PathExecutor implements IPathExecutor, Helper {
         // AUTO SPRINT: Tự động chạy nhanh khi di chuyển ngang trên mặt phẳng (Traverse / Diagonal)
         if (Baritone.settings().allowSprint.value && (current instanceof MovementTraverse || current instanceof MovementDiagonal)) {
             if (!ctx.player().horizontalCollision && !ctx.player().isCrouching()) {
-                return true;
+                // CHỈ sprint nếu block đích bên dưới là block rắn có thể đi lên được (không phải đang bắc cầu)
+                if (MovementHelper.canWalkOn(ctx, current.getDest().below())) {
+                    return true;
+                }
             }
         }
 

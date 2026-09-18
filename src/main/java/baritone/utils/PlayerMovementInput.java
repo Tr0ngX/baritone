@@ -18,11 +18,17 @@
 package baritone.utils;
 
 import baritone.Baritone;
+import baritone.api.BaritoneAPI;
+import baritone.api.IBaritone;
+import baritone.api.pathing.movement.IMovement;
+import baritone.api.pathing.path.IPathExecutor;
 import baritone.api.utils.input.Input;
+import baritone.pathing.movement.movements.MovementTraverse;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.ClientInput;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec2;
 
@@ -68,9 +74,53 @@ public class PlayerMovementInput extends ClientInput {
         this.moveVector = new Vec2(leftImpulse, forwardImpulse);
 
         boolean sprinting = handler.isInputForcedDown(Input.SPRINT);
-        // AUTO SPRINT: Tự động chạy nhanh khi tiến về phía trước
+        // AUTO SPRINT: Tự động chạy nhanh khi tiến về phía trước trên bề mặt an toàn
         if (Baritone.settings().allowSprint.value && up && !sneaking) {
-            sprinting = true;
+            Minecraft mc = Minecraft.getInstance();
+            boolean nearHazard = false;
+            if (mc.player != null && mc.level != null) {
+                LocalPlayer p = mc.player;
+                BlockPos pFeet = BlockPos.containing(p.getX(), p.getBoundingBox().minY + 0.1, p.getZ());
+                BlockState under = mc.level.getBlockState(pFeet.below());
+                if (under.isAir() || under.getFluidState().is(FluidTags.LAVA)) {
+                    nearHazard = true;
+                }
+            }
+            if (!nearHazard) {
+                sprinting = true;
+            }
+        }
+
+        // SAFE WALK / ANTI-FALL FAILSAFE:
+        // Nếu Baritone đang điều khiển và đang ở trạng thái bắc cầu (MovementTraverse)
+        // hoặc chân đang lơ lửng ngoài mép vực/dung nham mà không có block đỡ bên dưới:
+        // TUYỆT ĐỐI GIỮ SNEAK và KHÔNG CHO SPRINT để Minecraft ngăn người chơi rơi khỏi block!
+        if (!sneaking) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null && mc.level != null && mc.player.onGround()) {
+                LocalPlayer p = mc.player;
+                IBaritone b = BaritoneAPI.getProvider().getBaritoneForPlayer(p);
+                if (b != null && b.getPathingBehavior().isPathing()) {
+                    IPathExecutor executor = b.getPathingBehavior().getCurrent();
+                    if (executor != null && executor.getPath() != null) {
+                        int pos = executor.getPosition();
+                        if (pos >= 0 && pos < executor.getPath().movements().size()) {
+                            IMovement cur = executor.getPath().movements().get(pos);
+                            if (cur instanceof MovementTraverse) {
+                                BlockPos pFeet = BlockPos.containing(p.getX(), p.getBoundingBox().minY + 0.1, p.getZ());
+                                BlockState under = mc.level.getBlockState(pFeet.below());
+                                if (under.isAir() || under.getFluidState().is(FluidTags.LAVA)) {
+                                    sneaking = true;
+                                    sprinting = false;
+                                    leftImpulse *= 0.3D;
+                                    forwardImpulse *= 0.3D;
+                                    this.moveVector = new Vec2(leftImpulse, forwardImpulse);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // ULTRA-FAST TUNNEL BUNNY HOP (Không delay, cứ tiếp đất là nhảy tiếp)
