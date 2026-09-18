@@ -290,7 +290,7 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
     private int shaftConsecutiveFailures = 0;
     private int shulkerCooldownTicks = 0;
     private boolean isChopMode = false;
-    private final Map<BlockPos, Long> ignoredDrops = new HashMap<>();
+    private final Map<BlockPos, Long> ignoredDrops = new ConcurrentHashMap<>();
     private BlockPos dropAttemptPos = null;
     private int dropAttemptTicks = 0;
     private boolean wasTunneling = false;
@@ -1580,26 +1580,33 @@ public final class MineProcess extends BaritoneProcessHelper implements IMinePro
             return Collections.emptyList();
         }
         long now = System.currentTimeMillis();
-        ignoredDrops.entrySet().removeIf(e -> e.getValue() < now);
+        try {
+            ignoredDrops.entrySet().removeIf(e -> e.getValue() < now);
+        } catch (Exception ignored) {
+        }
         List<BlockPos> ret = new ArrayList<>();
         BetterBlockPos pf = ctx.playerFeet();
-        for (Entity entity : ((ClientLevel) ctx.world()).entitiesForRendering()) {
-            if (entity instanceof ItemEntity && entity.isAlive()) {
-                ItemEntity ei = (ItemEntity) entity;
-                ItemStack stack = ei.getItem();
-                Item item = stack.getItem();
-                if (isShulkerBox(stack) || isTargetOre(stack) || ORE_DROPS.contains(item)
-                        || (isChopMode && isWoodDrop(stack))
-                        || (filter != null && filter.has(stack))
-                        || item.getDescriptionId().contains("ore")
-                        || item.getDescriptionId().contains("raw")
-                        || (isChopMode && (item.getDescriptionId().contains("log") || item.getDescriptionId().contains("wood") || item.getDescriptionId().contains("stem")))) {
-                    BlockPos pos = entity.blockPosition();
-                    if (!ignoredDrops.containsKey(pos) && pos.distSqr(pf) <= 256) { // Trong bán kính 16 block
-                        ret.add(pos);
+        try {
+            for (Entity entity : ((ClientLevel) ctx.world()).entitiesForRendering()) {
+                if (entity instanceof ItemEntity && entity.isAlive()) {
+                    ItemEntity ei = (ItemEntity) entity;
+                    ItemStack stack = ei.getItem();
+                    Item item = stack.getItem();
+                    if (isShulkerBox(stack) || isTargetOre(stack) || ORE_DROPS.contains(item)
+                            || (isChopMode && isWoodDrop(stack))
+                            || (filter != null && filter.has(stack))
+                            || item.getDescriptionId().contains("ore")
+                            || item.getDescriptionId().contains("raw")
+                            || (isChopMode && (item.getDescriptionId().contains("log") || item.getDescriptionId().contains("wood") || item.getDescriptionId().contains("stem")))) {
+                        BlockPos pos = entity.blockPosition();
+                        if (!ignoredDrops.containsKey(pos) && pos.distSqr(pf) <= 256) { // Trong bán kính 16 block
+                            ret.add(pos);
+                        }
                     }
                 }
             }
+        } catch (Exception ignored) {
+            // Safe fallback if client level modifies entities concurrently during render/tick
         }
         return ret;
     }
