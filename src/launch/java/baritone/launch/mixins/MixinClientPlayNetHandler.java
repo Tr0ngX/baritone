@@ -102,20 +102,20 @@ public abstract class MixinClientPlayNetHandler extends ClientCommonPacketListen
             cancellable = true
     )
     private void onSendCommand(String command, CallbackInfo ci) {
+        if (baritone.utils.AutoRejoinManager.isAutomatingAuth) {
+            return;
+        }
         if (command != null) {
             String trimmed = command.trim();
-            if (trimmed.equalsIgnoreCase("dn") || trimmed.equalsIgnoreCase("rejoin") || trimmed.equalsIgnoreCase("autorejoin")) {
-                this.minecraft.execute(() -> this.minecraft.setScreen(new baritone.utils.gui.AutoRejoinScreen(this.minecraft.screen)));
-                ci.cancel();
-                return;
-            }
-            if (trimmed.toLowerCase().startsWith("dn ") || trimmed.toLowerCase().startsWith("login ")) {
+            if (trimmed.toLowerCase().startsWith("dn ") || trimmed.toLowerCase().startsWith("login ") || trimmed.toLowerCase().startsWith("dangnhap ")) {
                 String pass = trimmed.substring(trimmed.indexOf(' ') + 1).trim();
+                pass = baritone.command.defaults.AutoRejoinCommand.cleanPassword(pass);
                 if (!pass.isEmpty()) {
                     baritone.utils.AutoRejoinConfig.password = pass;
                     baritone.utils.AutoRejoinConfig.enabled = true;
                     baritone.utils.AutoRejoinConfig.save();
-                    baritone.api.utils.Helper.HELPER.logDirect("§a§l[Auto Rejoin] Đã nhận mật khẩu /dn và TỰ ĐỘNG BẬT Rejoin KingMC!");
+                    baritone.utils.AutoRejoinManager.isLoggedIn = true;
+                    baritone.api.utils.Helper.HELPER.logDirect("§a§l[Auto Rejoin] Đã nhận mật khẩu /dn: " + baritone.command.defaults.AutoRejoinCommand.maskPassword(pass) + " và TỰ ĐỘNG BẬT Rejoin KingMC!");
                 }
             }
         }

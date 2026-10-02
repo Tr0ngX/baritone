@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import java.util.OptionalInt;
 import java.util.Random;
 import java.util.function.Predicate;
+import baritone.utils.AutoRejoinManager;
 
 public final class InventoryBehavior extends Behavior implements Helper {
 
@@ -57,16 +58,39 @@ public final class InventoryBehavior extends Behavior implements Helper {
         super(baritone);
     }
 
+    public boolean isModActive() {
+        if (baritone == null) return false;
+        if (baritone.getPathingBehavior().isPathing()) return true;
+        if (baritone.getPathingControlManager().mostRecentInControl().isPresent()) return true;
+        if (baritone.getMineProcess() != null && baritone.getMineProcess().isActive()) return true;
+        if (baritone.getSandProcess() != null && baritone.getSandProcess().isActive()) return true;
+        if (baritone.getBuilderProcess() != null && baritone.getBuilderProcess().isActive()) return true;
+        if (baritone.getFarmProcess() != null && baritone.getFarmProcess().isActive()) return true;
+        if (baritone.getFollowProcess() != null && baritone.getFollowProcess().isActive()) return true;
+        if (baritone.getExploreProcess() != null && baritone.getExploreProcess().isActive()) return true;
+        if (baritone.getCustomGoalProcess() != null && baritone.getCustomGoalProcess().isActive()) return true;
+        if (baritone.getGetToBlockProcess() != null && baritone.getGetToBlockProcess().isActive()) return true;
+        return false;
+    }
+
     @Override
     public void onTick(TickEvent event) {
-        if (!Baritone.settings().allowInventory.value) {
-            return;
-        }
         if (event.getType() == TickEvent.Type.OUT) {
             return;
         }
-        if (ctx.player().containerMenu != ctx.player().inventoryMenu) {
+        if (ctx.player() == null || ctx.player().containerMenu != ctx.player().inventoryMenu) {
             // we have a crafting table or a chest or something open
+            return;
+        }
+
+        // CHỈ HOẠT ĐỘNG KHI MOD ĐANG BẬT (ĐÃ BẤM START HOẶC ĐANG CHẠY TIẾN TRÌNH / PATHING):
+        // Tuyệt đối không can thiệp túi đồ, không đổi cúp, không đổi block, không vứt đồ khi mod tắt!
+        if (!isModActive()) {
+            lastTickRequestedMove = null;
+            return;
+        }
+
+        if (!Baritone.settings().allowInventory.value) {
             return;
         }
         ticksSinceLastInventoryMove++;
@@ -139,6 +163,9 @@ public final class InventoryBehavior extends Behavior implements Helper {
         Item item = stack.getItem();
         if (item.equals(Items.ENDER_CHEST) || item.equals(Items.SHULKER_BOX)) return true;
         if (stack.is(net.minecraft.tags.ItemTags.SHULKER_BOXES)) return true;
+        if (stack.is(Items.TOTEM_OF_UNDYING)) return true;
+        if (stack.has(DataComponents.CONTAINER) || stack.has(DataComponents.BUNDLE_CONTENTS)) return true;
+        if (stack.has(DataComponents.FOOD) || stack.has(DataComponents.TOOL) || stack.has(DataComponents.EQUIPPABLE)) return true;
         if (item instanceof BlockItem bi) {
             Block b = bi.getBlock();
             if (b instanceof EnderChestBlock || b instanceof ShulkerBoxBlock) {
@@ -148,7 +175,12 @@ public final class InventoryBehavior extends Behavior implements Helper {
         String desc = item.getDescriptionId();
         if (desc != null) {
             String lower = desc.toLowerCase();
-            if (lower.contains("ender_chest") || lower.contains("shulker")) {
+            if (lower.contains("ender_chest") || lower.contains("shulker")
+                    || lower.contains("ore") || lower.contains("raw_") || lower.contains("diamond")
+                    || lower.contains("emerald") || lower.contains("netherite") || lower.contains("debris")
+                    || lower.contains("gold") || lower.contains("iron") || lower.contains("copper")
+                    || lower.contains("lapis") || lower.contains("redstone") || lower.contains("coal")
+                    || lower.contains("quartz")) {
                 return true;
             }
         }

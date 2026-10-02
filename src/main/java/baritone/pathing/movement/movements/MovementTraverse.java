@@ -21,6 +21,7 @@ import baritone.Baritone;
 import baritone.api.IBaritone;
 import baritone.api.pathing.movement.MovementStatus;
 import baritone.api.utils.BetterBlockPos;
+import baritone.api.utils.RayTraceUtils;
 import baritone.api.utils.Rotation;
 import baritone.api.utils.RotationUtils;
 import baritone.api.utils.VecUtils;
@@ -309,8 +310,32 @@ public class MovementTraverse extends Movement {
             BlockPos into = dest.subtract(src).offset(dest);
             BlockState intoBelow = BlockStateInterface.get(ctx, into);
             BlockState intoAbove = BlockStateInterface.get(ctx, into.above());
-            if (wasTheBridgeBlockAlwaysThere && (!MovementHelper.isLiquid(ctx, feet) || Baritone.settings().sprintInWater.value) && (!MovementHelper.avoidWalkingInto(intoBelow) || MovementHelper.isWater(intoBelow)) && !MovementHelper.avoidWalkingInto(intoAbove)) {
+            boolean nextIsParkour = false;
+            boolean nextNeedsBridge = false;
+            if (baritone.getPathingBehavior().isPathing()) {
+                baritone.api.pathing.path.IPathExecutor executor = baritone.getPathingBehavior().getCurrent();
+                if (executor != null && executor.getPath() != null) {
+                    int nextIdx = executor.getPosition() + 1;
+                    if (nextIdx < executor.getPath().movements().size()) {
+                        baritone.api.pathing.movement.IMovement nextMvt = executor.getPath().movements().get(nextIdx);
+                        nextIsParkour = nextMvt instanceof MovementParkour;
+                        if (nextMvt instanceof MovementTraverse) {
+                            nextNeedsBridge = !MovementHelper.canWalkOn(ctx, nextMvt.getDest().below());
+                        }
+                    }
+                }
+            }
+
+            boolean lavaHazard = isLavaNearbyOrBelow(dest) || isLavaNearbyOrBelow(into) || isLavaNearbyOrBelow(src);
+            boolean intoCanWalk = MovementHelper.canWalkOn(ctx, into.below());
+
+            if (wasTheBridgeBlockAlwaysThere && !nextNeedsBridge && !lavaHazard && intoCanWalk && (!MovementHelper.isLiquid(ctx, feet) || Baritone.settings().sprintInWater.value) && (nextIsParkour || (!MovementHelper.avoidWalkingInto(intoBelow) || MovementHelper.isWater(intoBelow))) && !MovementHelper.avoidWalkingInto(intoAbove)) {
                 state.setInput(Input.SPRINT, true);
+            } else {
+                state.setInput(Input.SPRINT, false);
+                if (ctx.player().isSprinting()) {
+                    ctx.player().setSprinting(false);
+                }
             }
 
             BlockState destDown = BlockStateInterface.get(ctx, dest.below());
@@ -318,25 +343,11 @@ public class MovementTraverse extends Movement {
                 state.setInput(Input.JUMP, true);
             }
 
-            // TỰ ĐỘNG SPAM NHẢY KHI Ở ĐƯỜNG HẦM 2 BLOCK (Ceiling Sprint-Jump / Bhop)
-            if (Baritone.settings().tunnelSprintJump.value
-                    && !ladder
-                    && feet.getY() == dest.getY()
-                    && !MovementHelper.isLiquid(ctx, feet)
-                    && !ctx.player().isInWater()
-                    && !ctx.player().isCrouching()
-                    && !ctx.player().isSwimming()
-                    && !Baritone.settings().crawlMineMode.value
-                    && ctx.player().getFoodData().getFoodLevel() > 6) {
-
-                BlockPos ceilFeet = feet.above(2);
-                BlockState csFeet = BlockStateInterface.get(ctx, ceilFeet);
-                boolean hasCeilFeet = !csFeet.isAir() && (csFeet.blocksMotion() || MovementHelper.isBlockNormalCube(csFeet));
-                BlockState headFeet = BlockStateInterface.get(ctx, feet.above());
-
-                if (hasCeilFeet && !headFeet.blocksMotion()) {
-                    state.setInput(Input.SPRINT, true);
-                    state.setInput(Input.JUMP, true);
+            // Khi cầu đang bắc qua dung nham/khoảng trống và chuẩn bị bước sang block tiếp theo: đè Shift sớm để triệt tiêu đà quán tính
+            if (nextNeedsBridge || lavaHazard) {
+                double distToDest = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
+                if (distToDest < 0.40D || feet.equals(dest)) {
+                    state.setInput(Input.SNEAK, true);
                 }
             }
 
@@ -346,17 +357,45 @@ public class MovementTraverse extends Movement {
             wasTheBridgeBlockAlwaysThere = false;
             ticksWithoutPlacement++;
 
-            // TUYỆT ĐỐI KHÔNG NHẢY HOẶC SPRINT KHI BLOCK CẦU CHƯA ĐƯỢC ĐẶT
+            // 1. TUYỆT ĐỐI KHÔNG NHẢY HOẶC SPRINT - LUÔN ĐÈ SHIFT 100% KHI BLOCK CẦU CHƯA CÓ
             state.setInput(Input.JUMP, false);
             state.setInput(Input.SPRINT, false);
             state.setInput(Input.SNEAK, true);
+            if (ctx.player().isSprinting()) {
+                ctx.player().setSprinting(false);
+            }
+
+            int dx = dest.getX() - src.getX();
+            int dz = dest.getZ() - src.getZ();
+            Direction againstFace;
+            if (dx > 0) {
+                againstFace = Direction.EAST;
+            } else if (dx < 0) {
+                againstFace = Direction.WEST;
+            } else if (dz > 0) {
+                againstFace = Direction.SOUTH;
+            } else {
+                againstFace = Direction.NORTH;
+            }
+
+            BlockPos against = src.below();
+            double faceX = (dest.getX() + src.getX() + 1.0D) * 0.5D;
+            double faceZ = (dest.getZ() + src.getZ() + 1.0D) * 0.5D;
+
+            double playerX = ctx.player().position().x;
+            double playerZ = ctx.player().position().z;
+            // Signed progress past edge towards dest: negative = safely inside src, 0 = edge plane, positive = overhang over void
+            double progressPastEdge = (playerX - faceX) * dx + (playerZ - faceZ) * dz;
 
             if (Baritone.settings().neverBridgeOverLava.value && isLavaNearbyOrBelow(dest)) {
                 logDebug("neverBridgeOverLava is active and lava detected near bridge destination. Aborting movement.");
                 state.setInput(Input.MOVE_FORWARD, false);
-                if (feet.equals(dest)) {
-                    MovementHelper.moveTowards(ctx, state, src);
-                    state.setInput(Input.SNEAK, true);
+                state.setInput(Input.SPRINT, false);
+                state.setInput(Input.JUMP, false);
+                state.setInput(Input.SNEAK, true);
+                if (progressPastEdge > -0.20 || feet.equals(dest)) {
+                    MovementHelper.moveTowardsWithoutRotation(ctx, state, src);
+                    state.setInput(Input.MOVE_BACK, true);
                     return state;
                 }
                 return state.setStatus(MovementStatus.UNREACHABLE);
@@ -365,25 +404,29 @@ public class MovementTraverse extends Movement {
             if (!((Baritone) baritone).getInventoryBehavior().hasGenericThrowaway()) {
                 logDebug("No throwaway blocks for bridging. Failing movement.");
                 state.setInput(Input.MOVE_FORWARD, false);
-                if (feet.equals(dest)) {
-                    // Đang lơ lửng ngoài mép: lùi về src an toàn trước khi báo UNREACHABLE
-                    MovementHelper.moveTowards(ctx, state, src);
-                    state.setInput(Input.SNEAK, true);
+                state.setInput(Input.SPRINT, false);
+                state.setInput(Input.JUMP, false);
+                state.setInput(Input.SNEAK, true);
+                if (progressPastEdge > -0.20 || feet.equals(dest)) {
+                    MovementHelper.moveTowardsWithoutRotation(ctx, state, src);
+                    state.setInput(Input.MOVE_BACK, true);
                     return state;
                 }
                 return state.setStatus(MovementStatus.UNREACHABLE);
             }
 
             if (ticksWithoutPlacement > 60) {
-                logDebug("Bridging block placement timed out. Backing up and failing movement.");
                 state.setInput(Input.MOVE_FORWARD, false);
-                if (feet.equals(dest)) {
-                    // Đang lơ lửng ngoài mép: lùi về src an toàn trước khi báo UNREACHABLE
-                    MovementHelper.moveTowards(ctx, state, src);
-                    state.setInput(Input.SNEAK, true);
-                    return state;
+                state.setInput(Input.SPRINT, false);
+                state.setInput(Input.JUMP, false);
+                state.setInput(Input.SNEAK, true);
+                MovementHelper.moveTowardsWithoutRotation(ctx, state, src);
+                state.setInput(Input.MOVE_BACK, true);
+                if (progressPastEdge <= -0.20 && !feet.equals(dest)) {
+                    logDebug("Bridging block placement timed out. Safely backed into src. Aborting.");
+                    return state.setStatus(MovementStatus.UNREACHABLE);
                 }
-                return state.setStatus(MovementStatus.UNREACHABLE);
+                return state;
             }
 
             Block standingOn = BlockStateInterface.get(ctx, feet.below()).getBlock();
@@ -396,77 +439,85 @@ public class MovementTraverse extends Movement {
                 }
             }
 
-            double dist1 = Math.max(Math.abs(ctx.player().position().x - (dest.getX() + 0.5D)), Math.abs(ctx.player().position().z - (dest.getZ() + 0.5D)));
-
             // 1. Kiểm tra nếu có thể đặt trực tiếp từ cự ly hiện tại (ví dụ có tường bên cạnh hoặc block bên dưới)
             MovementHelper.PlaceResult p = MovementHelper.attemptToPlaceABlock(state, baritone, dest.below(), false, true);
-            switch (p) {
-                case READY_TO_PLACE: {
-                    state.setInput(Input.SNEAK, true);
-                    state.setInput(Input.MOVE_FORWARD, false);
-                    state.setInput(Input.CLICK_RIGHT, true);
-                    return state;
-                }
-                case ATTEMPTING: {
-                    state.setInput(Input.SNEAK, true);
-                    state.setInput(Input.MOVE_FORWARD, false);
-                    return state;
-                }
-                default:
-                    break;
-            }
-
-            // 2. Pha 2: Nếu không thể đặt trực tiếp từ xa (bắc cầu đơn lập trên không/hố):
-            // Sneak ra mép block và quay đầu 180° nhìn ngược lại mặt bên của src.below()
-            double faceX = (dest.getX() + src.getX() + 1.0D) * 0.5D;
-            double faceY = (dest.getY() + src.getY() - 1.0D) * 0.5D;
-            double faceZ = (dest.getZ() + src.getZ() + 1.0D) * 0.5D;
-            BlockPos goalLook = src.below(); // Mặt bên của block dưới chân vừa đứng
-
-            Rotation backToFace = RotationUtils.calcRotationFromVec3d(ctx.playerHead(), new Vec3(faceX, faceY, faceZ), ctx.playerRotations());
-            double dist2 = Math.max(Math.abs(ctx.player().position().x - faceX), Math.abs(ctx.player().position().z - faceZ));
-
-            if (feet.equals(dest) || dist1 <= 0.83) {
-                // Đã chạm mép hoặc chớm vượt mép khi đang sneak an toàn: quay đầu nhìn ngược lại mặt bên
-                if (dist2 < 0.28) {
-                    // Quá sát mép ngoài: bước lùi nhẹ về src để giữ thăng bằng an toàn
-                    MovementHelper.moveTowards(ctx, state, src);
-                    state.setTarget(new MovementState.MovementTarget(backToFace, true));
-                } else {
-                    state.setTarget(new MovementState.MovementTarget(backToFace, true));
-                    state.setInput(Input.MOVE_FORWARD, false);
-                }
+            if (p == MovementHelper.PlaceResult.READY_TO_PLACE) {
                 state.setInput(Input.SNEAK, true);
-                state.setInput(Input.SPRINT, false);
-                state.setInput(Input.JUMP, false);
-
-                ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, dest.below().getX(), dest.below().getY(), dest.below().getZ());
-
-                HitResult mouseOver = ctx.objectMouseOver();
-                if (mouseOver != null && mouseOver.getType() == HitResult.Type.BLOCK) {
-                    BlockHitResult bhr = (BlockHitResult) mouseOver;
-                    if (bhr.getBlockPos().equals(goalLook) && bhr.getBlockPos().relative(bhr.getDirection()).equals(dest.below())) {
-                        state.setInput(Input.CLICK_RIGHT, true);
-                        return state;
-                    }
-                }
-                if (ctx.isLookingAt(goalLook)) {
-                    state.setInput(Input.CLICK_RIGHT, true);
-                    return state;
-                }
+                state.setInput(Input.MOVE_FORWARD, false);
+                state.setInput(Input.MOVE_BACK, false);
+                state.setInput(Input.CLICK_RIGHT, true);
                 return state;
             }
 
-            // Pha 1: Vẫn còn ở trên src (dist1 > 0.83): sneak nhẹ nhàng tiến về mép
-            state.setInput(Input.SNEAK, true);
-            state.setInput(Input.SPRINT, false);
-            state.setInput(Input.JUMP, false);
-            MovementHelper.moveTowardsWithSlightRotation(ctx, state, dest);
+            // 2. Open-air Bridging (Bắc cầu trên không/hố theo chuẩn Fail-Safe 3-Zone Engine):
+            // Luôn đảm bảo chọn sẵn block bắc cầu trong tay
+            ((Baritone) baritone).getInventoryBehavior().selectThrowawayForLocation(true, dest.below().getX(), dest.below().getY(), dest.below().getZ());
+
+            // Raycast ngắm chính xác vào GIỮA MẶT BÊN (Center of Block Face):
+            // faceX, faceZ là tâm mặt bên, against.getY() + 0.5D là chính giữa tâm của block
+            Vec3 eyePos = RayTraceUtils.inferSneakingEyePosition(ctx.player());
+            double reach = ctx.playerController().getBlockReachDistance();
+            double centerY = against.getY() + 0.5D;
+            double[] yOffsets = new double[]{centerY, against.getY() + 0.55D, against.getY() + 0.60D, against.getY() + 0.68D, against.getY() + 0.75D, against.getY() + 0.82D};
+            Rotation bestRotation = null;
+            boolean canHitSideFace = false;
+
+            for (double targetY : yOffsets) {
+                Rotation candidate = RotationUtils.calcRotationFromVec3d(eyePos, new Vec3(faceX, targetY, faceZ), ctx.playerRotations());
+                HitResult res = RayTraceUtils.rayTraceTowards(ctx.player(), candidate, reach, true);
+                if (res != null && res.getType() == HitResult.Type.BLOCK) {
+                    BlockHitResult bhr = (BlockHitResult) res;
+                    if (bhr.getBlockPos().equals(against) && bhr.getDirection() == againstFace) {
+                        bestRotation = candidate;
+                        canHitSideFace = true;
+                        break;
+                    }
+                }
+            }
+
+            if (bestRotation == null) {
+                bestRotation = RotationUtils.calcRotationFromVec3d(eyePos, new Vec3(faceX, centerY, faceZ), ctx.playerRotations());
+            }
+            state.setTarget(new MovementState.MovementTarget(bestRotation, true));
+
+            // Kiểm tra crosshair hiện tại và kích hoạt click chuột phải khi ngắm trúng mặt bên againstFace
+            HitResult mouseOver = ctx.objectMouseOver();
+            if (mouseOver != null && mouseOver.getType() == HitResult.Type.BLOCK) {
+                BlockHitResult bhr = (BlockHitResult) mouseOver;
+                if (bhr.getBlockPos().equals(against) && bhr.getDirection() == againstFace) {
+                    state.setInput(Input.CLICK_RIGHT, true);
+                    state.setInput(Input.MOVE_FORWARD, false);
+                    state.setInput(Input.MOVE_BACK, false);
+                    return state;
+                }
+            }
+
+            // 3-ZONE FAIL-SAFE BRIDGING ENGINE (Triệt tiêu 100% nguy cơ rơi vào dung nham/vực):
+            if (progressPastEdge > 0.18) {
+                // Zone 3: Vượt quá mép cho phép (> 18cm) -> lùi nhẹ lại
+                MovementHelper.moveTowardsWithoutRotation(ctx, state, src);
+                state.setInput(Input.MOVE_FORWARD, false);
+                state.setInput(Input.MOVE_BACK, true);
+            } else if (canHitSideFace && progressPastEdge >= -0.05) {
+                // Zone 2 (Golden Placement Zone): -5cm đến +18cm và có góc nhìn thấy tâm mặt bên
+                // Dừng hẳn mọi chuyển động ngang, giữ thăng bằng tuyệt đối trên block để camera khóa và click!
+                state.setInput(Input.MOVE_FORWARD, false);
+                state.setInput(Input.MOVE_BACK, false);
+                state.setInput(Input.MOVE_LEFT, false);
+                state.setInput(Input.MOVE_RIGHT, false);
+            } else {
+                // Zone 1 (Approach Zone): Còn ở trong lòng src, tiến từ từ (vẫn đè Shift) về phía mép để mở góc nhìn
+                MovementHelper.moveTowardsWithoutRotation(ctx, state, dest);
+            }
+
             return state;
         }
     }
 
     private boolean isLavaNearbyOrBelow(BlockPos pos) {
+        if (MovementHelper.isLava(BlockStateInterface.get(ctx, pos))) {
+            return true;
+        }
         BlockState destDown = BlockStateInterface.get(ctx, pos.below());
         if (MovementHelper.isLava(destDown)) {
             return true;
@@ -477,7 +528,7 @@ public class MovementTraverse extends Movement {
             }
         }
         for (Direction dir : Direction.Plane.HORIZONTAL) {
-            if (MovementHelper.isLava(BlockStateInterface.get(ctx, pos.below().relative(dir)))) {
+            if (MovementHelper.isLava(BlockStateInterface.get(ctx, pos.relative(dir))) || MovementHelper.isLava(BlockStateInterface.get(ctx, pos.below().relative(dir)))) {
                 return true;
             }
         }

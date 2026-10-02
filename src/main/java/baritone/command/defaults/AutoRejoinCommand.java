@@ -41,13 +41,16 @@ public class AutoRejoinCommand extends Command {
         AutoRejoinConfig.ensureLoaded();
 
         if (!args.hasAny()) {
-            Minecraft mc = Minecraft.getInstance();
-            mc.execute(() -> mc.setScreen(new AutoRejoinScreen(mc.screen)));
-            logDirect("§a[Auto Rejoin] Đã mở màn hình cài đặt Tự động Rejoin & Đăng nhập!");
+            logDirect("§6=== AUTO REJOIN ===");
+            logDirect("§7Trạng thái: " + (AutoRejoinConfig.enabled ? "§aBẬT" : "§cTẮT"));
+            logDirect("§7Server IP: §f" + AutoRejoinConfig.serverIp);
+            logDirect("§7Mật khẩu: " + (AutoRejoinConfig.hasPassword() ? "§aĐã cài đặt" : "§cChưa có"));
+            logDirect("§eCú pháp: §f#" + label + " [on | off | pass <mk> | status | gui]");
             return;
         }
 
-        String firstArg = args.getString().toLowerCase();
+        String rawFirstArg = args.getString();
+        String firstArg = rawFirstArg.toLowerCase(java.util.Locale.ROOT);
 
         if (firstArg.equals("gui") || firstArg.equals("menu") || firstArg.equals("screen") || firstArg.equals("ui")) {
             Minecraft mc = Minecraft.getInstance();
@@ -58,9 +61,7 @@ public class AutoRejoinCommand extends Command {
 
         if (firstArg.equals("on") || firstArg.equals("true") || firstArg.equals("enable") || firstArg.equals("1")) {
             if (!AutoRejoinConfig.hasPassword()) {
-                logDirect("§c[Auto Rejoin] Bạn CHƯA CÓ MẬT KHẨU /dn! Đang mở giao diện để bạn nhập mật khẩu trước...");
-                Minecraft mc = Minecraft.getInstance();
-                mc.execute(() -> mc.setScreen(new AutoRejoinScreen(mc.screen)));
+                logDirect("§c[Auto Rejoin] Bạn CHƯA CÓ MẬT KHẨU /dn! Gõ #" + label + " pass <mật_khẩu> để cài đặt.");
                 return;
             }
             AutoRejoinConfig.enabled = true;
@@ -86,22 +87,34 @@ public class AutoRejoinCommand extends Command {
                 logDirect("§eCú pháp: §f#" + label + " pass <mật_khẩu>");
                 return;
             }
-            String newPass = args.getString();
-            AutoRejoinConfig.password = newPass;
+            String rawPass = args.rawRest().trim();
+            if (rawPass.isEmpty()) {
+                rawPass = args.getString();
+            }
+            String cleanPass = cleanPassword(rawPass);
+            AutoRejoinConfig.password = cleanPass;
             AutoRejoinConfig.enabled = true;
             AutoRejoinConfig.save();
-            AutoRejoinManager.onPasswordEntered(newPass);
-            logDirect("§a§l[Auto Rejoin] Đã lưu mật khẩu /dn và TỰ ĐỘNG BẬT Rejoin thành công!");
+            AutoRejoinManager.onPasswordEntered(cleanPass);
+            logDirect("§a§l[Auto Rejoin] Đã lưu mật khẩu /dn: " + maskPassword(cleanPass) + " và TỰ ĐỘNG BẬT Rejoin thành công!");
             return;
         }
 
         // Hỗ trợ gõ tắt: #dn <mật_khẩu>
-        if (label.equalsIgnoreCase("dn") && !firstArg.equals("status") && !firstArg.equals("server") && !firstArg.equals("target") && !firstArg.equals("delay")) {
-            AutoRejoinConfig.password = firstArg;
+        if (label.equalsIgnoreCase("dn") && !firstArg.equals("status") && !firstArg.equals("server") && !firstArg.equals("target") && !firstArg.equals("delay") && !firstArg.equals("on") && !firstArg.equals("off") && !firstArg.equals("gui")) {
+            String rawPass = rawFirstArg;
+            if (args.hasAny()) {
+                String rest = args.rawRest().trim();
+                if (!rest.isEmpty()) {
+                    rawPass = rawFirstArg + " " + rest;
+                }
+            }
+            String cleanPass = cleanPassword(rawPass);
+            AutoRejoinConfig.password = cleanPass;
             AutoRejoinConfig.enabled = true;
             AutoRejoinConfig.save();
-            AutoRejoinManager.onPasswordEntered(firstArg);
-            logDirect("§a§l[Auto Rejoin] Đã nhận mật khẩu /dn: " + firstArg.replaceAll(".", "*") + " và TỰ ĐỘNG BẬT Rejoin thành công!");
+            AutoRejoinManager.onPasswordEntered(cleanPass);
+            logDirect("§a§l[Auto Rejoin] Đã nhận mật khẩu /dn: " + maskPassword(cleanPass) + " và TỰ ĐỘNG BẬT Rejoin thành công!");
             return;
         }
 
@@ -197,5 +210,26 @@ public class AutoRejoinCommand extends Command {
                 "  #rejoin test - Thử nghiệm quy trình chọn máy chủ ngay tại Lobby",
                 "  #rejoin status - Xem toàn bộ trạng thái"
         );
+    }
+
+    public static String cleanPassword(String pass) {
+        if (pass == null) return "";
+        pass = pass.trim();
+        if ((pass.startsWith("\"") && pass.endsWith("\"")) || (pass.startsWith("'") && pass.endsWith("'"))) {
+            if (pass.length() >= 2) {
+                pass = pass.substring(1, pass.length() - 1).trim();
+            }
+        }
+        return pass;
+    }
+
+    public static String maskPassword(String pass) {
+        if (pass == null || pass.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        int len = Math.min(16, pass.length());
+        for (int i = 0; i < len; i++) {
+            sb.append('•');
+        }
+        return sb.toString();
     }
 }

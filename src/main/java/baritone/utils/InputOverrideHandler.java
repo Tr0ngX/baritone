@@ -19,7 +19,9 @@ package baritone.utils;
 
 import baritone.Baritone;
 import baritone.api.BaritoneAPI;
+import baritone.api.event.events.PlayerUpdateEvent;
 import baritone.api.event.events.TickEvent;
+import baritone.api.event.events.type.EventState;
 import baritone.api.utils.IInputOverrideHandler;
 import baritone.api.utils.input.Input;
 import baritone.behavior.Behavior;
@@ -122,20 +124,12 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         try {
             com.mojang.blaze3d.platform.Window window = ctx.minecraft().getWindow();
             boolean altDown = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT) || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_RIGHT_ALT);
-            
-            // 1. Kiểm tra phím F4 mở AutoMine Menu
-            boolean keyTriggered = BaritoneKeyBindings.KEY_AUTOMINE_GUI.consumeClick();
-            if (!keyTriggered && BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDefault()) {
-                boolean f4Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F4);
-                if (f4Down && !f4WasDown) {
-                    keyTriggered = true;
-                }
-                f4WasDown = f4Down;
-            } else {
-                f4WasDown = BaritoneKeyBindings.KEY_AUTOMINE_GUI.isDown();
-            }
+            boolean f3Down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_F3);
 
-            if (!altDown && keyTriggered && ctx.minecraft().screen == null) {
+            // 1. Kiểm tra phím mở AutoMine Menu (chỉ khi được gán phím và không giữ F3 / Alt)
+            boolean keyTriggered = !altDown && !f3Down && !BaritoneKeyBindings.KEY_AUTOMINE_GUI.isUnbound() && BaritoneKeyBindings.KEY_AUTOMINE_GUI.consumeClick();
+
+            if (keyTriggered && ctx.minecraft().screen == null) {
                 ctx.minecraft().setScreen(new AutoMineScreen(baritone));
             }
 
@@ -147,9 +141,15 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
                 clearAllKeys();
                 blockBreakHelper.stopBreakingBlock();
                 if (ctx.player() != null && ctx.player().containerMenu != ctx.player().inventoryMenu) {
+                    if (ctx.player().isSprinting()) {
+                        ctx.player().setSprinting(false);
+                    }
                     ctx.player().closeContainer();
                 }
                 Helper.HELPER.logDirect("§c[Baritone] Đã hủy / dừng toàn bộ tiến trình!");
+                if (ctx.player() != null) {
+                    ctx.player().input = new KeyboardInput(ctx.minecraft().options);
+                }
             }
 
             // 3. Phím Tạm dừng Baritone (nếu người chơi có gán phím)
@@ -160,7 +160,28 @@ public final class InputOverrideHandler extends Behavior implements IInputOverri
         } catch (Throwable ignored) {}
     }
 
+    public boolean isModActive() {
+        if (baritone == null) return false;
+        if (baritone.getPathingBehavior().isPathing()) return true;
+        if (baritone.getPathingControlManager().mostRecentInControl().isPresent()) return true;
+        if (baritone.getMineProcess() != null && baritone.getMineProcess().isActive()) return true;
+        if (baritone.getSandProcess() != null && baritone.getSandProcess().isActive()) return true;
+        if (baritone.getBuilderProcess() != null && baritone.getBuilderProcess().isActive()) return true;
+        if (baritone.getFarmProcess() != null && baritone.getFarmProcess().isActive()) return true;
+        if (baritone.getFollowProcess() != null && baritone.getFollowProcess().isActive()) return true;
+        if (baritone.getExploreProcess() != null && baritone.getExploreProcess().isActive()) return true;
+        if (baritone.getCustomGoalProcess() != null && baritone.getCustomGoalProcess().isActive()) return true;
+        if (baritone.getGetToBlockProcess() != null && baritone.getGetToBlockProcess().isActive()) return true;
+        return false;
+    }
+
     private boolean inControl() {
+        if (!isModActive()) {
+            if (!this.inputForceStateMap.isEmpty()) {
+                this.inputForceStateMap.clear();
+            }
+            return false;
+        }
         for (Input input : new Input[]{Input.MOVE_FORWARD, Input.MOVE_BACK, Input.MOVE_LEFT, Input.MOVE_RIGHT, Input.SNEAK, Input.JUMP}) {
             if (isInputForcedDown(input)) {
                 return true;

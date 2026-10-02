@@ -157,4 +157,15 @@ public class MixinClientPlayerEntity {
         }
         return instance.tryToStartFallFlying();
     }
+
+    @Inject(
+            method = "closeContainer",
+            at = @At("HEAD")
+    )
+    private void onPreCloseContainer(CallbackInfo ci) {
+        LocalPlayer player = (LocalPlayer) (Object) this;
+        if (player.isSprinting()) {
+            player.setSprinting(false);
+        }
+    }
 }

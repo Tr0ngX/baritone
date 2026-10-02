@@ -166,7 +166,17 @@ public class MovementDiagonal extends Movement {
             return;
         }
         BlockState cuttingOver2 = context.get(destX, y - 1, z);
-        if ((!context.allowWalkOnMagmaBlocks && cuttingOver1.is(Blocks.MAGMA_BLOCK)) || MovementHelper.isLava(cuttingOver2)) {
+        if ((!context.allowWalkOnMagmaBlocks && cuttingOver2.is(Blocks.MAGMA_BLOCK)) || MovementHelper.isLava(cuttingOver2)) {
+            return;
+        }
+        // Khi hạ độ cao chéo (descend): Kiểm tra cả tầng y - 2 xem góc cắt có phải là LAVA không
+        if (descend) {
+            if (MovementHelper.isLava(context.get(x, y - 2, destZ)) || MovementHelper.isLava(context.get(destX, y - 2, z))) {
+                return;
+            }
+        }
+        // Tuyệt đối không đi chéo nếu dưới chân dest có hồ Lava
+        if (MovementHelper.isLava(context.get(destX, (descend ? y - 3 : y - 2), destZ))) {
             return;
         }
         boolean water = false;
@@ -276,26 +286,6 @@ public class MovementDiagonal extends Movement {
         }
         if (sprint()) {
             state.setInput(Input.SPRINT, true);
-            // TỰ ĐỘNG SPAM NHẢY KHI CHẠY CHÉO TRONG HẦM 2 BLOCK (Ceiling Sprint-Jump / Bhop)
-            if (Baritone.settings().tunnelSprintJump.value
-                    && dest.y == src.y
-                    && !MovementHelper.isLiquid(ctx, ctx.playerFeet())
-                    && !ctx.player().isInWater()
-                    && !ctx.player().isCrouching()
-                    && !ctx.player().isSwimming()
-                    && !Baritone.settings().crawlMineMode.value
-                    && ctx.player().getFoodData().getFoodLevel() > 6) {
-
-                BlockPos feet = ctx.playerFeet();
-                BlockPos ceilFeet = feet.above(2);
-                BlockState csFeet = BlockStateInterface.get(ctx, ceilFeet);
-                boolean hasCeilFeet = !csFeet.isAir() && (csFeet.blocksMotion() || MovementHelper.isBlockNormalCube(csFeet));
-                BlockState headFeet = BlockStateInterface.get(ctx, feet.above());
-
-                if (hasCeilFeet && !headFeet.blocksMotion()) {
-                    state.setInput(Input.JUMP, true);
-                }
-            }
         }
         state.setInput(Input.SNEAK, Baritone.settings().allowWalkOnMagmaBlocks.value && MovementHelper.steppingOnBlocks(ctx).stream().anyMatch(block -> ctx.world().getBlockState(block).is(Blocks.MAGMA_BLOCK)));
         MovementHelper.moveTowards(ctx, state, dest);

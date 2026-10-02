@@ -268,6 +268,17 @@ public class MovementDescend extends Movement {
 
         state.setInput(Input.SNEAK, Baritone.settings().allowWalkOnMagmaBlocks.value && ctx.world().getBlockState(ctx.player().blockPosition().below()).is(Blocks.MAGMA_BLOCK));
 
+        boolean lavaNear = MovementHelper.isLavaNearbyOrBelow(ctx, dest) || MovementHelper.isLavaNearbyOrBelow(ctx, fakeDest);
+        if (lavaNear) {
+            state.setInput(Input.SPRINT, false);
+            if (ctx.player().isSprinting()) {
+                ctx.player().setSprinting(false);
+            }
+            state.setInput(Input.SNEAK, true);
+            MovementHelper.moveTowards(ctx, state, dest);
+            return state;
+        }
+
         if (!playerFeet.equals(dest) || ab > 0.25) {
             if (numTicks++ < 20 && fromStart < 1.25) {
                 MovementHelper.moveTowards(ctx, state, fakeDest);

@@ -58,6 +58,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static baritone.api.utils.RotationUtils.DEG_TO_RAD_F;
 import static baritone.pathing.movement.Movement.HORIZONTALS_BUT_ALSO_DOWN_____SO_EVERY_DIRECTION_EXCEPT_UP;
@@ -70,17 +71,33 @@ import static baritone.pathing.precompute.Ternary.*;
  */
 public interface MovementHelper extends ActionCosts, Helper {
 
+    AtomicInteger LAST_TOOL_SWAP_TICK = new AtomicInteger(-100);
+
     static boolean avoidBreaking(BlockStateInterface bsi, int x, int y, int z, BlockState state) {
         if (!bsi.worldBorder.canPlaceAt(x, z)) {
             return true;
         }
         Block b = state.getBlock();
-        return Baritone.settings().blocksToDisallowBreaking.value.contains(b)
+        if (Baritone.settings().blocksToDisallowBreaking.value.contains(b)
                 || b instanceof InfestedBlock // obvious reasons
                 || b == Blocks.SPAWNER
-                || b instanceof SpawnerBlock
-                // call context.get directly with x,y,z. no need to make 5 new BlockPos for no reason
-                || avoidAdjacentBreaking(bsi, x, y + 1, z, true)
+                || b instanceof SpawnerBlock) {
+            return true;
+        }
+
+        // 1. DƯỚI ĐÁY (DOWN): Tuyệt đối KHÔNG BAO GIỜ đào khối đá nếu ngay bên dưới (y - 1) là LAVA!
+        // Đào khối này sẽ phá hủy sàn và để lộ hố dung nham ngay dưới chân bot!
+        BlockState below1 = bsi.get0(x, y - 1, z);
+        if (isLava(below1)) {
+            return true;
+        }
+        // Nếu y - 1 đã là không khí/nước, kiểm tra tiếp y - 2 xem có phải là hồ dung nham không:
+        if (canWalkThrough(bsi, x, y - 1, z, below1) && isLava(bsi.get0(x, y - 2, z))) {
+            return true;
+        }
+
+        // 2. Kiểm tra các hướng xung quanh:
+        return avoidAdjacentBreaking(bsi, x, y + 1, z, true)
                 || avoidAdjacentBreaking(bsi, x + 1, y, z, false)
                 || avoidAdjacentBreaking(bsi, x - 1, y, z, false)
                 || avoidAdjacentBreaking(bsi, x, y, z + 1, false)
@@ -88,27 +105,46 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
 
     static boolean avoidAdjacentBreaking(BlockStateInterface bsi, int x, int y, int z, boolean directlyAbove) {
-        // returns true if you should avoid breaking a block that's adjacent to this one (e.g. lava that will start flowing if you give it a path)
-        // this is only called for north, south, east, west, and up. this is NOT called for down.
-        // we assume that it's ALWAYS okay to break the block thats ABOVE liquid
         BlockState state = bsi.get0(x, y, z);
         Block block = state.getBlock();
-        if (!directlyAbove // it is fine to mine a block that has a falling block directly above, this (the cost of breaking the stacked fallings) is included in cost calculations
-                // therefore if directlyAbove is true, we will actually ignore if this is falling
-                && block instanceof FallingBlock // obviously, this check is only valid for falling blocks
-                && Baritone.settings().avoidUpdatingFallingBlocks.value // and if the setting is enabled
-                && FallingBlock.isFree(bsi.get0(x, y - 1, z))) { // and if it would fall (i.e. it's unsupported)
-            return true; // dont break a block that is adjacent to unsupported gravel because it can cause really weird stuff
-        }
 
-        // LAVA: Luôn luôn né 100% để chống chết cháy & bảo vệ quặng
+        // 1. LAVA: Nếu khối bên cạnh hoặc bên trên là LAVA -> Tuyệt đối cấm đào!
         if (isLava(state)) {
             return true;
         }
 
+        // 2. SỎI/CÁT TRÊN ĐẦU (directlyAbove == true):
+        // Nếu trên đỉnh cột sỏi/cát có túi dung nham lơ lửng (y + 1 .. y + 4 là Lava):
+        // Đào khối đá bên dưới sẽ làm sỏi sụt và dung nham ụp xuống đầu bot -> CẤM ĐÀO!
+        if (directlyAbove && block instanceof FallingBlock) {
+            for (int dy = 1; dy <= 4; dy++) {
+                BlockState aboveFalling = bsi.get0(x, y + dy, z);
+                if (isLava(aboveFalling)) {
+                    return true;
+                }
+                if (!(aboveFalling.getBlock() instanceof FallingBlock)) {
+                    break;
+                }
+            }
+        }
+
+        // 3. Khối sỏi rơi ở các hướng ngang (not directlyAbove):
+        if (!directlyAbove
+                && block instanceof FallingBlock
+                && Baritone.settings().avoidUpdatingFallingBlocks.value
+                && FallingBlock.isFree(bsi.get0(x, y - 1, z))) {
+            return true;
+        }
+
+        // 4. Nếu khối ngang này đang là Air/passable, nhưng ngay trên đầu nó (y + 1) là LAVA:
+        // Đào khối hiện tại sẽ tạo đường cho dung nham tràn ngang sang hầm -> CẤM ĐÀO!
+        if (!directlyAbove && canWalkThrough(bsi, x, y, z, state)) {
+            if (isLava(bsi.get0(x, y + 1, z))) {
+                return true;
+            }
+        }
+
         // WATER CHECK (Bật/tắt được theo yêu cầu người dùng):
-        // Nếu BẬT (waterCheck = true) -> Né cả nước khi đào
-        // Nếu TẮT (waterCheck = false - Mặc định) -> Nước an toàn 100%, đào xuyên qua & cạnh nước thoải mái!
         if (Baritone.settings().waterCheck.value) {
             if (block instanceof LiquidBlock) {
                 if (directlyAbove || Baritone.settings().strictLiquidCheck.value) {
@@ -683,6 +719,11 @@ public interface MovementHelper extends ActionCosts, Helper {
             // Nếu trên hotbar không có tool hiệu quả (tốc độ <= 1.0 hoặc tool đã hỏng/bị cấm bởi itemSaver),
             // tự động tìm trong Balo (slots 9-35) xem có tool nào phá block này nhanh hơn không:
             if (ctx.player().containerMenu == ctx.player().inventoryMenu && (!hotbarIsUsable || hotbarSpeed <= 1.0)) {
+                if (Math.abs(ctx.player().tickCount - LAST_TOOL_SWAP_TICK.get()) < 8) {
+                    // Đang trong cooldown chờ server phản hồi gói swap, tránh spam packet
+                    ctx.player().getInventory().setSelectedSlot(bestHotbar);
+                    return;
+                }
                 NonNullList<ItemStack> inv = ctx.player().getInventory().getNonEquipmentItems();
                 int bestBaloSlot = -1;
                 double bestBaloSpeed = hotbarIsUsable ? hotbarSpeed : 1.0;
@@ -707,6 +748,7 @@ public interface MovementHelper extends ActionCosts, Helper {
                     }
                     ctx.playerController().windowClick(ctx.player().inventoryMenu.containerId, bestBaloSlot, targetHotbar, ClickType.SWAP, ctx.player());
                     ctx.player().getInventory().setSelectedSlot(targetHotbar);
+                    LAST_TOOL_SWAP_TICK.set(ctx.player().tickCount);
                     return;
                 }
             }
@@ -724,10 +766,14 @@ public interface MovementHelper extends ActionCosts, Helper {
     }
 
     static void moveTowardsWithoutRotation(IPlayerContext ctx, MovementState state, float idealYaw) {
+        state.setInput(Input.MOVE_FORWARD, false);
+        state.setInput(Input.MOVE_BACK, false);
+        state.setInput(Input.MOVE_LEFT, false);
+        state.setInput(Input.MOVE_RIGHT, false);
         MovementOption.getOptions(
                 Mth.sin(ctx.playerRotations().getYaw() * DEG_TO_RAD_F),
                 Mth.cos(ctx.playerRotations().getYaw() * DEG_TO_RAD_F),
-                Baritone.settings().allowSprint.value
+                false
         ).min(Comparator.comparing(option -> option.distanceToSq(
                 Mth.sin(idealYaw * DEG_TO_RAD_F),
                 Mth.cos(idealYaw * DEG_TO_RAD_F)
@@ -791,6 +837,28 @@ public interface MovementHelper extends ActionCosts, Helper {
     static boolean isLava(BlockState state) {
         Fluid f = state.getFluidState().getType();
         return f == Fluids.LAVA || f == Fluids.FLOWING_LAVA;
+    }
+
+    static boolean isLavaNearbyOrBelow(IPlayerContext ctx, BlockPos pos) {
+        if (ctx == null || ctx.world() == null || pos == null) return false;
+        if (isLava(BlockStateInterface.get(ctx, pos))) {
+            return true;
+        }
+        BlockState destDown = BlockStateInterface.get(ctx, pos.below());
+        if (isLava(destDown)) {
+            return true;
+        }
+        for (int dy = 2; dy <= 5; dy++) {
+            if (isLava(BlockStateInterface.get(ctx, pos.below(dy)))) {
+                return true;
+            }
+        }
+        for (Direction dir : Direction.Plane.HORIZONTAL) {
+            if (isLava(BlockStateInterface.get(ctx, pos.relative(dir))) || isLava(BlockStateInterface.get(ctx, pos.below().relative(dir)))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -880,11 +948,11 @@ public interface MovementHelper extends ActionCosts, Helper {
                 Vec3 eyePos = wouldSneak ? RayTraceUtils.inferSneakingEyePosition(ctx.player()) : ctx.playerHead();
                 double reach = ctx.playerController().getBlockReachDistance();
 
-                // For horizontal faces, try aiming at the top-most edge of the side face (0.995, 0.98, 0.95) first
-                // so a player standing safely on against1 can clearly see and click the side face without being occluded by against1's top surface!
+                // For horizontal faces, prioritize aiming at the CENTER of the side face (faceY)
+                // then try slightly higher offsets if occluded by edge
                 double[] yOffsets;
                 if (dir.getAxis().isHorizontal()) {
-                    yOffsets = new double[]{against1.getY() + 0.995D, against1.getY() + 0.98D, against1.getY() + 0.95D, against1.getY() + 0.88D, faceY, against1.getY() + 0.70D};
+                    yOffsets = new double[]{faceY, against1.getY() + 0.55D, against1.getY() + 0.60D, against1.getY() + 0.68D, against1.getY() + 0.75D, against1.getY() + 0.85D};
                 } else {
                     yOffsets = new double[]{faceY};
                 }

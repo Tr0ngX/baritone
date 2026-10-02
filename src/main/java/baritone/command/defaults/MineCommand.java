@@ -68,6 +68,11 @@ public class MineCommand extends Command {
                 else if (block == Blocks.COAL_ORE) boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COAL_ORE));
                 else if (block == Blocks.DEEPSLATE_COAL_ORE) boms.add(new BlockOptionalMeta(Blocks.COAL_ORE));
             }
+            if (!boms.isEmpty() && boms.stream().allMatch(b -> b.getBlock() == Blocks.SAND || b.getBlock() == Blocks.RED_SAND || b.getBlock() == Blocks.SUSPICIOUS_SAND)) {
+                logDirect("§a[AutoSand] Phát hiện mục tiêu là cát! Tự động chuyển sang chế độ Sand Mining siêu tốc (không delay quét)...");
+                baritone.getSandProcess().sand(quantity, 0, null);
+                return;
+            }
         } else {
             // Default: Kim Cương, Lapis, Đá Đỏ
             boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));

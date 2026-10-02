@@ -153,6 +153,7 @@ public class AutoMineScreen extends Screen implements Helper {
     private static final ItemStack[] ACTION_ITEM_ICONS = new ItemStack[]{
             new ItemStack(Items.DIAMOND_PICKAXE),
             new ItemStack(Items.DIAMOND_AXE),
+            new ItemStack(Items.SAND),
             new ItemStack(Items.BARRIER),
             new ItemStack(Items.RECOVERY_COMPASS),
             new ItemStack(Items.IRON_DOOR)
@@ -295,9 +296,9 @@ public class AutoMineScreen extends Screen implements Helper {
             this.colW = (this.panelW - (this.cardCols - 1) * this.cardGap) / this.cardCols;
             this.cardH = screenH < 320 ? 26 : 30;
 
-            // 5 nút hành động dưới cùng
+            // 6 nút hành động dưới cùng
             this.actionGap = 4;
-            this.actionW = (this.panelW - 4 * this.actionGap) / 5;
+            this.actionW = (this.panelW - 5 * this.actionGap) / 6;
         }
     }
 
@@ -366,6 +367,19 @@ public class AutoMineScreen extends Screen implements Helper {
         allModules.add(new ModuleItem(new ItemStack(Items.NETHER_QUARTZ_ORE), "Thạch Anh Nether", "Khai thác quặng Thạch Anh thế giới Nether",
                 "Khai thác Thạch Anh trong Nether giúp kiếm kinh nghiệm (XP) cực nhanh để hồi phục độ bền đồ Mending và làm máy so sánh Redstone.",
                 "ORES", 0xFFF1F5F9, () -> oreQuartz, () -> oreQuartz = !oreQuartz));
+        allModules.add(new ModuleItem(new ItemStack(Items.SAND), "Đào Cát Siêu Tốc (Auto Sand)", "Tự động đào cát liên tục, xả sập cột cát không delay quét",
+                "Chế độ chuyên biệt cho Cát & Cát Đỏ: Thuật toán phản xạ trực tiếp siêu nhẹ (<0.05ms), đào liên tục không đơ/lag, không gọi WorldScanner hay quét lại chunk. Tự động gom sạch cát rơi xung quanh.",
+                "ORES", 0xFFFCD34D, () -> baritone != null && baritone.getSandProcess().isActive(), () -> {
+            if (baritone != null) {
+                if (baritone.getSandProcess().isActive()) {
+                    baritone.getSandProcess().cancel();
+                } else {
+                    stopAutoMine(baritone);
+                    baritone.getSandProcess().sand();
+                    this.onClose();
+                }
+            }
+        }));
 
         // 2. TAB CHẶT CÂY (TREES)
         allModules.add(new ModuleItem(new ItemStack(Items.OAK_LOG), "Gỗ Sồi", "Khai thác thân gỗ Sồi và khối gỗ Sồi",
@@ -618,20 +632,22 @@ public class AutoMineScreen extends Screen implements Helper {
     }
 
     private String getResponsiveActionTitle(int a, int btnW) {
-        if (btnW >= 88) {
+        if (btnW >= 80) {
             switch (a) {
                 case 0: return "BẮT ĐẦU ĐÀO";
                 case 1: return "CHẶT CÂY";
-                case 2: return "DỪNG LẠI";
-                case 3: return "ĐẶT LẠI CHỈ SỐ";
+                case 2: return "ĐÀO CÁT";
+                case 3: return "DỪNG LẠI";
+                case 4: return "ĐẶT LẠI CHỈ SỐ";
                 default: return "ĐÓNG (" + BaritoneKeyBindings.KEY_AUTOMINE_GUI.getTranslatedKeyMessage().getString() + ")";
             }
-        } else if (btnW >= 55) {
+        } else if (btnW >= 46) {
             switch (a) {
                 case 0: return "ĐÀO";
                 case 1: return "CHẶT";
-                case 2: return "DỪNG";
-                case 3: return "LÀM MỚI";
+                case 2: return "CÁT";
+                case 3: return "DỪNG";
+                case 4: return "LÀM MỚI";
                 default: return "ĐÓNG";
             }
         } else {
@@ -1125,7 +1141,7 @@ public class AutoMineScreen extends Screen implements Helper {
         }
 
         // 5. Kiểm tra Click vào Bottom Action Bar
-        for (int a = 0; a < 5; a++) {
+        for (int a = 0; a < 6; a++) {
             int ax = l.panelX + a * (l.actionW + l.actionGap);
             if (mouseX >= ax && mouseX <= ax + l.actionW && mouseY >= l.actionBottomY && mouseY <= l.actionBottomY + l.actionH) {
                 if (a == 0) {
@@ -1138,9 +1154,13 @@ public class AutoMineScreen extends Screen implements Helper {
                     this.onClose();
                 } else if (a == 2) {
                     playClickSound();
-                    stopAutoMine();
+                    startAutoSand();
                     this.onClose();
                 } else if (a == 3) {
+                    playClickSound();
+                    stopAutoMine();
+                    this.onClose();
+                } else if (a == 4) {
                     MiningStatsTracker.getInstance().reset();
                     Helper.HELPER.logDirect("§a[Tr0ngX] Đã reset toàn bộ thống kê đào khoáng!");
                     playClickSound();
@@ -1375,6 +1395,30 @@ public class AutoMineScreen extends Screen implements Helper {
             result.add(item);
         }
         return result;
+    }
+
+    private int[] getModuleCountsForCurrentTab() {
+        int total = 0;
+        int on = 0;
+        String query = searchQuery.trim().toLowerCase();
+        for (ModuleItem item : allModules) {
+            boolean match = false;
+            if (!query.isEmpty()) {
+                match = item.name.toLowerCase().contains(query) || item.desc.toLowerCase().contains(query);
+            } else {
+                if (activeTab == 0 && item.category.equals("ORES")) match = true;
+                else if (activeTab == 1 && item.category.equals("TREES")) match = true;
+                else if (activeTab == 2 && item.category.equals("MOVEMENT")) match = true;
+                else if (activeTab == 3 && item.category.equals("SURVIVAL")) match = true;
+                else if (activeTab == 4 && item.category.equals("HUD")) match = true;
+            }
+            if (!match) continue;
+            total++;
+            try {
+                if (item.getter.getAsBoolean()) on++;
+            } catch (Throwable ignored) {}
+        }
+        return new int[]{total, on, total - on};
     }
 
     // === DROPDOWN LB: key, sections, layout dùng chung cho render + click ===
@@ -1884,11 +1928,16 @@ public class AutoMineScreen extends Screen implements Helper {
 
         // 1. Header Bar với Logo Neon, Live Status Badge & Version Tag
         ClickGuiTheme.drawGlowPanel(graphics, l.panelX, 3, l.panelW, this.height - 6, ClickGuiTheme.ACCENT_CYAN);
-        graphics.fill(l.panelX, 3, l.panelX + l.panelW, 4, ClickGuiTheme.ACCENT_CYAN);
-        ClickGuiTheme.drawText(graphics, this.font, "TR0NGX", l.panelX + 6, 7, ClickGuiTheme.ACCENT_CYAN, true);
+        graphics.fill(l.panelX, 3, l.panelX + l.panelW, 20, 0xEE090E1B);
+        ClickGuiTheme.drawOutline(graphics, l.panelX, 3, l.panelW, 17, 0x2238BDF8);
+        graphics.fill(l.panelX + 2, 3, l.panelX + l.panelW - 2, 4, ClickGuiTheme.ACCENT_CYAN);
+        graphics.fill(l.panelX + 2, 4, l.panelX + l.panelW - 2, 5, 0x22FFFFFF);
+
+        graphics.fill(l.panelX + 6, 8, l.panelX + 11, 13, ClickGuiTheme.ACCENT_CYAN);
+        ClickGuiTheme.drawText(graphics, this.font, "TR0NGX", l.panelX + 14, 7, ClickGuiTheme.TEXT_TITLE, true);
         int logoW = this.font.width("TR0NGX");
-        graphics.fill(l.panelX + 8 + logoW, 7, l.panelX + 9 + logoW, 15, 0x5064748B);
-        ClickGuiTheme.drawText(graphics, this.font, "BẢNG ĐIỀU KHIỂN NEXTGEN", l.panelX + 13 + logoW, 7, ClickGuiTheme.TEXT_MUTED, false);
+        graphics.fill(l.panelX + 17 + logoW, 7, l.panelX + 18 + logoW, 15, 0x4064748B);
+        ClickGuiTheme.drawText(graphics, this.font, "BARITONE F4 NEXTGEN", l.panelX + 22 + logoW, 7, ClickGuiTheme.TEXT_MUTED, false);
 
         boolean isMining = baritone.getMineProcess().isActive();
         boolean isChop = baritone.getMineProcess().isChopMode();
@@ -1973,7 +2022,12 @@ public class AutoMineScreen extends Screen implements Helper {
         if (filterW > 0) {
             int chipStart = contentX + searchBoxW + 6;
             int chipW = (filterW - 4) / 3;
-            String[] filterLabels = new String[]{"Tất Cả", "Đang Bật", "Đang Tắt"};
+            int[] counts = getModuleCountsForCurrentTab();
+            String[] filterLabels = new String[]{
+                    chipW >= 50 ? "Tất Cả (" + counts[0] + ")" : "Tất Cả",
+                    chipW >= 46 ? "Bật (" + counts[1] + ")" : "Bật",
+                    chipW >= 46 ? "Tắt (" + counts[2] + ")" : "Tắt"
+            };
             int[] filterAccents = new int[]{ClickGuiTheme.ACCENT_CYAN, ClickGuiTheme.ACCENT_EMERALD, ClickGuiTheme.ACCENT_ROSE};
             for (int c = 0; c < 3; c++) {
                 int cx = chipStart + c * (chipW + 2);
@@ -2044,12 +2098,13 @@ public class AutoMineScreen extends Screen implements Helper {
         int[] aColors = new int[]{
                 ClickGuiTheme.ACCENT_CYAN,
                 ClickGuiTheme.ACCENT_EMERALD,
+                0xFFFBBF24,
                 ClickGuiTheme.ACCENT_ROSE,
                 ClickGuiTheme.ACCENT_AMBER,
                 ClickGuiTheme.TEXT_MUTED
         };
 
-        for (int a = 0; a < 5; a++) {
+        for (int a = 0; a < 6; a++) {
             int ax = l.panelX + a * (l.actionW + l.actionGap);
             boolean aHover = mouseX >= ax && mouseX <= ax + l.actionW && mouseY >= l.actionBottomY && mouseY <= l.actionBottomY + l.actionH;
             if (aHover) {
@@ -2221,7 +2276,8 @@ public class AutoMineScreen extends Screen implements Helper {
 
         boolean isMining = baritone.getMineProcess().isActive();
         boolean isChop = baritone.getMineProcess().isChopMode();
-        String statusStr = isMining ? (isChop ? "§a● ĐANG CHẶT CÂY" : "§a● ĐANG ĐÀO") : "§7○ NGHỈ";
+        boolean isSand = baritone.getSandProcess().isActive();
+        String statusStr = isSand ? "§6● ĐANG ĐÀO CÁT" : (isMining ? (isChop ? "§a● ĐANG CHẶT CÂY" : "§a● ĐANG ĐÀO") : "§7○ NGHỈ");
         ClickGuiTheme.drawText(g, this.font, "Trạng thái: " + statusStr, rx + 8, ry + 22, ClickGuiTheme.TEXT_BODY, false);
 
         String duration = MiningStatsTracker.getInstance().getFormattedDuration();
@@ -2229,8 +2285,8 @@ public class AutoMineScreen extends Screen implements Helper {
 
         int totalBlocks = MiningStatsTracker.getInstance().getTotalBlocksMined();
         int rate = MiningStatsTracker.getInstance().getBlocksPerHour();
-        String blockLabel = isChop ? "Đã chặt: " : "Đã đào: ";
-        String unit = isChop ? " log" : " block";
+        String blockLabel = isSand ? "Đã đào: " : (isChop ? "Đã chặt: " : "Đã đào: ");
+        String unit = isSand ? " cát" : (isChop ? " log" : " block");
         ClickGuiTheme.drawText(g, this.font, blockLabel + String.format("%,d%s", totalBlocks, unit), rx + 8, ry + 50, ClickGuiTheme.ACCENT_AMBER, true);
         ClickGuiTheme.drawText(g, this.font, "Tốc độ: " + String.format("%,d%s/h", rate, unit), rx + 8, ry + 64, ClickGuiTheme.ACCENT_CYAN, false);
 
@@ -2523,18 +2579,24 @@ public class AutoMineScreen extends Screen implements Helper {
                         mouseX, mouseY, ClickGuiTheme.ACCENT_EMERALD);
                 break;
             case 2:
+                drawModernTooltip(graphics, "Bắt Đầu Đào Cát", null, "Tự động đào cát siêu tốc không delay",
+                        "Chế độ đào cát chuyên biệt: Khai thác cột cát sập, phản xạ trực tiếp siêu nhẹ (<0.05ms) không dừng quét lag.",
+                        "§8[Chuột trái] §7Đào cát ngay",
+                        mouseX, mouseY, 0xFFFBBF24);
+                break;
+            case 3:
                 drawModernTooltip(graphics, "Dừng Toàn Bộ", null, "Hủy bỏ mọi hoạt động ngay lập tức",
                         "Dừng tìm đường, ngừng đập khối, xóa phím bấm và đóng mọi giao diện rương ngay lập tức.",
                         "§8[Chuột trái] §7Dừng khẩn cấp",
                         mouseX, mouseY, ClickGuiTheme.ACCENT_ROSE);
                 break;
-            case 3:
+            case 4:
                 drawModernTooltip(graphics, "Đặt Lại Chỉ Số", null, "Làm mới bảng thống kê phiên đào",
                         "Xóa toàn bộ số liệu thời gian đào, tổng số khối đã đập và số lượng quặng/kim cương thu thập về 0.",
                         "§8[Chuột trái] §7Xóa số liệu cũ",
                         mouseX, mouseY, ClickGuiTheme.ACCENT_AMBER);
                 break;
-            case 4:
+            case 5:
                 drawModernTooltip(graphics, "Đóng Bảng Điều Khiển", null, "Lưu cài đặt và quay lại game",
                         "Tự động lưu toàn bộ cấu hình đã chỉnh vào file automine_config.json và đóng giao diện này.",
                         "§8[Chuột trái] §7Lưu & Thoát",
@@ -2706,15 +2768,31 @@ public class AutoMineScreen extends Screen implements Helper {
         baritone.getPathingBehavior().cancelEverything();
         baritone.getPathingBehavior().forceCancel();
         baritone.getMineProcess().cancel();
+        baritone.getSandProcess().cancel();
         baritone.getInputOverrideHandler().clearAllKeys();
         if (baritone instanceof Baritone b) {
             b.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
         }
-        if (baritone.getPlayerContext().player() != null && baritone.getPlayerContext().player().containerMenu != baritone.getPlayerContext().player().inventoryMenu) {
-            baritone.getPlayerContext().player().closeContainer();
+        if (baritone.getPlayerContext().player() != null) {
+            if (baritone.getPlayerContext().player().containerMenu != baritone.getPlayerContext().player().inventoryMenu) {
+                baritone.getPlayerContext().player().closeContainer();
+            }
+            baritone.getPlayerContext().player().input = new net.minecraft.client.player.KeyboardInput(baritone.getPlayerContext().minecraft().options);
         }
         Helper.HELPER.logDirect(Component.literal("§e[Quặng] Đã dừng đào khoáng sản!  "),
                 ChatButtons.openGuiButton());
+    }
+
+    private void startAutoSand() {
+        startAutoSand(this.baritone);
+    }
+
+    public static void startAutoSand(IBaritone baritone) {
+        if (baritone == null || baritone.getPlayerContext().player() == null) {
+            return;
+        }
+        stopAutoMine(baritone);
+        baritone.getSandProcess().sand();
     }
 
 
@@ -2862,6 +2940,14 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().allowDownward.value = true;
         Baritone.settings().allowBreak.value = true;
         Baritone.settings().allowPlace.value = true;
+        Baritone.settings().acceptableThrowawayItems.value = new ArrayList<>(List.of(
+                Blocks.COBBLED_DEEPSLATE.asItem(),
+                Blocks.DEEPSLATE.asItem(),
+                Blocks.TUFF.asItem(),
+                Blocks.POLISHED_DEEPSLATE.asItem(),
+                Blocks.DEEPSLATE_BRICKS.asItem(),
+                Blocks.POLISHED_TUFF.asItem()
+        ));
         Baritone.settings().allowPlaceInFluidsSource.value = true;
         Baritone.settings().allowPlaceInFluidsFlow.value = true;
         Baritone.settings().allowSprint.value = optAutoSprint;
@@ -2875,8 +2961,8 @@ public class AutoMineScreen extends Screen implements Helper {
         Baritone.settings().exploreForBlocks.value = true;
         Baritone.settings().mineScanDroppedItems.value = true;
         Baritone.settings().blacklistClosestOnFailure.value = true;
-        Baritone.settings().mineMaxOreLocationsCount.value = 64;
-        Baritone.settings().maxCachedWorldScanCount.value = 64;
+        Baritone.settings().mineMaxOreLocationsCount.value = 512;
+        Baritone.settings().maxCachedWorldScanCount.value = 512;
         Baritone.settings().extendCacheOnThreshold.value = true;
         Baritone.settings().mineDropLoiterDurationMSThanksLouca.value = 200L;
 
@@ -2962,56 +3048,70 @@ public class AutoMineScreen extends Screen implements Helper {
             if (oreDiamond) {
                 boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DIAMOND_BLOCK));
                 oreNames.add("Kim Cương");
             }
             if (oreLapis) {
                 boms.add(new BlockOptionalMeta(Blocks.LAPIS_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_LAPIS_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.LAPIS_BLOCK));
                 oreNames.add("Ngọc Lưu Ly");
             }
             if (oreRedstone) {
                 boms.add(new BlockOptionalMeta(Blocks.REDSTONE_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_REDSTONE_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.REDSTONE_BLOCK));
                 oreNames.add("Đá Đỏ");
             }
             if (oreGold) {
                 boms.add(new BlockOptionalMeta(Blocks.GOLD_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_GOLD_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.NETHER_GOLD_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.RAW_GOLD_BLOCK));
+                boms.add(new BlockOptionalMeta(Blocks.GOLD_BLOCK));
                 oreNames.add("Vàng");
             }
             if (oreIron) {
                 boms.add(new BlockOptionalMeta(Blocks.IRON_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_IRON_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.RAW_IRON_BLOCK));
+                boms.add(new BlockOptionalMeta(Blocks.IRON_BLOCK));
                 oreNames.add("Sắt");
             }
             if (oreEmerald) {
                 boms.add(new BlockOptionalMeta(Blocks.EMERALD_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_EMERALD_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.EMERALD_BLOCK));
                 oreNames.add("Ngọc Lục Bảo");
             }
             if (oreDebris) {
                 boms.add(new BlockOptionalMeta(Blocks.ANCIENT_DEBRIS));
+                boms.add(new BlockOptionalMeta(Blocks.NETHERITE_BLOCK));
                 oreNames.add("Mảnh Cổ Đại");
             }
             if (oreCopper) {
                 boms.add(new BlockOptionalMeta(Blocks.COPPER_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COPPER_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.RAW_COPPER_BLOCK));
+                boms.add(new BlockOptionalMeta(Blocks.COPPER_BLOCK));
                 oreNames.add("Đồng");
             }
             if (oreCoal) {
                 boms.add(new BlockOptionalMeta(Blocks.COAL_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_COAL_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.COAL_BLOCK));
                 oreNames.add("Than Đá");
             }
             if (oreQuartz) {
                 boms.add(new BlockOptionalMeta(Blocks.NETHER_QUARTZ_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.QUARTZ_BLOCK));
                 oreNames.add("Thạch Anh");
             }
 
             if (boms.isEmpty()) {
                 boms.add(new BlockOptionalMeta(Blocks.DIAMOND_ORE));
                 boms.add(new BlockOptionalMeta(Blocks.DEEPSLATE_DIAMOND_ORE));
+                boms.add(new BlockOptionalMeta(Blocks.DIAMOND_BLOCK));
                 oreNames.add("Kim Cương (Mặc Định)");
             }
         }

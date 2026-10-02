@@ -20,6 +20,8 @@ classes/
 *.ipr
 *.iws
 /logs/
+hs_err_*.log
+replay_pid*.log
 
 tweaker/logs/
 common/logs/
@@ -45,5 +47,8 @@ libs/java-objc-bridge-1.1.jar
 
 web_explain/
 baritone-fabric-*.jar
+Launch_Client.bat
+baritone-f4-gui.html
+test_grim_bridge_runner.py
 
 mapping

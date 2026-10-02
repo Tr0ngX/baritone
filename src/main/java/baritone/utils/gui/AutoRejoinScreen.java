@@ -99,15 +99,15 @@ public class AutoRejoinScreen extends Screen {
                 getToggleText(),
                 btn -> {
                     String inputPass = passwordBox != null ? passwordBox.getValue().trim() : "";
+                    if (!inputPass.isEmpty()) {
+                        AutoRejoinConfig.password = inputPass;
+                    }
                     if (!AutoRejoinConfig.enabled) {
-                        if (inputPass.isEmpty() && !AutoRejoinConfig.hasPassword()) {
+                        if (!AutoRejoinConfig.hasPassword()) {
                             statusFeedback = "§c⚠ BẠN PHẢI NHẬP MẬT KHẨU /dn VÀO Ô TRÊN TRƯỚC KHI BẬT!";
                             feedbackTicks = 100;
                             this.setFocused(passwordBox);
                             return;
-                        }
-                        if (!inputPass.isEmpty()) {
-                            AutoRejoinConfig.password = inputPass;
                         }
                         AutoRejoinConfig.enabled = true;
                         statusFeedback = "§a✔ Đã kích hoạt Tự Động Rejoin!";
@@ -245,7 +245,7 @@ public class AutoRejoinScreen extends Screen {
     private void saveSettings() {
         String enteredPass = "";
         if (passwordBox != null) {
-            enteredPass = passwordBox.getValue().trim();
+            enteredPass = baritone.command.defaults.AutoRejoinCommand.cleanPassword(passwordBox.getValue());
             AutoRejoinConfig.password = enteredPass;
         }
         if (serverIpBox != null) {
@@ -355,6 +355,12 @@ public class AutoRejoinScreen extends Screen {
 
     @Override
     public void onClose() {
+        if (passwordBox != null) {
+            String pass = passwordBox.getValue().trim();
+            if (!pass.isEmpty() && !pass.equals(AutoRejoinConfig.password)) {
+                saveSettings();
+            }
+        }
         if (this.parent != null) {
             Minecraft.getInstance().setScreen(this.parent);
         } else {

@@ -33,18 +33,18 @@ import net.minecraft.world.item.ItemStack;
  */
 public final class ClickGuiTheme {
 
-    // === BẢNG MÀU CHUẨN OLED OBSIDIAN GLASS (32-bit ARGB) ===
-    public static final int BG_SCREEN_TOP = 0xF2040711;     // OLED Midnight sâu thẳm
-    public static final int BG_SCREEN_BOTTOM = 0xF9070B16;  // Deep Obsidian gradient
-    public static final int BG_PANEL = 0xDE0A0F1E;          // Khung panel chính
-    public static final int BG_CARD = 0xB50E1729;           // Nền card mặc định
-    public static final int BG_CARD_HOVER = 0xE018263E;     // Nền card khi hover
-    public static final int BG_CARD_ACTIVE = 0xDE0C1F38;    // Nền card khi active
-    public static final int BG_INPUT = 0xE8080D18;          // Nền ô tìm kiếm
+    // === BẢNG MÀU CHUẨN OLED OBSIDIAN GLASS (Taste-Skill & Apple/Linear Caliber) ===
+    public static final int BG_SCREEN_TOP = 0xF0050812;     // OLED Midnight sâu thẳm
+    public static final int BG_SCREEN_BOTTOM = 0xF902050A;  // Deep Obsidian gradient
+    public static final int BG_PANEL = 0xEE090F1C;          // Khung panel chính
+    public static final int BG_CARD = 0xC20C1526;           // Nền card mặc định
+    public static final int BG_CARD_HOVER = 0xEB152238;     // Nền card khi hover
+    public static final int BG_CARD_ACTIVE = 0xEE0A1E38;    // Nền card khi active
+    public static final int BG_INPUT = 0xF2060A14;          // Nền ô tìm kiếm
 
     // === HỆ THỐNG VIỀN & ÁNH SÁNG ===
-    public static final int BORDER_CARD = 0x2838BDF8;       // Viền hairline 1px nhẹ
-    public static final int BORDER_CARD_HOVER = 0x9038BDF8; // Viền sáng khi hover
+    public static final int BORDER_CARD = 0x2238BDF8;       // Viền hairline 1px nhẹ
+    public static final int BORDER_CARD_HOVER = 0x8538BDF8; // Viền sáng khi hover
     public static final int BORDER_ACTIVE = 0xFF38BDF8;     // Viền neon khi active
 
     // === BẢNG MÀU NEON SPECTRUM THEO CHUYÊN MỤC ===
@@ -298,24 +298,29 @@ public final class ClickGuiTheme {
     public static final int BORDER_ROW = 0x1E38BDF8;
 
     /**
-     * Nút sidebar dọc kiểu LiquidBounce: icon + label, active có vạch accent trái + nền tint.
+     * Nút sidebar dọc kiểu LiquidBounce & Linear: icon + label, active có vạch accent trái + nền tint + viền capsule.
      */
     public static void drawSidebarButton(GuiGraphics g, Font font, ItemStack iconItem, String label,
                                          int x, int y, int w, int h,
                                          boolean active, boolean hover, int accentColor) {
-        int bg = active ? ((accentColor & 0x00FFFFFF) | 0x28000000)
-                : (hover ? 0x1AFFFFFF : 0x00000000);
+        int bg = active ? ((accentColor & 0x00FFFFFF) | 0x2A000000)
+                : (hover ? 0x18FFFFFF : 0x00000000);
         if (bg != 0) {
-            g.fill(x, y, x + w, y + h, bg);
+            g.fill(x + 1, y, x + w - 1, y + h, bg);
         }
-        // Vạch accent trái 2px khi active/hover
+        // Vạch accent trái 3px với glow nhẹ khi active
         if (active) {
-            g.fill(x, y + 2, x + 2, y + h - 2, accentColor);
+            g.fill(x + 1, y + 2, x + 3, y + h - 2, accentColor);
+            drawOutline(g, x + 1, y, w - 2, h, (accentColor & 0x00FFFFFF) | 0x45000000);
+            if (!heavyMode()) {
+                g.fill(x + 3, y + 3, x + 4, y + h - 3, (accentColor & 0x00FFFFFF) | 0x30000000);
+            }
         } else if (hover) {
-            g.fill(x, y + 2, x + 2, y + h - 2, (accentColor & 0x00FFFFFF) | 0x60000000);
+            g.fill(x + 1, y + 2, x + 2, y + h - 2, (accentColor & 0x00FFFFFF) | 0x70000000);
+            drawOutline(g, x + 1, y, w - 2, h, 0x1EFFFFFF);
         }
         boolean hasIcon = (iconItem != null && !iconItem.isEmpty());
-        int textX = x + (hasIcon ? 24 : 10);
+        int textX = x + (hasIcon ? 25 : 10);
         if (hasIcon) {
             g.renderFakeItem(iconItem, x + 5, y + (h - 16) / 2);
         }
@@ -341,7 +346,7 @@ public final class ClickGuiTheme {
     }
 
     /**
-     * Row module full-width kiểu LB: nền + viền hairline + laser trên khi active/hover.
+     * Row module full-width kiểu LB: nền + viền hairline + specular highlight + laser trên khi active/hover.
      * Phần dropdown body (nếu expanded) do caller vẽ tiếp bên dưới bằng drawDropdownBody.
      */
     public static void drawModuleRow(GuiGraphics g, int x, int y, int w, int h,
@@ -352,6 +357,8 @@ public final class ClickGuiTheme {
         int border = hover ? ((accentColor & 0x00FFFFFF) | 0x90000000)
                 : (active ? ((accentColor & 0x00FFFFFF) | 0x60000000) : BORDER_ROW);
         drawOutline(g, x, y, w, h, border);
+        // Phản chiếu ánh sáng Specular Highlight tinh tế ở đỉnh module row (chuẩn Linear/Apple)
+        g.fill(x + 2, y + 1, x + w - 2, y + 2, hover ? 0x28FFFFFF : 0x12FFFFFF);
         // Vạch đứng trái
         g.fill(x + 1, y + 2, x + 3, y + h - 2,
                 active ? accentColor : (hover ? ((accentColor & 0x00FFFFFF) | 0x80000000) : 0x3064748B));
@@ -359,6 +366,8 @@ public final class ClickGuiTheme {
         if ((active || hover) && !heavyMode()) {
             int laserAlpha = active ? 0xFF000000 : 0x95000000;
             g.fill(x + 2, y, x + w - 2, y + 1, (accentColor & 0x00FFFFFF) | laserAlpha);
+            // Tán xạ ánh sáng Bloom dưới vạch laser
+            g.fill(x + 4, y + 1, x + w - 4, y + 2, (accentColor & 0x00FFFFFF) | (active ? 0x30000000 : 0x15000000));
         }
         // Viền dưới nối dropdown khi expanded
         if (expanded) {

@@ -32,6 +32,10 @@ unimined.minecraft {
     }
 }
 
+tasks.named("runClient") {
+    args "--quickPlayMultiplayer", "localhost:25575", "--username", "Dev"
+}
+
 configurations {
     common
     shadowCommon // Don't use shadow from the shadow plugin because we don't want IDEA to index this.

@@ -77,7 +77,7 @@ public final class Settings {
      * Khi đầu va vào trần hầm ở độ cao 2 block, nhân vật rơi xuống đất ngay lập tức và kích hoạt
      * liên tục momentum boost (+0.2 speed mỗi cú nhảy), giúp chạy nhanh gấp 2-3 lần bình thường.
      */
-    public final Setting<Boolean> tunnelSprintJump = new Setting<>(true);
+    public final Setting<Boolean> tunnelSprintJump = new Setting<>(false);
 
     /**
      * Tự động loại bỏ độ trễ nhảy 10-tick của Minecraft vanilla (Fast Jump / Instant Bhop).
@@ -85,7 +85,7 @@ public final class Settings {
      * ngay khoảnh khắc chân vừa chạm đất (onGround), bot sẽ lập tức nhảy tiếp với độ trễ 0 tick thay vì
      * phải chờ 10 tick (0.5 giây) như Minecraft mặc định, giúp spam nhảy cực nhanh và bứt tốc tối đa.
      */
-    public final Setting<Boolean> fastJump = new Setting<>(true);
+    public final Setting<Boolean> fastJump = new Setting<>(false);
 
     /**
      * Ẩn animation vung cúp / vung tay phía client (No-Swing / Hide Pickaxe Swing).
@@ -149,7 +149,7 @@ public final class Settings {
     /**
      * Wait this many ticks between InventoryBehavior moving inventory items
      */
-    public final Setting<Integer> ticksBetweenInventoryMoves = new Setting<>(1);
+    public final Setting<Integer> ticksBetweenInventoryMoves = new Setting<>(4);
 
     /**
      * Come to a halt before doing any inventory moves. Intended for anticheat such as 2b2t
@@ -324,16 +324,18 @@ public final class Settings {
      * Blocks that Baritone is allowed to place (as throwaway, for sneak bridging, pillaring, etc.)
      */
     public final Setting<List<Item>> acceptableThrowawayItems = new Setting<>(new ArrayList<>(Arrays.asList(
-            Blocks.DIRT.asItem(),
-            Blocks.COBBLESTONE.asItem(),
             Blocks.COBBLED_DEEPSLATE.asItem(),
             Blocks.DEEPSLATE.asItem(),
             Blocks.TUFF.asItem(),
-            Blocks.ANDESITE.asItem(),
-            Blocks.DIORITE.asItem(),
-            Blocks.GRANITE.asItem(),
+            Blocks.POLISHED_DEEPSLATE.asItem(),
+            Blocks.DEEPSLATE_BRICKS.asItem(),
+            Blocks.POLISHED_TUFF.asItem(),
+            Blocks.COBBLESTONE.asItem(),
+            Blocks.STONE.asItem(),
             Blocks.NETHERRACK.asItem(),
-            Blocks.STONE.asItem()
+            Blocks.BASALT.asItem(),
+            Blocks.BLACKSTONE.asItem(),
+            Blocks.DIRT.asItem()
     )));
 
     /**
@@ -1493,6 +1495,17 @@ public final class Settings {
      * Keeps tools, food, totem, shulker boxes, target ores, and 1 stack of building blocks, and drops all other items.
      */
     public final Setting<Boolean> autoDrop = new Setting<>(true);
+
+    /**
+     * Interval in seconds between automatic inventory trash drops (default: 30 seconds).
+     */
+    public final Setting<Integer> autoDropIntervalSeconds = new Setting<>(30);
+
+    /**
+     * When enabled, automatically place an Ender Chest, store full Shulker Boxes inside, and leave it without mining it.
+     * Default is true.
+     */
+    public final Setting<Boolean> autoEnderChestStorage = new Setting<>(true);
 
     /**
      * The actual GoalNear is set this distance away from the entity you're following

@@ -19,6 +19,8 @@ package baritone.utils;
 
 import baritone.api.BaritoneAPI;
 import baritone.api.utils.IPlayerContext;
+import baritone.api.utils.RayTraceUtils;
+import baritone.api.utils.Rotation;
 import baritone.utils.accessor.IPlayerControllerMP;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -50,42 +52,27 @@ public final class BlockBreakHelper {
             return;
         }
         IPlayerControllerMP controller = (IPlayerControllerMP) ctx.minecraft().gameMode;
-        BlockPos current = controller.getCurrentBlock();
-
-        // 1. Gui packet ABORT_DESTROY_BLOCK den server de server reset hoan toan trang thai dao block
-        if (current != null && !current.equals(BlockPos.ZERO) && ctx.player().connection != null) {
+        if (controller.isHittingBlock()) {
+            BlockPos current = controller.getCurrentBlock();
+            if (current != null && !current.equals(BlockPos.ZERO) && current.getY() >= -64) {
+                if (ctx.minecraft().level != null) {
+                    try {
+                        ctx.minecraft().level.destroyBlockProgress(ctx.player().getId(), current, -1);
+                    } catch (Throwable ignored) {}
+                }
+            }
             try {
-                ctx.player().connection.send(new ServerboundPlayerActionPacket(
-                        ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK,
-                        current,
-                        Direction.DOWN
-                ));
+                ctx.playerController().resetBlockRemoving();
             } catch (Throwable ignored) {}
         }
-
-        // 2. Xoa hieu ung vo block tren client level
-        if (ctx.minecraft().level != null && current != null && !current.equals(BlockPos.ZERO)) {
-            try {
-                ctx.minecraft().level.destroyBlockProgress(ctx.player().getId(), current, -1);
-            } catch (Throwable ignored) {}
-        }
-
-        // 3. Bat buoc set isDestroying = true truoc khi goi stopDestroyBlock de pass qua check if (this.isDestroying) cua Vanilla
-        try {
-            controller.setIsHittingBlock(true);
-            ctx.playerController().resetBlockRemoving();
-        } catch (Throwable ignored) {}
-
-        // 4. Xoa triet de cac bien trang thai trong controller de khong bi ket hoac lech nhip
         try {
             controller.setIsHittingBlock(false);
             controller.setDestroyDelay(0);
             controller.setDestroyProgress(0.0F);
-            controller.setCurrentBlock(new BlockPos(0, -1, 0));
         } catch (Throwable ignored) {}
 
         wasHitting = false;
-        breakDelayTimer = 0;
+        breakDelayTimer = BASE_BREAK_DELAY;
     }
 
     public void tick(boolean isLeftClick) {
@@ -97,13 +84,15 @@ public final class BlockBreakHelper {
         boolean isBlockTrace = trace != null && trace.getType() == HitResult.Type.BLOCK;
 
         if (isLeftClick && isBlockTrace) {
+            BlockHitResult hit = (BlockHitResult) trace;
+
             ctx.playerController().setHittingBlock(wasHitting);
             if (ctx.playerController().hasBrokenBlock()) {
                 ctx.playerController().syncHeldItem();
-                ctx.playerController().clickBlock(((BlockHitResult) trace).getBlockPos(), ((BlockHitResult) trace).getDirection());
+                ctx.playerController().clickBlock(hit.getBlockPos(), hit.getDirection());
                 ctx.player().swing(InteractionHand.MAIN_HAND);
             } else {
-                if (ctx.playerController().onPlayerDamageBlock(((BlockHitResult) trace).getBlockPos(), ((BlockHitResult) trace).getDirection())) {
+                if (ctx.playerController().onPlayerDamageBlock(hit.getBlockPos(), hit.getDirection())) {
                     ctx.player().swing(InteractionHand.MAIN_HAND);
                 }
                 if (ctx.playerController().hasBrokenBlock()) { // block broken this tick
@@ -120,9 +109,7 @@ public final class BlockBreakHelper {
             // we store and restore this value on the next tick to determine if we're breaking a block
             ctx.playerController().setHittingBlock(false);
         } else {
-            if (wasHitting) {
-                stopBreakingBlock();
-            }
+            wasHitting = false;
         }
     }
 }

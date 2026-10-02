@@ -21,11 +21,15 @@ import baritone.Baritone;
 import baritone.api.BaritoneAPI;
 import baritone.api.utils.IPlayerContext;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.LeverBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 
@@ -54,58 +58,78 @@ public class BlockPlaceHelper {
             rightClickTimer--;
             return;
         }
-        HitResult mouseOver = ctx.objectMouseOver();
-        if (!rightClickRequested || ctx.player().isHandsBusy() || mouseOver == null || mouseOver.getType() != HitResult.Type.BLOCK) {
+        if (!rightClickRequested || ctx.player() == null || ctx.player().isHandsBusy()) {
             return;
         }
+
+        HitResult mouseOver = ctx.objectMouseOver();
+        if (mouseOver == null || mouseOver.getType() != HitResult.Type.BLOCK) {
+            return;
+        }
+
+        BlockHitResult hit = (BlockHitResult) mouseOver;
+        BlockPos targetPos = hit.getBlockPos();
+        BlockState targetState = ctx.world().getBlockState(targetPos);
+
+        // Check if target is an interactive block (button, lever, chest, door, trapdoor, or block entity)
+        boolean isInteractable = targetState.is(BlockTags.BUTTONS)
+                || targetState.is(BlockTags.DOORS)
+                || targetState.is(BlockTags.TRAPDOORS)
+                || targetState.getBlock() instanceof LeverBlock
+                || targetState.getBlock() instanceof ChestBlock
+                || targetState.hasBlockEntity();
 
         ItemStack mainHand = ctx.player().getMainHandItem();
         ItemStack offHand = ctx.player().getOffhandItem();
 
-        // If neither hand has a BlockItem, try to auto-select a throwaway block from inventory
-        if (!(mainHand.getItem() instanceof BlockItem) && !(offHand.getItem() instanceof BlockItem) && baritone != null) {
-            BlockPos targetPos = ((BlockHitResult) mouseOver).getBlockPos();
-            baritone.getInventoryBehavior().selectThrowawayForLocation(true, targetPos.getX(), targetPos.getY(), targetPos.getZ());
-            mainHand = ctx.player().getMainHandItem();
-            offHand = ctx.player().getOffhandItem();
-        }
+        boolean isBuilder = (baritone != null && baritone.getBuilderProcess().isActive());
 
-        InteractionHand hand = InteractionHand.MAIN_HAND;
-        ItemStack stack = mainHand;
-        if (stack.isEmpty() || (!(stack.getItem() instanceof BlockItem) && offHand.getItem() instanceof BlockItem)) {
-            hand = InteractionHand.OFF_HAND;
-            stack = offHand;
-        }
+        // When target is NOT an interactive block, we are trying to place a block.
+        if (!isInteractable) {
+            // Check if mainHand holds an acceptable block to place.
+            // When not in BuilderProcess, ONLY acceptable throwaway items (deepslate, tuff) are allowed.
+            boolean mainHandAllowed = isBuilder
+                    ? (mainHand.getItem() instanceof BlockItem)
+                    : (mainHand.getItem() instanceof BlockItem bi && Baritone.settings().acceptableThrowawayItems.value.contains(bi.asItem()));
 
-        if (stack.isEmpty()) {
-            return;
-        }
-
-        // Never right-click a block with a mining/harvesting tool or weapon (pickaxe, axe, shovel, hoe, sword)
-        // when attempting to place a block. Right-clicking blocks with tools strips logs, tills dirt,
-        // or loses weapon charge without ever placing a block!
-        if (stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.AXES) || stack.is(ItemTags.SHOVELS)
-                || stack.is(ItemTags.HOES) || stack.is(ItemTags.SWORDS)) {
-            return;
-        }
-
-        rightClickTimer = Math.max(1, Baritone.settings().rightClickSpeed.value - BASE_PLACE_DELAY);
-
-        InteractionResult result = ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), hand, (BlockHitResult) mouseOver);
-        if (result != null && result.consumesAction()) {
-            ctx.player().swing(hand);
-            return;
-        }
-
-        // Only call processRightClick (use item in air) if holding a non-block item (e.g. water bucket)
-        if (!(stack.getItem() instanceof BlockItem)) {
-            InteractionResult handResult = ctx.playerController().processRightClick(ctx.player(), ctx.world(), hand);
-            if (handResult != null && handResult.consumesAction()) {
-                return;
+            if (!mainHandAllowed && baritone != null) {
+                baritone.getInventoryBehavior().selectThrowawayForLocation(true, targetPos.getX(), targetPos.getY(), targetPos.getZ());
             }
         }
 
-        // Throttle failed or pending placement attempts by at least 2 ticks to prevent packet spam kicks
-        rightClickTimer = Math.max(2, rightClickTimer);
+        rightClickTimer = Math.max(0, Baritone.settings().rightClickSpeed.value - BASE_PLACE_DELAY);
+
+        // Process right click on hands - fully compatible with vanilla interaction and bridging
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack stack = ctx.player().getItemInHand(hand);
+
+            if (!isInteractable) {
+                // Avoid right-clicking with mining tools or weapons against regular blocks when trying to place
+                if (stack.is(ItemTags.PICKAXES) || stack.is(ItemTags.SWORDS) || stack.is(ItemTags.AXES) || stack.is(ItemTags.SHOVELS)) {
+                    continue;
+                }
+
+                // KHÔNG BAO GIỜ đặt bất kỳ khối nào khác ngoài deepslate và tuff (trừ khi builder process đang chạy)
+                if (!isBuilder) {
+                    if (!(stack.getItem() instanceof BlockItem bi) || !Baritone.settings().acceptableThrowawayItems.value.contains(bi.asItem())) {
+                        continue;
+                    }
+                }
+            }
+
+            InteractionResult result = ctx.playerController().processRightClickBlock(ctx.player(), ctx.world(), hand, hit);
+            if (result != null && result.consumesAction()) {
+                ctx.player().swing(hand);
+                return;
+            }
+
+            // Chỉ cho phép click vào không khí (processRightClick) nếu là khối tương tác đặc biệt
+            if (!stack.isEmpty() && isInteractable) {
+                InteractionResult handResult = ctx.playerController().processRightClick(ctx.player(), ctx.world(), hand);
+                if (handResult != null && handResult.consumesAction()) {
+                    return;
+                }
+            }
+        }
     }
 }

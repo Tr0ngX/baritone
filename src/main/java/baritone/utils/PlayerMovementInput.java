@@ -42,38 +42,14 @@ public class PlayerMovementInput extends ClientInput {
 
     @Override
     public void tick() {
-        float leftImpulse = 0.0F;
-        float forwardImpulse = 0.0F;
-        boolean jumping = handler.isInputForcedDown(Input.JUMP); // oppa gangnam style
-
         boolean up = handler.isInputForcedDown(Input.MOVE_FORWARD);
-        if (up) {
-            forwardImpulse++;
-        }
-
         boolean down = handler.isInputForcedDown(Input.MOVE_BACK);
-        if (down) {
-            forwardImpulse--;
-        }
-
         boolean left = handler.isInputForcedDown(Input.MOVE_LEFT);
-        if (left) {
-            leftImpulse++;
-        }
-
         boolean right = handler.isInputForcedDown(Input.MOVE_RIGHT);
-        if (right) {
-            leftImpulse--;
-        }
-
+        boolean jumping = handler.isInputForcedDown(Input.JUMP);
         boolean sneaking = handler.isInputForcedDown(Input.SNEAK);
-        if (sneaking) {
-            leftImpulse *= 0.3D;
-            forwardImpulse *= 0.3D;
-        }
-        this.moveVector = new Vec2(leftImpulse, forwardImpulse);
-
         boolean sprinting = handler.isInputForcedDown(Input.SPRINT);
+
         // AUTO SPRINT: Tự động chạy nhanh khi tiến về phía trước trên bề mặt an toàn
         if (Baritone.settings().allowSprint.value && up && !sneaking) {
             Minecraft mc = Minecraft.getInstance();
@@ -112,9 +88,6 @@ public class PlayerMovementInput extends ClientInput {
                                 if (under.isAir() || under.getFluidState().is(FluidTags.LAVA)) {
                                     sneaking = true;
                                     sprinting = false;
-                                    leftImpulse *= 0.3D;
-                                    forwardImpulse *= 0.3D;
-                                    this.moveVector = new Vec2(leftImpulse, forwardImpulse);
                                 }
                             }
                         }
@@ -122,6 +95,10 @@ public class PlayerMovementInput extends ClientInput {
                 }
             }
         }
+
+        float forwardImpulse = calculateImpulse(up, down);
+        float leftImpulse = calculateImpulse(left, right);
+        this.moveVector = new Vec2(leftImpulse, forwardImpulse).normalized();
 
         // ULTRA-FAST TUNNEL BUNNY HOP (Không delay, cứ tiếp đất là nhảy tiếp)
         if (Baritone.settings().tunnelSprintJump.value && up && !sneaking) {
@@ -141,5 +118,13 @@ public class PlayerMovementInput extends ClientInput {
         }
 
         this.keyPresses = new net.minecraft.world.entity.player.Input(up, down, left, right, jumping, sneaking, sprinting);
+    }
+
+    private static float calculateImpulse(boolean pos, boolean neg) {
+        if (pos == neg) {
+            return 0.0F;
+        } else {
+            return pos ? 1.0F : -1.0F;
+        }
     }
 }

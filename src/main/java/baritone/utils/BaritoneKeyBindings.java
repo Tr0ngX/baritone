@@ -33,7 +33,7 @@ public final class BaritoneKeyBindings {
     public static final KeyMapping KEY_AUTOMINE_GUI = new KeyMapping(
             "key.baritone.automine_gui",
             InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_F4,
+            InputConstants.UNKNOWN.getValue(),
             CATEGORY
     );
 

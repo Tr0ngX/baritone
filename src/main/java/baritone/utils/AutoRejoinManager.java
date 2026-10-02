@@ -65,10 +65,14 @@ public final class AutoRejoinManager {
     private static volatile boolean isCountdownCancelled = false;
     private static volatile int stepTicks = 0;
 
+    // Cờ báo hiệu Baritone đang tự động gửi lệnh đăng nhập, tránh MixinClientPlayNetHandler tự chặn/đọc lại
+    public static volatile boolean isAutomatingAuth = false;
+
     // Trạng thái ghi nhớ tiến trình trước khi ngắt kết nối
     private static volatile boolean wasHeavyFarmActive = false;
     private static volatile boolean wasAutoMineActive = false;
     private static volatile boolean wasFarmActive = false;
+    private static volatile boolean wasSandActive = false;
     private static volatile String lastServerIp = "kingmc.vn";
 
     // Tham chiếu widget nút trên DisconnectedScreen
@@ -76,7 +80,27 @@ public final class AutoRejoinManager {
     private static Button cancelRejoinButton = null;
     private static Button configButton = null;
 
+    public static volatile boolean isLoggedIn = false;
+    private static volatile long lastJoinTimeMs = 0;
+
     private AutoRejoinManager() {}
+
+    public static boolean isHandlingRejoin() {
+        return currentState != State.IDLE;
+    }
+
+    public static boolean isInLobby(net.minecraft.world.entity.player.Player player) {
+        if (player == null) return false;
+        if (currentState != State.IDLE) return true;
+        var pos = player.position();
+        if (pos != null) {
+            // Tọa độ sảnh login KingMC: Y ≈ 41, X ≈ 0.5, Z ≈ 0.8
+            if (Math.abs(pos.y - 41.0) <= 5.0 && Math.abs(pos.x) <= 25.0 && Math.abs(pos.z) <= 25.0) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     public static State getState() {
         return currentState;
@@ -118,6 +142,7 @@ public final class AutoRejoinManager {
      */
     public static void onDisconnectedScreenInit(DisconnectedScreen screen, Button backButton, java.util.function.Consumer<net.minecraft.client.gui.components.AbstractWidget> addWidget) {
         AutoRejoinConfig.ensureLoaded();
+        isLoggedIn = false;
 
         // NẾU BỊ KICK BỞI LAVA HOẶC GẶP PLAYER -> TUYỆT ĐỐI KHÔNG REJOIN
         if (AutoLogoutTracker.hasLoggedOut()) {
@@ -196,9 +221,41 @@ public final class AutoRejoinManager {
         }
     }
 
+    private static int devAutoConnectTicks = 0;
+    private static boolean devAutoConnected = false;
+
+    private static void checkDevAutoConnect(Minecraft mc) {
+        if (mc == null || mc.level != null) {
+            devAutoConnectTicks = 0;
+            return;
+        }
+        if (!devAutoConnected) {
+            String name = mc.getUser() != null ? mc.getUser().getName() : "";
+            if ("Dev".equalsIgnoreCase(name) || "GrimTester".equalsIgnoreCase(name)) {
+                devAutoConnectTicks++;
+                if (devAutoConnectTicks >= 20) {
+                    devAutoConnected = true;
+                    try {
+                        ServerAddress address = ServerAddress.parseString("127.0.0.1:25575");
+                        ServerData data = new ServerData("GrimTestServer", "127.0.0.1:25575", ServerData.Type.OTHER);
+                        System.out.println("[DevAutoConnect] Automatically connecting to Grim test server at 127.0.0.1:25575 (Username: " + name + ")...");
+                        mc.execute(() -> {
+                            Screen parent = mc.screen != null ? mc.screen : new TitleScreen();
+                            ConnectScreen.startConnecting(parent, mc, address, data, false, null);
+                        });
+                    } catch (Throwable t) {
+                        t.printStackTrace();
+                    }
+                }
+            }
+        }
+    }
+
     private static void executeConnection() {
         currentState = State.CONNECTING;
         stepTicks = 0;
+        isLoggedIn = false;
+        lastJoinTimeMs = System.currentTimeMillis();
 
         Minecraft mc = Minecraft.getInstance();
         String targetIp = AutoRejoinConfig.serverIp != null && !AutoRejoinConfig.serverIp.trim().isEmpty()
@@ -230,6 +287,7 @@ public final class AutoRejoinManager {
      */
     public static void onClientTick(Minecraft mc) {
         if (mc == null) return;
+        checkDevAutoConnect(mc);
 
         // Khi người chơi đang trong game bình thường (State IDLE), ghi nhớ trạng thái và IP
         if (mc.player != null && mc.level != null && mc.getConnection() != null) {
@@ -249,11 +307,16 @@ public final class AutoRejoinManager {
                         var provider = BaritoneAPI.getProvider();
                         var primary = provider != null ? provider.getPrimaryBaritone() : null;
                         if (primary != null) {
-                            if (primary.getMineProcess().isActive()) {
+                            if (primary.getSandProcess().isActive()) {
+                                wasSandActive = true;
+                                wasAutoMineActive = false;
+                                wasFarmActive = false;
+                            } else if (primary.getMineProcess().isActive()) {
                                 wasAutoMineActive = true;
-                            }
-                            if (primary.getFarmProcess().isActive()) {
+                                wasSandActive = false;
+                            } else if (primary.getFarmProcess().isActive()) {
                                 wasFarmActive = true;
+                                wasSandActive = false;
                             }
                         }
                     } catch (Throwable ignored) {}
@@ -267,35 +330,82 @@ public final class AutoRejoinManager {
     }
 
     private static void handleRejoinAutomationStep(Minecraft mc) {
+        if (mc.isSingleplayer()) {
+            currentState = State.IDLE;
+            return;
+        }
+
+        String serverIp = "";
+        ServerData currentServer = mc.getCurrentServer();
+        if (currentServer != null && currentServer.ip != null) {
+            serverIp = currentServer.ip.toLowerCase();
+        } else if (mc.getConnection() != null && mc.getConnection().getConnection() != null) {
+            var addr = mc.getConnection().getConnection().getRemoteAddress();
+            if (addr != null) {
+                serverIp = addr.toString().toLowerCase();
+            }
+        }
+
+        // Nếu là local test server (localhost/127.0.0.1/25575) thì không thực hiện quy trình đăng nhập Lobby
+        if (serverIp.contains("localhost") || serverIp.contains("127.0.0.1") || serverIp.contains("25575") || serverIp.isEmpty()) {
+            currentState = State.IDLE;
+            return;
+        }
+
+        // Nếu không đúng server cấu hình trong AutoRejoinConfig thì cũng bỏ qua
+        String targetIp = AutoRejoinConfig.serverIp != null ? AutoRejoinConfig.serverIp.toLowerCase() : "";
+        if (!targetIp.isEmpty() && !serverIp.contains(targetIp)) {
+            currentState = State.IDLE;
+            return;
+        }
+
         stepTicks++;
 
         switch (currentState) {
             case CONNECTING:
             case WAITING_FOR_LOBBY:
-                // Chờ khoảng 25 ticks (1.25s) để client load thế giới và chunk ở Lobby
-                if (stepTicks >= 25) {
+                // Chờ ít nhất 60 ticks (3.0s) và ít nhất 3000ms tính từ lúc kết nối để tránh KingMC rate-limit!
+                long timeSinceJoin = System.currentTimeMillis() - lastJoinTimeMs;
+                if (stepTicks >= 60 && timeSinceJoin >= 3000) {
                     stepTicks = 0;
-                    currentState = State.SENDING_LOGIN;
+                    if (isLoggedIn) {
+                        currentState = State.WAITING_AFTER_LOGIN;
+                    } else {
+                        currentState = State.SENDING_LOGIN;
+                    }
                 }
                 break;
 
             case SENDING_LOGIN:
+                if (isLoggedIn) {
+                    stepTicks = 0;
+                    currentState = State.WAITING_AFTER_LOGIN;
+                    break;
+                }
+                long nowMs = System.currentTimeMillis();
+                if (nowMs - lastJoinTimeMs < 3000 || nowMs - lastAuthTimeMs < 5000) {
+                    // Chưa đủ thời gian chờ an toàn (tránh kick "You used a command too fast!")
+                    break;
+                }
                 // Tự động nhập lệnh /dn <mật_khẩu>
                 String pass = AutoRejoinConfig.password;
                 if (pass != null && !pass.trim().isEmpty()) {
                     try {
-                        mc.player.connection.sendChat("/dn " + pass.trim());
+                        isAutomatingAuth = true;
+                        lastAuthTimeMs = nowMs;
+                        mc.player.connection.sendCommand("dn " + pass.trim());
                         Helper.HELPER.logDirect("§a[Auto Rejoin] Đã tự động gửi lệnh đăng nhập /dn ***");
                     } catch (Throwable t) {
                         Helper.HELPER.logDirect("§c[Auto Rejoin] Lỗi gửi lệnh /dn: " + t.getMessage());
+                    } finally {
+                        isAutomatingAuth = false;
                     }
                     stepTicks = 0;
                     currentState = State.WAITING_AFTER_LOGIN;
                 } else {
-                    Helper.HELPER.logDirect("§c§l[Auto Rejoin] Chưa có mật khẩu! Đang mở bảng GUI nhập mật khẩu /dn...");
-                    mc.execute(() -> mc.setScreen(new baritone.utils.gui.AutoRejoinScreen(mc.screen)));
+                    Helper.HELPER.logDirect("§e[Auto Rejoin] Chưa có mật khẩu! Gõ /dn <mật_khẩu> để tự động lưu.");
                     stepTicks = 0;
-                    currentState = State.WAITING_AFTER_LOGIN;
+                    currentState = State.IDLE;
                 }
                 break;
 
@@ -494,7 +604,10 @@ public final class AutoRejoinManager {
             var provider = BaritoneAPI.getProvider();
             var primary = provider != null ? provider.getPrimaryBaritone() : null;
             if (primary != null) {
-                if (wasAutoMineActive) {
+                if (wasSandActive) {
+                    primary.getCommandManager().execute("sand");
+                    Helper.HELPER.logDirect("§a[Auto Rejoin] Đã tự động kích hoạt lại Đào Cát (#sand)!");
+                } else if (wasAutoMineActive) {
                     primary.getCommandManager().execute("automine");
                     Helper.HELPER.logDirect("§a[Auto Rejoin] Đã tự động kích hoạt lại AutoMine!");
                 } else if (wasFarmActive) {
@@ -522,18 +635,162 @@ public final class AutoRejoinManager {
         currentState = State.OPENING_MENU;
     }
 
+    private static volatile long lastAuthTimeMs = 0;
+
+    /**
+     * Lắng nghe tin nhắn chat từ Server để tự động đăng nhập lại khi cần (theo chuẩn CheckStatsKingMC-main).
+     * Tự động phản hồi khi server nhắc /dn, /login, hoặc khi nhận diện đang ở toạ độ Lobby KingMC.
+     */
+    public static void onServerChatMessage(String rawMessage) {
+        if (rawMessage == null || rawMessage.trim().isEmpty()) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.getConnection() == null) return;
+
+        AutoRejoinConfig.ensureLoaded();
+        if (!AutoRejoinConfig.hasPassword() || !AutoRejoinConfig.enabled) return;
+
+        String pass = AutoRejoinConfig.password.trim();
+        if (pass.isEmpty()) return;
+
+        String clean = rawMessage.toLowerCase(Locale.ROOT);
+        long now = System.currentTimeMillis();
+
+        // 0. Bỏ qua tin nhắn chat của người chơi thường trong server (có format <Player> hoặc [Rank] Player: hoặc chat:)
+        if ((clean.contains("<") && clean.contains(">")) || clean.contains("chat:")) {
+            return;
+        }
+
+        // 1. Kiểm tra thông báo đăng nhập THÀNH CÔNG hoặc đã kết nối vào cụm
+        boolean isSuccessMsg = clean.contains("thành công")
+                || clean.contains("bạn đã đăng nhập")
+                || clean.contains("đã được kết nối")
+                || clean.contains("đã đăng nhập")
+                || clean.contains("vào cụm máy chủ")
+                || clean.contains("kết nối tới")
+                || clean.contains("connected")
+                || clean.contains("discord.kingmc.vn");
+
+        if (isSuccessMsg) {
+            isLoggedIn = true;
+            if (currentState == State.SENDING_LOGIN) {
+                stepTicks = 0;
+                currentState = State.WAITING_AFTER_LOGIN;
+            }
+            return;
+        }
+
+        // Nếu đã đăng nhập thành công rồi thì TUYỆT ĐỐI KHÔNG gửi lại /dn nữa!
+        if (isLoggedIn) {
+            return;
+        }
+
+        // Cooldown tối thiểu: Phải cách lúc join ít nhất 2.5s và cách lần auth trước ít nhất 6s
+        if (now - lastJoinTimeMs < 2500 || now - lastAuthTimeMs < 6000) {
+            return;
+        }
+
+        // 2. Kiểm tra từ khóa "kingmc.vn" kết hợp với check toạ độ Lobby: X ≈ 0.50, Y ≈ 41.00, Z ≈ 0.80 (như mc-bot.js)
+        if (clean.contains("kingmc.vn")) {
+            var pos = mc.player.position();
+            if (pos != null) {
+                double dx = Math.abs(pos.x - 0.50);
+                double dy = Math.abs(pos.y - 41.00);
+                double dz = Math.abs(pos.z - 0.80);
+                if (dx <= 3.0 && dy <= 3.0 && dz <= 3.0) {
+                    lastAuthTimeMs = now;
+                    Helper.HELPER.logDirect("§a[Auto Rejoin] Xác nhận đang ở Lobby KingMC (Toạ độ + Chat)! Tự động gửi /dn...");
+                    try {
+                        isAutomatingAuth = true;
+                        mc.player.connection.sendCommand("dn " + pass);
+                    } catch (Throwable t) {
+                        Helper.HELPER.logDirect("§c[Auto Rejoin] Lỗi gửi /dn: " + t.getMessage());
+                    } finally {
+                        isAutomatingAuth = false;
+                    }
+
+                    // Sau khi gõ /dn ở lobby, chuyển sang quy trình mở Menu chọn cụm
+                    stepTicks = 0;
+                    currentState = State.WAITING_AFTER_LOGIN;
+                    return;
+                }
+            }
+        }
+
+        // 3. Tự động Đăng ký khi server yêu cầu (/dk, /register, dang ky)
+        boolean isRegisterPrompt = clean.contains("/dk <")
+                || clean.contains("/dk [")
+                || clean.contains("/register <")
+                || clean.contains("/register [")
+                || clean.contains("dùng lệnh /dk")
+                || clean.contains("dùng lệnh /register")
+                || clean.contains("vui lòng /dk")
+                || clean.contains("vui lòng /register");
+
+        if (isRegisterPrompt) {
+            lastAuthTimeMs = now;
+            Helper.HELPER.logDirect("§a[Auto Rejoin] Server yêu cầu đăng ký (/register)! Tự động gửi lệnh...");
+            try {
+                isAutomatingAuth = true;
+                mc.player.connection.sendCommand("register " + pass + " " + pass);
+            } catch (Throwable t) {
+                Helper.HELPER.logDirect("§c[Auto Rejoin] Lỗi gửi /register: " + t.getMessage());
+            } finally {
+                isAutomatingAuth = false;
+            }
+            return;
+        }
+
+        // 4. Tự động Đăng nhập khi server yêu cầu qua chat (/dn, /login)
+        // Tuyệt đối KHÔNG chứa từ khóa đơn lẻ 'đăng nhập' vì KingMC gửi 'Đăng nhập thành công!'
+        boolean isLoginPrompt = clean.contains("/dn <")
+                || clean.contains("/dn [")
+                || clean.contains("/login <")
+                || clean.contains("/login [")
+                || clean.contains("dùng lệnh /dn")
+                || clean.contains("dùng lệnh /login")
+                || clean.contains("vui lòng /dn")
+                || clean.contains("vui lòng /login")
+                || clean.contains("nhập mật khẩu để")
+                || clean.contains("nhập lại mật khẩu")
+                || (clean.contains("/dn") && (clean.contains("mật khẩu") || clean.contains("mat khau") || clean.contains("tài khoản")));
+
+        if (isLoginPrompt) {
+            lastAuthTimeMs = now;
+            Helper.HELPER.logDirect("§a[Auto Rejoin] Server yêu cầu đăng nhập qua chat! Tự động gửi /dn ***");
+            try {
+                isAutomatingAuth = true;
+                mc.player.connection.sendCommand("dn " + pass);
+            } catch (Throwable t) {
+                Helper.HELPER.logDirect("§c[Auto Rejoin] Lỗi gửi /dn: " + t.getMessage());
+            } finally {
+                isAutomatingAuth = false;
+            }
+
+            // Nếu đang ở IDLE hoặc SENDING_LOGIN, tiếp tục chuyển tiếp sang mở menu chọn cụm
+            if (currentState == State.IDLE || currentState == State.SENDING_LOGIN) {
+                stepTicks = 0;
+                currentState = State.WAITING_AFTER_LOGIN;
+            }
+        }
+    }
+
     public static void onPasswordEntered(String pass) {
         if (pass == null || pass.trim().isEmpty()) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null && mc.getConnection() != null) {
             try {
-                mc.player.connection.sendChat("/dn " + pass.trim());
+                isAutomatingAuth = true;
+                mc.player.connection.sendCommand("dn " + pass.trim());
                 Helper.HELPER.logDirect("§a[Auto Rejoin] Đã tự động gửi lệnh /dn với mật khẩu vừa nhập!");
+                lastAuthTimeMs = System.currentTimeMillis();
+                isLoggedIn = true;
                 if (currentState == State.WAITING_AFTER_LOGIN || currentState == State.SENDING_LOGIN) {
                     stepTicks = 20; // Rút ngắn thời gian chuyển sang mở menu
                 }
             } catch (Throwable t) {
                 Helper.HELPER.logDirect("§c[Auto Rejoin] Lỗi gửi /dn: " + t.getMessage());
+            } finally {
+                isAutomatingAuth = false;
             }
         }
     }
@@ -543,5 +800,7 @@ public final class AutoRejoinManager {
         stepTicks = 0;
         countdownTicks = 100;
         isCountdownCancelled = false;
+        isLoggedIn = false;
     }
 }
+

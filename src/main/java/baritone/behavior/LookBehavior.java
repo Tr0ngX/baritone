@@ -304,7 +304,23 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
         }
 
         private float calculateMouseMove(float current, float target) {
-            final float delta = target - current;
+            float delta = target - current;
+            while (delta < -180.0f) {
+                delta += 360.0f;
+            }
+            while (delta >= 180.0f) {
+                delta -= 360.0f;
+            }
+            if (Baritone.settings().antiCheatCompatibility.value) {
+                // GrimAC Aim Check Guard: clamp max angular turn per tick to 65 degrees
+                // preventing impossible snap flags like AimModulo360.
+                float maxStep = 65.0f;
+                if (delta > maxStep) {
+                    delta = maxStep;
+                } else if (delta < -maxStep) {
+                    delta = -maxStep;
+                }
+            }
             final double deltaPx = angleToMouse(delta); // yes, even the mouse movements use double
             return current + mouseToAngle(deltaPx);
         }
@@ -351,6 +367,13 @@ public final class LookBehavior extends Behavior implements ILookBehavior {
                 final Settings settings = Baritone.settings();
                 final boolean antiCheat = settings.antiCheatCompatibility.value;
                 final boolean blockFreeLook = settings.blockFreeLook.value;
+
+                if (antiCheat) {
+                    // With antiCheatCompatibility, all looking MUST be CLIENT-side.
+                    // Silent SERVER packet rotations cause desync between client camera state
+                    // and server packets, causing AimModulo360, RotationPlace, and BadPacketsJ flags.
+                    return CLIENT;
+                }
 
                 if (settings.clientFreeLook.value) {
                     return SERVER;

@@ -330,17 +330,38 @@ public class MovementParkour extends Movement {
             }
         }
 
-        // 2. TIẾP ĐẤT & PHANH CHỐNG TRƯỢT QUÁ ĐÀ (ANTI-OVERSHOOT)
-        if (ctx.playerFeet().equals(dest) || (toDest <= 0.35D && toDest >= -0.4D && ctx.player().onGround() && Math.abs(lateral) < 0.45D)) {
-            // Đã đáp lên block đích: lập tức cắt sprint
-            state.setInput(Input.SPRINT, false);
+        // 2. TIẾP ĐẤT & KIỂM TRA ĐÍCH (LANDING PHASE)
+        boolean onDestFeet = ctx.playerFeet().equals(dest);
+        boolean inLandingBox = toDest <= 0.35D && toDest >= -0.4D && ctx.player().onGround() && Math.abs(lateral) < 0.45D;
+        if (onDestFeet || inLandingBox) {
+            state.setInput(Input.JUMP, false);
             if (ladderOrVine) {
                 return state.setStatus(MovementStatus.SUCCESS);
             }
             if (py - ctx.playerFeet().getY() < 0.094D) { // lilypads
                 return state.setStatus(MovementStatus.SUCCESS);
             }
-            // Phanh nhẹ nếu còn quán tính trượt lớn
+
+            // Kiểm tra xem phía trước block đích có đường băng tiếp nối không
+            BetterBlockPos nextPos = dest.relative(direction);
+            boolean hasRunwayAhead = MovementHelper.canWalkOn(ctx, nextPos.below());
+
+            // Nếu phía trước có đường băng (như các nhịp 2 block trong Emerald Parkour):
+            // GIỮ NGUYÊN ĐÀ CHẠY NƯỚC RÚT (SPRINT), KHÔNG ĐƯỢC PHANH HOẶC SNEAK
+            if (hasRunwayAhead) {
+                state.setInput(Input.MOVE_FORWARD, true);
+                if (ctx.player().getFoodData().getFoodLevel() > 6) {
+                    state.setInput(Input.SPRINT, true);
+                }
+                if (ctx.player().onGround()) {
+                    return state.setStatus(MovementStatus.SUCCESS);
+                }
+                return state;
+            }
+
+            // Nếu là trụ đơn độc lập (xung quanh là khoảng không):
+            // Chỉ phanh nhẹ khi tiến quá sát mép trước để chống trượt rơi khỏi trụ
+            state.setInput(Input.SPRINT, false);
             if (toDest < 0.15D && ctx.player().getDeltaMovement().horizontalDistance() > 0.10D) {
                 state.setInput(Input.MOVE_FORWARD, false);
                 state.setInput(Input.SNEAK, true);
@@ -357,43 +378,31 @@ public class MovementParkour extends Movement {
         if (!ctx.player().onGround()) {
             state.setInput(Input.JUMP, false);
             state.setInput(Input.MOVE_FORWARD, true);
-            state.setInput(Input.SPRINT, true);
-            // Khóa chặt góc nhìn (yaw lock) theo hướng nhảy để không bị air-strafing làm lệch quỹ đạo
-            state.setTarget(new MovementTarget(new Rotation(direction.toYRot(), 0.0F), false));
+            if (ctx.player().getFoodData().getFoodLevel() > 6) {
+                state.setInput(Input.SPRINT, true);
+            }
+            MovementHelper.moveTowards(ctx, state, dest);
             return state;
         }
 
-        // 4. TRÊN MẶT ĐẤT CHUẨN BỊ LẤY ĐÀ VÀ DẬM NHẢY (TAKEOFF PHASE)
+        // 4. TRÊN MẶT ĐẤT LẤY ĐÀ VÀ DẬM NHẢY (TAKEOFF PHASE)
         if (ctx.player().getFoodData().getFoodLevel() > 6) {
             state.setInput(Input.SPRINT, true);
         }
         state.setInput(Input.MOVE_FORWARD, true);
+        MovementHelper.moveTowards(ctx, state, dest);
 
-        // Điều chỉnh hướng chạy triệt tiêu độ lệch ngang
-        float desiredYaw = direction.toYRot();
-        if (Math.abs(lateral) > 0.05D) {
-            float lateralCorrection = (float) Math.toDegrees(Math.atan2(-lateral, 1.0D)) * 0.4F;
-            lateralCorrection = Math.max(-15.0F, Math.min(15.0F, lateralCorrection));
-            desiredYaw += lateralCorrection;
-        }
-        state.setTarget(new MovementTarget(new Rotation(desiredYaw, 0.0F), false));
+        // ĐIỂM DẬM NHẢY CHUẨN XÁC (Late-edge Takeoff):
+        // - dist == 2 (hố 1 block): dậm nhảy ở progress >= 0.28D
+        // - dist >= 3 (hố 2 block hoặc 3 block sprint-jump):
+        //   BẮT BUỘC phải lấy đủ gia tốc sprint và dậm nhảy ở sát mép block (progress >= 0.38D)
+        //   để đạt 100% tầm bay, không bị rơi non vào mép block đích!
+        double takeoffThreshold = dist >= 3 ? 0.38D : 0.28D;
 
-        // Điểm dậm nhảy chính xác dựa trên khoảng cách (takeoff threshold)
-        double takeoffThreshold;
-        if (dist == 2) {
-            takeoffThreshold = 0.20D; // hố 1 block: dậm sớm an toàn
-        } else if (dist == 3) {
-            takeoffThreshold = ascend ? 0.35D : 0.40D; // hố 2 block: dậm ở 0.40
+        if (progress >= takeoffThreshold || !ctx.playerFeet().equals(src)) {
+            state.setInput(Input.JUMP, true);
         } else {
-            takeoffThreshold = 0.52D; // hố 3 block (dist 4): dậm ở 0.52 với full sprint speed
-        }
-
-        if (progress >= takeoffThreshold && ctx.player().onGround()) {
-            state.setInput(Input.JUMP, true);
-        }
-        // Failsafe khẩn cấp: nếu đã sát mép ngoài (>= 0.62) mà vẫn còn trên mặt đất, BẮT BUỘC dậm nhảy ngay
-        if (progress >= 0.62D && ctx.player().onGround()) {
-            state.setInput(Input.JUMP, true);
+            state.setInput(Input.JUMP, false);
         }
 
         return state;

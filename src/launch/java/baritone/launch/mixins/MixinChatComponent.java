@@ -42,6 +42,18 @@ public class MixinChatComponent {
                 String str = message.getString();
                 baritone.utils.DiscordManager.updateBalanceIfDetected(str);
                 baritone.utils.hud.BottingDashboardOverlay.addRecentChat(str);
+                baritone.utils.AutoRejoinManager.onServerChatMessage(str);
+
+                // Tự động nhận diện lệnh test / mục tiêu từ GrimTest
+                if (str.contains("[GrimTest]") && str.contains("Mục tiêu: (")) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("Mục tiêu: \\(([\\-\\d]+),\\s*([\\-\\d]+),\\s*([\\-\\d]+)\\)").matcher(str);
+                    if (m.find()) {
+                        int tx = Integer.parseInt(m.group(1));
+                        int ty = Integer.parseInt(m.group(2));
+                        int tz = Integer.parseInt(m.group(3));
+                        baritone.api.BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().setGoalAndPath(new baritone.api.pathing.goals.GoalBlock(tx, ty, tz));
+                    }
+                }
             } catch (Throwable ignored) {}
         }
         return StreamerUtil.censorComponent(message);

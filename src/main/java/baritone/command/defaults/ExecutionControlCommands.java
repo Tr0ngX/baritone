@@ -182,6 +182,7 @@ public class ExecutionControlCommands {
                 baritone.getPathingBehavior().cancelEverything();
                 baritone.getPathingBehavior().forceCancel();
                 baritone.getMineProcess().cancel();
+                baritone.getSandProcess().cancel();
                 baritone.getInputOverrideHandler().clearAllKeys();
                 if (baritone instanceof baritone.Baritone b) {
                     b.getInputOverrideHandler().getBlockBreakHelper().stopBreakingBlock();
